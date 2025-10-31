@@ -73,30 +73,66 @@ def upload_csv():
         if file.filename == "":
             return jsonify({"success": False, "error": "No file selected"})
 
-        if not file.filename.lower().endswith(".csv"):
-            return jsonify({"success": False, "error": "File must be a CSV file"})
+        # Accept both CSV and textproto files
+        if not (file.filename.lower().endswith(".csv") or file.filename.lower().endswith(".textproto")):
+            return jsonify({"success": False, "error": "File must be a CSV or textproto file"})
 
+        is_textproto = file.filename.lower().endswith(".textproto")
+        
         # Save uploaded file to temporary location with unique prefix
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
-        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".csv", delete=False, prefix=prefix) as tmp_file:
+        suffix = ".textproto" if is_textproto else ".csv"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=suffix, delete=False, prefix=prefix) as tmp_file:
             file.save(tmp_file.name)
-            tmp_csv_path = tmp_file.name
+            tmp_file_path = tmp_file.name
 
         try:
-            # Create visualizer instance and process the CSV (auto-detects format and node types)
+            # Create visualizer instance
             visualizer = NetworkCablingCytoscapeVisualizer()
 
-            # Parse CSV file (this will auto-detect format and node types)
-            connections = visualizer.parse_csv(tmp_csv_path)
+            if is_textproto:
+                # Parse cabling descriptor textproto
+                visualizer.csv_format = "descriptor"  # Set format before parsing
+                
+                if not visualizer.parse_cabling_descriptor(tmp_file_path):
+                    return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
+                
+                # Get node types from hierarchy and initialize configs
+                if visualizer.graph_hierarchy:
+                    # Extract unique node types
+                    node_types = set(node['node_type'] for node in visualizer.graph_hierarchy)
+                    
+                    # Set shelf unit type from first node (or default)
+                    if node_types:
+                        first_node_type = list(node_types)[0]
+                        config = visualizer._node_descriptor_to_config(first_node_type)
+                        visualizer.shelf_unit_type = first_node_type.lower()
+                        visualizer.current_config = config
+                    else:
+                        visualizer.shelf_unit_type = "wh_galaxy"
+                        visualizer.current_config = visualizer.shelf_unit_configs["wh_galaxy"]
+                    
+                    # Initialize templates for descriptor format
+                    visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
+                    
+                    connection_count = len(visualizer.graph_hierarchy)
+                else:
+                    connection_count = 0
+                    
+            else:
+                # Parse CSV file (auto-detects format and node types)
+                connections = visualizer.parse_csv(tmp_file_path)
 
-            if not connections:
-                return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+                if not connections:
+                    return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+                
+                connection_count = len(connections)
 
             # Generate the complete visualization data structure
             visualization_data = visualizer.generate_visualization_data()
 
             # Add metadata
-            visualization_data["metadata"]["connection_count"] = len(connections)
+            visualization_data["metadata"]["connection_count"] = connection_count
 
             # Check for unknown node types and add to metadata
             unknown_types = visualizer.get_unknown_node_types()
@@ -105,25 +141,30 @@ def upload_csv():
 
             # Create response data
             response_data = visualization_data
+            
+            file_type = "cabling descriptor" if is_textproto else "CSV"
+            message = f"Successfully processed {file.filename} ({file_type}) with {connection_count} {'nodes' if is_textproto else 'connections'}"
 
             return jsonify(
                 {
                     "success": True,
                     "data": response_data,
-                    "message": f"Successfully processed {file.filename} with {len(connections)} connections",
+                    "message": message,
                     "unknown_types": unknown_types,
+                    "file_type": "textproto" if is_textproto else "csv",
                 }
             )
 
         finally:
             # Clean up temporary file
             try:
-                os.unlink(tmp_csv_path)
+                os.unlink(tmp_file_path)
             except OSError:
                 pass  # Ignore cleanup errors
 
     except Exception as e:
-        error_msg = f"Error processing CSV: {str(e)}"
+        error_msg = f"Error processing file: {str(e)}"
+        traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"success": False, "error": error_msg})
 
 

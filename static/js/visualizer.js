@@ -1179,7 +1179,7 @@ uploadSection.addEventListener('drop', (e) => {
     uploadSection.classList.remove('dragover');
 
     const files = e.dataTransfer.files;
-    if (files.length > 0 && files[0].name.endsWith('.csv')) {
+    if (files.length > 0 && (files[0].name.endsWith('.csv') || files[0].name.endsWith('.textproto'))) {
         csvFile.files = files;
     }
 });
@@ -1194,12 +1194,12 @@ async function uploadFile() {
     const file = csvFile.files[0];
 
     if (!file) {
-        showError('Please select a CSV file first.');
+        showError('Please select a file first.');
         return;
     }
 
-    if (!file.name.endsWith('.csv')) {
-        showError('Please select a CSV file (must end with .csv).');
+    if (!file.name.endsWith('.csv') && !file.name.endsWith('.textproto')) {
+        showError('Please select a CSV or textproto file (must end with .csv or .textproto).');
         return;
     }
 
@@ -1237,6 +1237,9 @@ async function uploadFile() {
             }
 
             initVisualization(result.data);
+            
+            // Update legend based on file type
+            updateConnectionLegend(result.data);
 
             // Enable the Add Node button after successful upload
             updateAddNodeButtonState();
@@ -1287,6 +1290,81 @@ function hideMessages() {
     success.style.color = '';
 }
 
+function updateConnectionLegend(data) {
+    /**
+     * Update the connection legend based on file format
+     * Shows CSV legend for regular CSV files
+     * Shows descriptor legend (dynamically generated) for textproto files
+     */
+    const csvLegend = document.getElementById('csvLegend');
+    const descriptorLegend = document.getElementById('descriptorLegend');
+    
+    if (!csvLegend || !descriptorLegend) {
+        console.warn('Legend elements not found');
+        return;
+    }
+    
+    // Check if this is a descriptor format (textproto)
+    const isDescriptor = data.metadata && data.metadata.csv_format === 'descriptor';
+    
+    if (isDescriptor) {
+        // Show descriptor legend, hide CSV legend
+        csvLegend.style.display = 'none';
+        descriptorLegend.style.display = 'block';
+        
+        // Dynamically generate legend based on actual connection depths
+        const edges = data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target));
+        console.log(`Total edges found: ${edges.length}`);
+        
+        // Group edges by depth and template_name
+        const depthTemplateMap = new Map(); // depth -> template_name
+        edges.forEach(e => {
+            if (e.data && e.data.depth !== undefined && e.data.template_name) {
+                depthTemplateMap.set(e.data.depth, e.data.template_name);
+            }
+        });
+        
+        console.log(`Depth->Template mapping:`, Object.fromEntries(depthTemplateMap));
+        
+        // Color map matching Python code
+        const depthColors = {
+            0: '#FF6B6B',  // Red
+            1: '#4ECDC4',  // Teal
+            2: '#95E1D3',  // Light teal
+            3: '#FFA07A',  // Light salmon
+            4: '#98D8C8',  // Seafoam
+            5: '#F7DC6F'   // Yellow
+        };
+        
+        // Generate legend items for depths that actually exist
+        const sortedDepths = Array.from(depthTemplateMap.keys()).sort((a, b) => a - b);
+        let legendHTML = '';
+        
+        if (sortedDepths.length === 0) {
+            legendHTML = '<div style="font-size: 13px; color: #666;">No connection depth information available</div>';
+        } else {
+            sortedDepths.forEach(depth => {
+                const color = depthColors[depth] || '#888888';
+                const templateName = depthTemplateMap.get(depth);
+                legendHTML += `
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div style="width: 20px; height: 3px; background-color: ${color}; margin-right: 10px; border-radius: 2px;"></div>
+                        <span style="font-size: 13px; color: #333;">${templateName}</span>
+                    </div>
+                `;
+            });
+        }
+        
+        descriptorLegend.innerHTML = legendHTML;
+        console.log(`Generated descriptor legend for templates: ${Array.from(depthTemplateMap.values()).join(', ')}`);
+    } else {
+        // Show CSV legend, hide descriptor legend
+        csvLegend.style.display = 'block';
+        descriptorLegend.style.display = 'none';
+        console.log('Switched to CSV legend');
+    }
+}
+
 function initVisualization(data) {
     // Safety check for DOM elements
     const cyLoading = document.getElementById('cyLoading');
@@ -1323,18 +1401,141 @@ function initVisualization(data) {
         } else {
             // Create new Cytoscape instance
             console.log('Creating new Cytoscape instance');
+            console.log('Data elements:', data.elements.length);
+            
+            // Debug: Log graph node positions
+            const graphNodes = data.elements.filter(e => e.data && e.data.type === 'graph');
+            console.log('Graph nodes found:', graphNodes.length);
+            graphNodes.forEach(g => {
+                console.log(`  ${g.data.label} @ (${g.position.x}, ${g.position.y}), parent=${g.data.parent || 'NONE'}`);
+            });
+            
+            // CRITICAL: Cytoscape auto-centers compound nodes based on children
+            // Strategy: Add ALL elements first, THEN manually lock positions
+            
             cy = cytoscape({
                 container: cyContainer,
-                elements: data.elements,
+                elements: data.elements,  // Add everything at once
                 style: getCytoscapeStyles(),
-                layout: { name: 'preset' },
+                layout: { 
+                    name: 'preset',
+                    animate: false,
+                    fit: false  // Don't auto-fit viewport
+                },
                 minZoom: 0.1,
                 maxZoom: 5,
-                wheelSensitivity: 0.2
+                wheelSensitivity: 0.2,
+                autoungrabify: false,
+                autounselectify: false,
+                // Disable automatic positioning
+                autolock: false,
+                autoungrabify: false
             });
+            
+            // IMMEDIATELY lock compound node positions before any rendering happens
+            // This must happen synchronously to prevent auto-centering
+            const compoundTypes = ['graph', 'node_instance', 'rack'];
+            cy.nodes().forEach(node => {
+                const nodeType = node.data('type');
+                if (compoundTypes.includes(nodeType) && node.isParent()) {
+                    // Get the original position from data.elements
+                    const originalData = data.elements.find(e => e.data && e.data.id === node.id());
+                    if (originalData && originalData.position) {
+                        node.lock();  // Lock the node first
+                        node.position({
+                            x: originalData.position.x,
+                            y: originalData.position.y
+                        });
+                        if (nodeType === 'graph') {
+                            console.log(`Locked ${node.data('label')} at (${originalData.position.x}, ${originalData.position.y})`);
+                        }
+                    }
+                }
+            });
+            
+            console.log('All compound node positions locked');
+            
+            // Debug: Check rendered positions
+            setTimeout(() => {
+                const graphsInCy = cy.nodes('[type="graph"]');
+                console.log('Graphs in Cytoscape after forcing positions:', graphsInCy.length);
+                graphsInCy.forEach(g => {
+                    const pos = g.position();
+                    const bb = g.boundingBox();
+                    console.log(`  ${g.data('label')}: position=(${pos.x}, ${pos.y}), bbox w=${bb.w} h=${bb.h}`);
+                });
+            }, 500);
 
-            // Make trays and ports non-draggable
-            cy.nodes('.tray, .port').ungrabify();
+            // Initialize expand-collapse extension
+            if (cy.expandCollapse) {
+                window.api = cy.expandCollapse({
+                    layoutBy: null,  // Disable automatic layout - use preset positions
+                    fisheye: false,
+                    animate: true,
+                    animationDuration: 300,
+                    undoable: false,
+                    cueEnabled: true,  // Enable cues - will be filtered by isCollapsible
+                    expandCollapseCuePosition: 'top-left',
+                    expandCollapseCueSize: 12,
+                    expandCollapseCueLineSize: 8,
+                    expandCueImage: undefined,
+                    collapseCueImage: undefined,
+                    expandCollapseCueSensitivity: 1,
+                    // Check if node is collapsible - only allow specific types
+                    isCollapsible: function(node) {
+                        const nodeType = node.data('type');
+                        const allowed = nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                        console.log('isCollapsible check:', node.data('id'), 'type:', nodeType, 'allowed:', allowed);
+                        return allowed;
+                    },
+                    // Prevent expansion/collapse of non-allowed types
+                    allowNestedEdgeCollapse: false
+                });
+                console.log('Expand-collapse extension v4.1.1 initialized with isCollapsible filter');
+                
+                // Wrap the collapse and expand methods to prevent disallowed nodes (extra safety)
+                if (window.api) {
+                    const originalCollapse = window.api.collapse;
+                    const originalExpand = window.api.expand;
+                    
+                    window.api.collapse = function(nodes) {
+                        // Filter to only allowed node types
+                        const filtered = cy.collection(nodes).filter(function(node) {
+                            const nodeType = node.data('type');
+                            return nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                        });
+                        if (filtered.length > 0) {
+                            return originalCollapse.call(this, filtered);
+                        }
+                    };
+                    
+                    window.api.expand = function(nodes) {
+                        // Filter to only allowed node types
+                        const filtered = cy.collection(nodes).filter(function(node) {
+                            const nodeType = node.data('type');
+                            return nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                        });
+                        if (filtered.length > 0) {
+                            return originalExpand.call(this, filtered);
+                        }
+                    };
+                    
+                    console.log('Wrapped collapse/expand methods for extra safety');
+                }
+            }
+
+            // Make only top-level nodes draggable (graph, node_instance, rack)
+            // Everything else should be non-draggable
+            cy.nodes().forEach(function(node) {
+                const nodeType = node.data('type');
+                if (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') {
+                    // Top-level nodes are draggable
+                    node.grabify();
+                } else {
+                    // Shelves, trays, ports are NOT draggable
+                    node.ungrabify();
+                }
+            });
 
             // Add event handlers for new instance
             addCytoscapeEventHandlers();
@@ -1537,6 +1738,60 @@ function getCytoscapeStyles() {
             }
         },
 
+        // Graph styles - top-level containers for superpods (NO auto-positioning!)
+        {
+            selector: '.graph',
+            style: {
+                'shape': 'round-rectangle',
+                'background-color': '#fff0f0',
+                'background-opacity': 0.3,
+                'border-width': 5,
+                'border-color': '#cc0000',
+                'border-opacity': 1.0,
+                'label': 'data(label)',
+                'text-valign': 'top',
+                'text-halign': 'center',
+                'font-size': 24,
+                'font-weight': 'bold',
+                'color': '#cc0000',
+                'text-background-color': '#ffffff',
+                'text-background-opacity': 0.95,
+                'text-border-width': 2,
+                'text-border-color': '#cc0000',
+                'padding': 100,
+                'min-width': '3000px',
+                'min-height': '700px',
+                'z-index': 0
+            }
+        },
+
+        // Node instance styles - containers for individual nodes/hosts
+        {
+            selector: '.node-instance',
+            style: {
+                'shape': 'round-rectangle',
+                'background-color': '#f0f0ff',
+                'background-opacity': 0.4,
+                'border-width': 3,
+                'border-color': '#0000cc',
+                'border-opacity': 1.0,
+                'label': 'data(label)',
+                'text-valign': 'top',
+                'text-halign': 'center',
+                'font-size': 16,
+                'font-weight': 'bold',
+                'color': '#0000cc',
+                'text-background-color': '#ffffff',
+                'text-background-opacity': 0.9,
+                'text-border-width': 1,
+                'text-border-color': '#0000cc',
+                'padding': 15,
+                'width': 550,
+                'height': 500,
+                'z-index': 1
+            }
+        },
+
         // Rack styles - large containers with dark theme (draggable)
         {
             selector: '.rack',
@@ -1642,6 +1897,23 @@ function getCytoscapeStyles() {
             }
         },
 
+        // Collapsed compound node style
+        {
+            selector: '.cy-expand-collapse-collapsed-node',
+            style: {
+                'background-color': '#e8e8e8',
+                'border-color': '#666',
+                'border-width': 3,
+                'border-style': 'dashed',
+                'label': 'data(label)',
+                'font-size': 14,
+                'font-weight': 'bold',
+                'text-valign': 'center',
+                'text-halign': 'center',
+                'shape': 'roundrectangle'
+            }
+        },
+
         // Selected state - visual highlighting only
         {
             selector: ':selected',
@@ -1677,14 +1949,29 @@ function addCytoscapeEventHandlers() {
         }
     });
 
-    // Double-click handler for inline editing of shelf node details
+    // Double-click handler for inline editing of shelf node details OR collapse/expand compound nodes
     cy.on('dbltap', 'node', function (evt) {
         const node = evt.target;
         const data = node.data();
+        const nodeType = data.type;
 
-        // Only allow editing for shelf nodes
-        if (data.type === 'shelf') {
-            enableShelfEditing(node, evt.renderedPosition || evt.position);
+        // Explicitly block collapse for shelf, tray, and port
+        if (nodeType === 'shelf' || nodeType === 'tray' || nodeType === 'port') {
+            // Allow editing for shelf nodes only
+            if (nodeType === 'shelf') {
+                enableShelfEditing(node, evt.renderedPosition || evt.position);
+            }
+            // Do nothing for tray or port double-clicks
+            return;
+        }
+
+        // Only allow collapse/expand for high-level compound nodes (graph, node_instance, rack)
+        if (node.isParent() && window.api) {
+            // Strict whitelist - only these three types can collapse
+            if (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') {
+                toggleNodeCollapse(node);
+                return;
+            }
         }
     });
 
@@ -2936,6 +3223,113 @@ document.addEventListener('keydown', function (event) {
         createEmptyVisualization();
     }
 });
+
+// Expand/Collapse Functions
+function expandAllNodes() {
+    /**
+     * Expand all high-level compound nodes (graphs, node instances, racks)
+     * Does NOT expand shelves, trays, or ports
+     */
+    if (!cy || !window.api) {
+        console.error('Cytoscape or expand-collapse API not available');
+        return;
+    }
+    
+    // Get all collapsed high-level nodes (graph, node_instance, rack only)
+    const collapsedNodes = cy.nodes(':parent').filter(node => {
+        const nodeType = node.data('type');
+        return (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') &&
+               node.hasClass('cy-expand-collapse-collapsed-node');
+    });
+    
+    if (collapsedNodes.length === 0) {
+        showExportStatus('All high-level nodes are already expanded', 'info');
+        return;
+    }
+    
+    // Expand all collapsed nodes (layout will automatically run per the extension config)
+    collapsedNodes.forEach(node => window.api.expand(node));
+    showExportStatus(`Expanded ${collapsedNodes.length} node(s)`, 'success');
+}
+
+function collapseAllNodes() {
+    /**
+     * Collapse all high-level compound nodes (graphs, node instances, racks)
+     * Does NOT collapse shelves, trays, or ports
+     */
+    if (!cy || !window.api) {
+        console.error('Cytoscape or expand-collapse API not available');
+        return;
+    }
+    
+    // Get all expandable high-level nodes (graph, node_instance, rack only)
+    const expandableNodes = cy.nodes(':parent').filter(node => {
+        const nodeType = node.data('type');
+        return (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') &&
+               !node.hasClass('cy-expand-collapse-collapsed-node');
+    });
+    
+    if (expandableNodes.length === 0) {
+        showExportStatus('All high-level nodes are already collapsed', 'info');
+        return;
+    }
+    
+    // Collapse all expandable nodes (layout will automatically run per the extension config)
+    expandableNodes.forEach(node => window.api.collapse(node));
+    showExportStatus(`Collapsed ${expandableNodes.length} node(s)`, 'success');
+}
+
+function toggleNodeCollapse(node) {
+    /**
+     * Toggle collapse/expand state of a single high-level compound node
+     * Only works for graph, node_instance, and rack types
+     */
+    if (!cy || !window.api) {
+        console.error('Cytoscape or expand-collapse API not available');
+        return;
+    }
+    
+    if (!node.isParent()) {
+        return; // Only compound nodes can be collapsed
+    }
+    
+    // Only allow collapse for high-level nodes
+    const nodeType = node.data('type');
+    
+    // Explicitly block shelf, tray, and port from collapsing
+    if (nodeType === 'shelf' || nodeType === 'tray' || nodeType === 'port') {
+        console.log('Node type', nodeType, 'is explicitly blocked from collapsing');
+        return;
+    }
+    
+    if (nodeType !== 'graph' && nodeType !== 'node_instance' && nodeType !== 'rack') {
+        console.log('Node type', nodeType, 'is not collapsible');
+        return;
+    }
+    
+    // Check if node is currently collapsed
+    if (node.hasClass('cy-expand-collapse-collapsed-node')) {
+        window.api.expand(node);
+        console.log('Expanded node:', node.data('id'));
+    } else {
+        window.api.collapse(node);
+        console.log('Collapsed node:', node.data('id'));
+    }
+    // Layout will automatically run per the extension config
+}
+
+// Add double-click handler for compound nodes (in addCytoscapeEventHandlers)
+function addExpandCollapseHandlers() {
+    if (!cy) return;
+    
+    // Double-click to toggle collapse/expand
+    cy.on('dblclick', 'node:parent', function(evt) {
+        const node = evt.target;
+        toggleNodeCollapse(node);
+    });
+    
+    console.log('Expand-collapse double-click handler added');
+}
 
 // Initialize node configurations when the page loads
 initializeNodeConfigs();

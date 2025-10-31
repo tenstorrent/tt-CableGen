@@ -6,6 +6,7 @@
     <title>Network Cabling Visualizer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-expand-collapse@4.1.1/cytoscape-expand-collapse.js"></script>
     <style>
         /* Prevent browser theming from affecting text readability */
         * {
@@ -377,18 +378,18 @@
 
     <div class="container">
         <div class="sidebar">
-            <h3>Upload CSV File</h3>
+            <h3>Upload Cabling File</h3>
 
             <div class="upload-section" id="uploadSection">
-                <div>📁 Drag & drop your CSV file here</div>
+                <div>📁 Drag & drop your CSV or textproto file here</div>
                 <div style="margin: 10px 0; color: #666;">or</div>
 
                 <div class="file-input">
-                    <input type="file" id="csvFile" accept=".csv" />
+                    <input type="file" id="csvFile" accept=".csv,.textproto" />
                 </div>
 
                 <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
-                    <strong>Accepts:</strong> CSV files with network cabling connection data
+                    <strong>Accepts:</strong> CSV files with cabling data or textproto cabling descriptors
                 </p>
 
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
@@ -408,20 +409,50 @@
                 <div class="success" id="success"></div>
             </div>
 
-            <div
+            <div id="connectionLegend"
                 style="margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                 <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Connection Types Legend</h4>
-                <div style="display: flex; align-items: center; margin: 6px 0;">
-                    <div
-                        style="width: 20px; height: 3px; background-color: #4CAF50; margin-right: 10px; border-radius: 2px;">
+                <!-- CSV-based legend (default) -->
+                <div id="csvLegend">
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #4CAF50; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Intra-node connections (same node)</span>
                     </div>
-                    <span style="font-size: 13px; color: #333;">Intra-node connections (same node)</span>
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #2196F3; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Inter-node connections (different nodes)</span>
+                    </div>
                 </div>
-                <div style="display: flex; align-items: center; margin: 6px 0;">
-                    <div
-                        style="width: 20px; height: 3px; background-color: #2196F3; margin-right: 10px; border-radius: 2px;">
+                <!-- Descriptor-based legend (hidden by default) -->
+                <div id="descriptorLegend" style="display: none;">
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #FF6B6B; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Cluster level (inter-superpod)</span>
                     </div>
-                    <span style="font-size: 13px; color: #333;">Inter-node connections (different nodes)</span>
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #4ECDC4; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Superpod level (intra-superpod)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #95E1D3; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Deeper hierarchy level 1</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div
+                            style="width: 20px; height: 3px; background-color: #FFA07A; margin-right: 10px; border-radius: 2px;">
+                        </div>
+                        <span style="font-size: 13px; color: #333;">Deeper hierarchy level 2</span>
+                    </div>
                 </div>
             </div>
 
@@ -432,6 +463,23 @@
                 </button>
                 <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
                     Recalculate and reset all node positions based on rack/shelf hierarchy
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Compound Node Controls</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <button id="expandAllBtn" onclick="expandAllNodes()"
+                        style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                        ➕ Expand All
+                    </button>
+                    <button id="collapseAllBtn" onclick="collapseAllNodes()"
+                        style="padding: 10px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                        ➖ Collapse All
+                    </button>
+                </div>
+                <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                    Double-click graphs/nodes/racks to collapse (shelves/trays always visible)
                 </div>
             </div>
 
@@ -677,8 +725,9 @@
 
             <div class="info-panel">
                 <strong>Quick Start:</strong><br>
-                • Upload CSV to load existing topology OR click "Empty Canvas" to build from scratch<br>
+                • Upload CSV or textproto to load existing topology OR click "Empty Canvas" to build from scratch<br>
                 • Pan: Click and drag | Zoom: Mouse wheel<br>
+                • Double-click graphs/nodes/racks to collapse (device details always visible)<br>
                 • Click elements to view details<br><br>
 
                 <strong>Editing:</strong><br>
@@ -699,7 +748,7 @@
         <div id="cy">
             <div class="loading-overlay" id="cyLoading">
                 <div>🚀 Ready to visualize your network cabling!</div>
-                <div style="font-size: 14px; color: #999; margin-top: 10px;">Upload a CSV file to get started</div>
+                <div style="font-size: 14px; color: #999; margin-top: 10px;">Upload a CSV or textproto file to get started</div>
             </div>
         </div>
 
