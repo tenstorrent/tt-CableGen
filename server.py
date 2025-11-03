@@ -277,9 +277,9 @@ def generate_cabling_guide():
                     # Run the cabling generator with proper command-line flags
                     cmd = [
                         generator_path,
-                        "--cluster", os.path.abspath(cabling_path),      # -c, --cluster
-                        "--deployment", os.path.abspath(deployment_path), # -d, --deployment  
-                        "--output", input_prefix                          # -o, --output
+                        "-c", os.path.abspath(cabling_path),      # -c, --cluster
+                        "-d", os.path.abspath(deployment_path),  # -d, --deployment  
+                        "-o", input_prefix                          # -o, --output
                     ]
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
                     print(f"Working directory: {temp_output_dir}")  # Debug logging
