@@ -435,28 +435,19 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     
     # Build host_info dict from connections
     host_info = {}
+    def extract_and_validate_host(connection, role, host_info):
+        host = connection[role].get("hostname", "")
+        if host:
+            host = host.strip()
+        if host and host not in host_info:
+            node_type = connection[role].get("node_type")
+            if not node_type:
+                raise ValueError(f"Missing node_type for {role} host '{host}' in connection")
+            host_info[host] = node_type
+
     for connection in connections:
-        source_host = connection["source"]["hostname"]
-        target_host = connection["target"]["hostname"]
-        
-        # Normalize hostnames (strip whitespace)
-        if source_host:
-            source_host = source_host.strip()
-        if target_host:
-            target_host = target_host.strip()
-        
-        # Track unique hosts
-        if source_host and source_host not in host_info:
-            source_node_type = connection["source"].get("node_type")
-            if not source_node_type:
-                raise ValueError(f"Missing node_type for source host '{source_host}' in connection")
-            host_info[source_host] = source_node_type
-            
-        if target_host and target_host not in host_info:
-            target_node_type = connection["target"].get("node_type")
-            if not target_node_type:
-                raise ValueError(f"Missing node_type for target host '{target_host}' in connection")
-            host_info[target_host] = target_node_type
+        extract_and_validate_host(connection, "source", host_info)
+        extract_and_validate_host(connection, "target", host_info)
     
     # Also extract standalone nodes (shelf nodes without connections)
     deployment_parser = DeploymentDataParser(cytoscape_data)
