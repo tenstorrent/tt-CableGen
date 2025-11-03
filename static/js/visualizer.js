@@ -484,6 +484,10 @@ function createConnection(sourceId, targetId) {
     }
 
     const edgeId = `edge_${sourceId}_${targetId}_${Date.now()}`;
+    // Get hostname information from the ports' parent hierarchy
+    const sourceHostname = sourceNode.data('hostname') || getParentAtLevel(sourceNode, 2)?.data('hostname') || '';
+    const targetHostname = targetNode.data('hostname') || getParentAtLevel(targetNode, 2)?.data('hostname') || '';
+
     const connectionNumber = getNextConnectionNumber();
     const newEdge = {
         data: {
@@ -494,7 +498,9 @@ function createConnection(sourceId, targetId) {
             cable_length: DEFAULT_CABLE_CONFIG.length,
             label: `#${connectionNumber}`,
             connection_number: connectionNumber,
-            color: connectionColor
+            color: connectionColor,
+            source_hostname: sourceHostname,
+            destination_hostname: targetHostname
         }
     };
 
@@ -597,7 +603,7 @@ function resetLayout() {
     // Show status message
     showExportStatus('Resetting layout...', 'info');
 
-    // Sort racks by rack number
+    // Sort racks by rack number (right to left - descending)
     const sortedRacks = [];
     racks.forEach(function (rack) {
         sortedRacks.push({
@@ -606,7 +612,7 @@ function resetLayout() {
         });
     });
     sortedRacks.sort(function (a, b) {
-        return a.rack_num - b.rack_num;
+        return b.rack_num - a.rack_num; // Descending order for right to left
     });
 
     // Dynamically calculate layout constants based on actual node sizes
@@ -1056,6 +1062,9 @@ function addNewNode() {
         const nodeDescription = hasHostname ? `"${hostname}"` : `"${nodeLabel}"`;
         const locationInfo = hasHostname && hasLocation ? ` (with location: ${buildLocationLabel(hall, aisle, rack, shelfU)})` : '';
         alert(`Successfully added ${nodeType} node ${nodeDescription}${locationInfo} with ${config.tray_count} trays.`);
+
+        // Update node filter dropdown to include the new node
+        populateNodeFilterDropdown();
 
     } catch (error) {
         console.error('Error adding new node:', error);
@@ -2153,10 +2162,48 @@ window.saveShelfEdit = function (nodeId) {
         node.descendants().forEach(function (child) {
             child.data('hostname', newHostname);
         });
+        
+        // CRITICAL FIX: Update edge data for all connections from this shelf's ports
+        // This ensures exports use the updated hostname instead of stale edge data
+        node.descendants('[type="port"]').forEach(function (portNode) {
+            // Update all edges connected to this port
+            portNode.connectedEdges().forEach(function (edge) {
+                const sourceId = edge.data('source');
+                const targetId = edge.data('target');
+                
+                // Update source_hostname if this port is the source
+                if (sourceId === portNode.id()) {
+                    edge.data('source_hostname', newHostname);
+                }
+                
+                // Update destination_hostname if this port is the target
+                if (targetId === portNode.id()) {
+                    edge.data('destination_hostname', newHostname);
+                }
+            });
+        });
     }
-    if (hallChanged) node.data('hall', newHall);
-    if (aisleChanged) node.data('aisle', newAisle);
-    if (rackChanged) node.data('rack_num', newRack);
+    if (hallChanged) {
+        node.data('hall', newHall);
+        // Update hall for all child nodes
+        node.descendants().forEach(function (child) {
+            child.data('hall', newHall);
+        });
+    }
+    if (aisleChanged) {
+        node.data('aisle', newAisle);
+        // Update aisle for all child nodes
+        node.descendants().forEach(function (child) {
+            child.data('aisle', newAisle);
+        });
+    }
+    if (rackChanged) {
+        node.data('rack_num', newRack);
+        // Update rack_num for all child nodes
+        node.descendants().forEach(function (child) {
+            child.data('rack_num', newRack);
+        });
+    }
     if (shelfUChanged) {
         node.data('shelf_u', newShelfU);
         // Update shelf_u for all child nodes (trays and ports)
@@ -2184,6 +2231,9 @@ window.saveShelfEdit = function (nodeId) {
         newLabel = node.data('label'); // Keep existing label
     }
     node.data('label', newLabel);
+
+    // Update node filter dropdown since label/hostname may have changed
+    populateNodeFilterDropdown();
 
     // Handle rack change - move shelf to new rack if rack number changed
     const parent = node.parent();

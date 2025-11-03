@@ -230,16 +230,13 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                 # Get hostname from multiple sources (priority order):
                 # 1. Edge data (source_hostname/destination_hostname from 20-column format)
                 # 2. Node data (from port/tray/shelf hierarchy)
-                # 3. ID pattern matching (fallback)
                 source_hostname = (
                     edge_data.get("source_hostname")
                     or self._get_hostname_from_port(source_id)
-                    or source_info.get("hostname")
                 )
                 target_hostname = (
                     edge_data.get("destination_hostname")
                     or self._get_hostname_from_port(target_id)
-                    or target_info.get("hostname")
                 )
 
                 # Get node_type from the shelf nodes
@@ -300,31 +297,31 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
         return None
 
     def _get_node_type_from_port(self, port_id: str) -> str:
-        """Get node_type from a port by traversing up to the shelf node"""
-        # Find the port node in the cytoscape data
+        """Get node_type from a port by traversing up to the shelf node (always 2 levels up: Port -> Tray -> Shelf)"""
+        # Find the port node
         for element in self.data.get("elements", []):
             if element.get("data", {}).get("id") == port_id:
-                # Get the parent shelf node
-                parent_id = element.get("data", {}).get("parent")
-                if parent_id:
-                    # Find the parent node
-                    for parent_element in self.data.get("elements", []):
-                        if parent_element.get("data", {}).get("id") == parent_id:
-                            # Check if this is a shelf node
-                            if parent_element.get("data", {}).get("type") == "shelf":
-                                node_type = parent_element.get("data", {}).get("shelf_node_type", "N300_LB")
-                                return node_type.upper()  # Ensure uppercase
-                            # If not shelf, traverse up one more level
-                            grandparent_id = parent_element.get("data", {}).get("parent")
-                            if grandparent_id:
-                                for grandparent_element in self.data.get("elements", []):
-                                    if grandparent_element.get("data", {}).get("id") == grandparent_id:
-                                        if grandparent_element.get("data", {}).get("type") == "shelf":
-                                            node_type = grandparent_element.get("data", {}).get(
-                                                "shelf_node_type", "N300_LB"
-                                            )
-                                            return node_type.upper()  # Ensure uppercase
-        return "N300_LB"  # Default fallback
+                # Get parent (tray)
+                tray_id = element.get("data", {}).get("parent")
+                if not tray_id:
+                    raise ValueError(f"Port '{port_id}' has no parent (expected tray)")
+                
+                # Find tray and get its parent (shelf)
+                for tray_element in self.data.get("elements", []):
+                    if tray_element.get("data", {}).get("id") == tray_id:
+                        shelf_id = tray_element.get("data", {}).get("parent")
+                        if not shelf_id:
+                            raise ValueError(f"Tray '{tray_id}' has no parent (expected shelf)")
+                        
+                        # Find shelf and get node_type
+                        for shelf_element in self.data.get("elements", []):
+                            if shelf_element.get("data", {}).get("id") == shelf_id:
+                                node_type = shelf_element.get("data", {}).get("shelf_node_type")
+                                if not node_type:
+                                    raise ValueError(f"Shelf '{shelf_id}' is missing shelf_node_type")
+                                return node_type.upper()
+        
+        raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
 
 
 class DeploymentDataParser:
@@ -354,6 +351,7 @@ class DeploymentDataParser:
             return None
 
         # Extract hostname and location information
+        # Only use hostname from data - never fall back to node_id (which is immutable)
         hostname = node_data.get("hostname")
         hall = node_data.get("hall")
         aisle = node_data.get("aisle")
@@ -414,13 +412,85 @@ class DeploymentDataParser:
         return hosts
 
 
+def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, str]]:
+    """
+    Extract a consistent, sorted list of (hostname, node_type) from the visualization.
+    
+    This function extracts hosts from:
+    1. Connections (connected shelf nodes)
+    2. Standalone shelf nodes (nodes without connections)
+    
+    This function is used by BOTH CablingDescriptor and DeploymentDescriptor exports
+    to ensure they have the exact same host list in the exact same order.
+    
+    Returns:
+        List of (hostname, node_type) tuples, sorted alphabetically by hostname
+        
+    The index in this list corresponds to:
+    - CablingDescriptor: child_mappings[hostname].host_id = i
+    - DeploymentDescriptor: deployment_descriptor.hosts[i]
+    """
+    parser = VisualizerCytoscapeDataParser(cytoscape_data)
+    connections = parser.extract_connections()
+    
+    # Build host_info dict from connections
+    host_info = {}
+    for connection in connections:
+        source_host = connection["source"]["hostname"]
+        target_host = connection["target"]["hostname"]
+        
+        # Normalize hostnames (strip whitespace)
+        if source_host:
+            source_host = source_host.strip()
+        if target_host:
+            target_host = target_host.strip()
+        
+        # Track unique hosts
+        if source_host and source_host not in host_info:
+            source_node_type = connection["source"].get("node_type")
+            if not source_node_type:
+                raise ValueError(f"Missing node_type for source host '{source_host}' in connection")
+            host_info[source_host] = source_node_type
+            
+        if target_host and target_host not in host_info:
+            target_node_type = connection["target"].get("node_type")
+            if not target_node_type:
+                raise ValueError(f"Missing node_type for target host '{target_host}' in connection")
+            host_info[target_host] = target_node_type
+    
+    # Also extract standalone nodes (shelf nodes without connections)
+    deployment_parser = DeploymentDataParser(cytoscape_data)
+    all_shelf_nodes = deployment_parser.extract_hosts()
+    
+    for shelf_node in all_shelf_nodes:
+        hostname = shelf_node.get("hostname", "").strip()
+        node_type = shelf_node.get("node_type")
+        
+        # Validate node_type is present
+        if not node_type:
+            raise ValueError(f"Missing node_type for standalone host '{hostname}'")
+        
+        # Add to host_info if not already present (connections take precedence)
+        if hostname and hostname not in host_info:
+            host_info[hostname] = node_type
+    
+    # Return sorted list of (hostname, node_type) tuples
+    sorted_hosts = sorted(host_info.items())
+    
+    return sorted_hosts
+
+
 def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_prefix: str = "cabling_descriptor") -> str:
     """Export CablingDescriptor from Cytoscape data"""
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
 
+    # Get connections for building the topology
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
+
+    # Get the common sorted host list (shared with DeploymentDescriptor)
+    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
 
     # Create ClusterDescriptor with full structure
     cluster_desc = cluster_config_pb2.ClusterDescriptor()
@@ -428,27 +498,12 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     # Create graph template
     template_name = "extracted_topology"
     graph_template = cluster_config_pb2.GraphTemplate()
-
-    # Get unique hosts and their node types from connections
-    host_info = {}
-    for connection in connections:
-        source_host = connection["source"]["hostname"]
-        target_host = connection["target"]["hostname"]
-
-        # Get node types from the connection data
-        if source_host not in host_info:
-            host_info[source_host] = connection["source"].get("node_type", "N300_LB")
-        if target_host not in host_info:
-            host_info[target_host] = connection["target"].get("node_type", "N300_LB")
-
-    # Add child instances (one per host)
-    host_name_map = {}  # Map actual hostname to host name (host_0, host_1, etc.)
-    for i, (host, node_type) in enumerate(sorted(host_info.items())):
-        host_name = f"host_{i}"
-        host_name_map[host] = host_name
-
+    
+    # Add child instances (one per host) using ACTUAL HOSTNAMES as child names
+    # This avoids confusion and makes connections clearly map to the right hosts
+    for i, (hostname, node_type) in enumerate(sorted_hosts):
         child = graph_template.children.add()
-        child.name = host_name
+        child.name = hostname  # Use actual hostname instead of generic "host_i"
         child.node_ref.node_descriptor = node_type.upper()  # Ensure node_descriptor is capitalized
 
     # Add connections to graph template
@@ -456,15 +511,13 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     for connection in connections:
         conn = port_connections.connections.add()
 
-        # Source port - use mapped host name
-        source_host_name = host_name_map[connection["source"]["hostname"]]
-        conn.port_a.path.append(source_host_name)
+        # Source port - use actual hostname directly
+        conn.port_a.path.append(connection["source"]["hostname"])
         conn.port_a.tray_id = connection["source"]["tray_id"]
         conn.port_a.port_id = connection["source"]["port_id"]
 
-        # Target port - use mapped host name
-        target_host_name = host_name_map[connection["target"]["hostname"]]
-        conn.port_b.path.append(target_host_name)
+        # Target port - use actual hostname directly
+        conn.port_b.path.append(connection["target"]["hostname"])
         conn.port_b.tray_id = connection["target"]["tray_id"]
         conn.port_b.port_id = connection["target"]["port_id"]
 
@@ -475,11 +528,11 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     root_instance = cluster_config_pb2.GraphInstance()
     root_instance.template_name = template_name
 
-    # Map each child to its host_id
-    for i, (host, node_type) in enumerate(sorted(host_info.items())):
+    # Map each child (by actual hostname) to its host_id (using the same sorted host list)
+    for i, (hostname, node_type) in enumerate(sorted_hosts):
         child_mapping = cluster_config_pb2.ChildMapping()
         child_mapping.host_id = i
-        root_instance.child_mappings[f"host_{i}"].CopyFrom(child_mapping)
+        root_instance.child_mappings[hostname].CopyFrom(child_mapping)  # Use actual hostname as key
 
     cluster_desc.root_instance.CopyFrom(root_instance)
 
@@ -493,37 +546,53 @@ def export_deployment_descriptor_for_visualizer(
     """Export DeploymentDescriptor from Cytoscape data
 
     Supports both 8-column format (hostname only) and 20-column format (hostname + location)
+    
+    IMPORTANT: This uses the SAME host list in the SAME order as the CablingDescriptor
+    because the cabling generator uses host_id indices to map between them.
     """
     if deployment_pb2 is None:
         raise ImportError("deployment_pb2 not available")
 
-    parser = DeploymentDataParser(cytoscape_data)
-    hosts = parser.extract_hosts()
-
-    # Create DeploymentDescriptor
+    # Get the common sorted host list (shared with CablingDescriptor)
+    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    
+    # Get detailed deployment information for each host
+    deployment_parser = DeploymentDataParser(cytoscape_data)
+    all_hosts = deployment_parser.extract_hosts()
+    
+    # Create a map of hostname -> deployment info
+    host_deployment_info = {}
+    for host_data in all_hosts:
+        hostname = host_data.get("hostname", "").strip()
+        if hostname:
+            host_deployment_info[hostname] = host_data
+    
+    # Create DeploymentDescriptor with hosts in the SAME order as CablingDescriptor
     deployment_descriptor = deployment_pb2.DeploymentDescriptor()
-
-    for host in hosts:
+    
+    # Iterate in the exact same order (using the common sorted host list)
+    for i, (hostname, node_type) in enumerate(sorted_hosts):
         host_proto = deployment_descriptor.hosts.add()
-
-        # Set hostname if available (8-column or 20-column format)
-        if "hostname" in host and host["hostname"]:
-            host_proto.host = host["hostname"]
-
+        
+        # Set hostname
+        host_proto.host = hostname
+        
+        # Get deployment info if available
+        deployment_info = host_deployment_info.get(hostname, {})
+        
         # Set location information if available (20-column format)
-        # These fields can coexist with hostname in the protobuf
-        if "hall" in host and host["hall"]:
-            host_proto.hall = host["hall"]
-        if "aisle" in host and host["aisle"]:
-            host_proto.aisle = host["aisle"]
-        if "rack_num" in host:
-            host_proto.rack = host["rack_num"]  # Use 'rack' field in protobuf
-        if "shelf_u" in host:
-            host_proto.shelf_u = host["shelf_u"]
-
-        # Set node type if available
-        if host.get("node_type"):
-            host_proto.node_type = host["node_type"]
+        if "hall" in deployment_info and deployment_info["hall"]:
+            host_proto.hall = deployment_info["hall"]
+        if "aisle" in deployment_info and deployment_info["aisle"]:
+            host_proto.aisle = deployment_info["aisle"]
+        if "rack_num" in deployment_info:
+            host_proto.rack = deployment_info["rack_num"]
+        if "shelf_u" in deployment_info:
+            host_proto.shelf_u = deployment_info["shelf_u"]
+        
+        # Set node type (from the common host list)
+        if node_type:
+            host_proto.node_type = node_type
 
     # Return the content directly instead of a file path
     return text_format.MessageToString(deployment_descriptor)
