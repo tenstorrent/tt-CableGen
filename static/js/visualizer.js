@@ -2106,6 +2106,19 @@ function enableShelfEditing(node, position) {
     }, 100);
 }
 
+/**
+ * Helper function to update a node and all its descendants with a new property value
+ * @param {Object} node - Cytoscape node
+ * @param {string} property - Property name to update
+ * @param {*} value - New value for the property
+ */
+function updateNodeAndDescendants(node, property, value) {
+    node.data(property, value);
+    node.descendants().forEach(function (child) {
+        child.data(property, value);
+    });
+}
+
 // Make functions globally accessible for onclick handlers
 window.saveShelfEdit = function (nodeId) {
     const hostnameInput = document.getElementById('hostnameEditInput');
@@ -2157,11 +2170,7 @@ window.saveShelfEdit = function (nodeId) {
 
     // Update the node data only with changed values
     if (hostnameChanged) {
-        node.data('hostname', newHostname);
-        // Update hostname for all child nodes (trays and ports)
-        node.descendants().forEach(function (child) {
-            child.data('hostname', newHostname);
-        });
+        updateNodeAndDescendants(node, 'hostname', newHostname);
         
         // CRITICAL FIX: Update edge data for all connections from this shelf's ports
         // This ensures exports use the updated hostname instead of stale edge data
@@ -2184,32 +2193,16 @@ window.saveShelfEdit = function (nodeId) {
         });
     }
     if (hallChanged) {
-        node.data('hall', newHall);
-        // Update hall for all child nodes
-        node.descendants().forEach(function (child) {
-            child.data('hall', newHall);
-        });
+        updateNodeAndDescendants(node, 'hall', newHall);
     }
     if (aisleChanged) {
-        node.data('aisle', newAisle);
-        // Update aisle for all child nodes
-        node.descendants().forEach(function (child) {
-            child.data('aisle', newAisle);
-        });
+        updateNodeAndDescendants(node, 'aisle', newAisle);
     }
     if (rackChanged) {
-        node.data('rack_num', newRack);
-        // Update rack_num for all child nodes
-        node.descendants().forEach(function (child) {
-            child.data('rack_num', newRack);
-        });
+        updateNodeAndDescendants(node, 'rack_num', newRack);
     }
     if (shelfUChanged) {
-        node.data('shelf_u', newShelfU);
-        // Update shelf_u for all child nodes (trays and ports)
-        node.descendants().forEach(function (child) {
-            child.data('shelf_u', newShelfU);
-        });
+        updateNodeAndDescendants(node, 'shelf_u', newShelfU);
     }
 
     // Update the node label - use the current state of the node after updates
