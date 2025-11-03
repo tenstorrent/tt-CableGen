@@ -903,8 +903,8 @@ class NetworkCablingCytoscapeVisualizer:
 
     def _create_rack_hierarchy(self):
         """Create full hierarchy nodes (racks -> shelves -> trays -> ports)"""
-        # Get sorted rack numbers for consistent ordering
-        rack_numbers = sorted(self.rack_units.keys())
+        # Get sorted rack numbers for consistent ordering (right to left)
+        rack_numbers = sorted(self.rack_units.keys(), reverse=True)
 
         # Calculate rack positions using template
         rack_positions = []
@@ -945,8 +945,9 @@ class NetworkCablingCytoscapeVisualizer:
                 location_info = self.node_locations.get(shelf_key, {})
                 hostname = location_info.get("hostname", "")
 
-                # Create shelf node with hostname
-                shelf_id = self.generate_node_id("shelf", rack_num, shelf_u)
+                # Create shelf node with hostname as ID (hostname is primary identifier)
+                # Use hostname for shelf_id, not rack_shelf format
+                shelf_id = self.generate_node_id("shelf", hostname) if hostname else self.generate_node_id("shelf", rack_num, shelf_u)
                 shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
                 shelf_node = self.create_node_from_template(
                     "shelf",
@@ -1086,32 +1087,20 @@ class NetworkCablingCytoscapeVisualizer:
 
     def _generate_port_ids(self, connection):
         """Generate source and destination port IDs based on CSV format"""
-        if self.csv_format == "hierarchical":
-            # Hierarchical format: rack/shelf/tray/port hierarchy
-            src_shelf_label = f"{connection['source']['rack_num']}_U{connection['source']['shelf_u']}"
-            dst_shelf_label = f"{connection['destination']['rack_num']}_U{connection['destination']['shelf_u']}"
-            src_port_id = self.generate_node_id("port", src_shelf_label, connection["source"]["tray"], connection["source"]["port"])
-            dst_port_id = self.generate_node_id("port", dst_shelf_label, connection["destination"]["tray"], connection["destination"]["port"])
-        else:
-            # Hostname-based or minimal format: hostname/tray/port hierarchy
-            src_hostname = connection["source"].get("hostname", "unknown")
-            dst_hostname = connection["destination"].get("hostname", "unknown")
-            src_port_id = self.generate_node_id("port", src_hostname, connection["source"]["tray"], connection["source"]["port"])
-            dst_port_id = self.generate_node_id("port", dst_hostname, connection["destination"]["tray"], connection["destination"]["port"])
+        # ALWAYS use hostname for node IDs, regardless of format
+        # The rack/shelf columns are only for location metadata
+        src_hostname = connection["source"].get("hostname", "unknown")
+        dst_hostname = connection["destination"].get("hostname", "unknown")
+        src_port_id = self.generate_node_id("port", src_hostname, connection["source"]["tray"], connection["source"]["port"])
+        dst_port_id = self.generate_node_id("port", dst_hostname, connection["destination"]["tray"], connection["destination"]["port"])
         
         return src_port_id, dst_port_id
 
     def _get_connection_color(self, connection):
         """Determine connection color based on whether ports are on the same node"""
-        if self.csv_format == "hierarchical":
-            source_node_id = f"{connection['source']['rack_num']}_{connection['source']['shelf_u']}"
-            dest_node_id = f"{connection['destination']['rack_num']}_{connection['destination']['shelf_u']}"
-        elif self.csv_format in ["hostname_based", "minimal"]:
-            source_node_id = connection["source"].get("hostname", "unknown")
-            dest_node_id = connection["destination"].get("hostname", "unknown")
-        else:
-            source_node_id = "unknown_source"
-            dest_node_id = "unknown_dest"
+        # Always use hostname to determine same-node connections
+        source_node_id = connection["source"].get("hostname", "unknown")
+        dest_node_id = connection["destination"].get("hostname", "unknown")
 
         return self.intra_node_color if source_node_id == dest_node_id else self.inter_node_color
 
@@ -1147,29 +1136,17 @@ class NetworkCablingCytoscapeVisualizer:
 
     def generate_visualization_data(self):
         """Generate cytoscape.js visualization data structure (library method)"""
-
-        # Generate cytoscape data
         cytoscape_data = self.generate_cytoscape_data()
-
-        # Add metadata about the shelf unit type and configuration
-        cytoscape_data["metadata"] = {
-            "csv_format": self.csv_format,
-            "shelf_unit_type": self.shelf_unit_type.title() if self.shelf_unit_type else "Auto-detected",
-            "configuration": self.current_config,
-            "generation_info": {
-                "nodes": len(self.nodes),
-                "edges": len(self.edges),
-                "template_types": list(self.element_templates.keys()),
+        
+        return {
+            "nodes": cytoscape_data["elements"],
+            "edges": [],
+            "metadata": {
+                "total_connections": len(self.connections),
+                "total_nodes": len([n for n in cytoscape_data["elements"] if "source" not in n.get("data", {})]),
             },
+            "elements": cytoscape_data["elements"],
         }
-
-        # Add mixed node types info for hierarchical format
-        if self.csv_format == "hierarchical" and self.mixed_node_types:
-            cytoscape_data["metadata"]["mixed_node_types"] = self.mixed_node_types
-        elif self.csv_format in ["hostname_based", "minimal"] and self.shelf_units:
-            cytoscape_data["metadata"]["shelf_node_types"] = self.shelf_units
-
-        return cytoscape_data
 
     def create_diagram(self, output_file="templated_demo_data.json"):
         """Create network cabling topology diagram using cytoscape.js with templates"""

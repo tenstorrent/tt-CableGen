@@ -8,6 +8,8 @@ import os
 import sys
 import tempfile
 import argparse
+import time
+import threading
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response
 import traceback
 
@@ -74,8 +76,9 @@ def upload_csv():
         if not file.filename.lower().endswith(".csv"):
             return jsonify({"success": False, "error": "File must be a CSV file"})
 
-        # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".csv", delete=False) as tmp_file:
+        # Save uploaded file to temporary location with unique prefix
+        prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".csv", delete=False, prefix=prefix) as tmp_file:
             file.save(tmp_file.name)
             tmp_csv_path = tmp_file.name
 
@@ -191,13 +194,14 @@ def generate_cabling_guide():
         input_prefix = data["input_prefix"]
         generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
 
-        # Generate temporary files for descriptors
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False) as cabling_file:
+        # Generate temporary files for descriptors with unique prefixes
+        prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
             cabling_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False) as deployment_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as deployment_file:
             deployment_content = export_deployment_descriptor_for_visualizer(cytoscape_data)
             deployment_file.write(deployment_content)
             deployment_path = deployment_file.name
@@ -222,14 +226,20 @@ def generate_cabling_guide():
                     500,
                 )
 
-            # Create temporary output directory
-            with tempfile.TemporaryDirectory() as temp_output_dir:
+            # Create temporary output directory with unique prefix
+            prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
+            with tempfile.TemporaryDirectory(prefix=prefix) as temp_output_dir:
                 # Don't change directory - let the C++ tool create out/scaleout in temp_output_dir
                 # We'll pass the temp_output_dir as working directory to subprocess
                 
                 try:
-                    # Run the cabling generator with proper long-form arguments (equals-separated format)
-                    cmd = [generator_path, f"--cluster={cabling_path}", f"--deployment={deployment_path}", f"--output={input_prefix}"]
+                    # Run the cabling generator with proper command-line flags
+                    cmd = [
+                        generator_path,
+                        "-c", os.path.abspath(cabling_path),      # -c, --cluster
+                        "-d", os.path.abspath(deployment_path),  # -d, --deployment  
+                        "-o", input_prefix                          # -o, --output
+                    ]
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
                     print(f"Working directory: {temp_output_dir}")  # Debug logging
 
@@ -384,8 +394,10 @@ def main():
         print("Debug mode: ENABLED")
     print("Press Ctrl+C to stop the server")
 
-    # Run Flask development server
-    app.run(debug=args.debug, host=args.host, port=args.port)
+    # Run Flask development server with explicit threading configuration
+    # Note: Flask development server uses threading by default, but we make it explicit
+    # for multi-user safety. Each request runs in its own thread with isolated state.
+    app.run(debug=args.debug, host=args.host, port=args.port, threaded=True)
 
 
 if __name__ == "__main__":
