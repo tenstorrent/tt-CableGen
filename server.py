@@ -92,7 +92,7 @@ def upload_csv():
 
             if is_textproto:
                 # Parse cabling descriptor textproto
-                visualizer.csv_format = "descriptor"  # Set format before parsing
+                visualizer.file_format = "descriptor"  # Set format before parsing
                 
                 if not visualizer.parse_cabling_descriptor(tmp_file_path):
                     return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
@@ -106,7 +106,9 @@ def upload_csv():
                     if node_types:
                         first_node_type = list(node_types)[0]
                         config = visualizer._node_descriptor_to_config(first_node_type)
-                        visualizer.shelf_unit_type = first_node_type.lower()
+                        # Use the mapping from _node_descriptor_to_shelf_type to get correct shelf unit type
+                        # E.g., "N300_LB_DEFAULT" → "n300_lb"
+                        visualizer.shelf_unit_type = visualizer._node_descriptor_to_shelf_type(first_node_type)
                         visualizer.current_config = config
                     else:
                         visualizer.shelf_unit_type = "wh_galaxy"
@@ -115,7 +117,8 @@ def upload_csv():
                     # Initialize templates for descriptor format
                     visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
                     
-                    connection_count = len(visualizer.graph_hierarchy)
+                    # Count connections from descriptor
+                    connection_count = len(visualizer.descriptor_connections) if visualizer.descriptor_connections else 0
                 else:
                     connection_count = 0
                     

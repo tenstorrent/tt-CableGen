@@ -29,6 +29,54 @@ let selectedConnection = null;
 let isEdgeCreationMode = false;
 let sourcePort = null;
 
+// Visualization Mode Management
+let visualizationMode = 'location'; // 'location' or 'hierarchy'
+
+/**
+ * Set the visualization mode and update UI accordingly
+ * @param {string} mode - 'location' or 'hierarchy'
+ */
+function setVisualizationMode(mode) {
+    visualizationMode = mode;
+    updateModeIndicator();
+}
+
+/**
+ * Get the current visualization mode
+ * @returns {string} Current mode ('location' or 'hierarchy')
+ */
+function getVisualizationMode() {
+    return visualizationMode;
+}
+
+/**
+ * Update the mode indicator in the UI
+ */
+function updateModeIndicator() {
+    const indicator = document.getElementById('visualizationModeIndicator');
+    const currentModeDiv = document.getElementById('currentMode');
+    const descriptionDiv = document.getElementById('modeDescription');
+
+    if (!indicator || !currentModeDiv || !descriptionDiv) return;
+
+    // Show the indicator
+    indicator.style.display = 'block';
+
+    if (visualizationMode === 'hierarchy') {
+        indicator.style.background = '#fff3cd';
+        indicator.style.borderColor = '#ffc107';
+        currentModeDiv.innerHTML = '<strong>🌳 Hierarchy Mode</strong> (TextProto)';
+        currentModeDiv.style.color = '#856404';
+        descriptionDiv.textContent = 'Visualizing logical network topology from descriptor file. Location/rack information is not used.';
+    } else {
+        indicator.style.background = '#e7f3ff';
+        indicator.style.borderColor = '#2196F3';
+        currentModeDiv.innerHTML = '<strong>📍 Location Mode</strong> (CSV)';
+        currentModeDiv.style.color = '#1976D2';
+        descriptionDiv.textContent = 'Visualizing physical network layout based on rack locations and shelf positions.';
+    }
+}
+
 // Node configurations - now loaded from server-side to ensure consistency
 // This will be populated from window.SERVER_NODE_CONFIGS injected by the server
 let NODE_CONFIGS = {};
@@ -265,6 +313,44 @@ function getNodeDisplayLabel(nodeData) {
     return nodeData.id;
 }
 
+/**
+ * Build hierarchical path for a node (for descriptor/textproto imports)
+ * @param {Object} node - Cytoscape node
+ * @returns {string} Hierarchical path (e.g., "superpod1 > node2 > shelf")
+ */
+function getHierarchicalPath(node) {
+    const path = [];
+    let currentNode = node;
+
+    // Traverse up the parent hierarchy
+    while (currentNode && currentNode.length > 0) {
+        const data = currentNode.data();
+        const nodeType = data.type;
+
+        // Only include graph nodes and shelf nodes in the path
+        // Skip tray and port levels for cleaner display
+        if (nodeType === 'graph' || nodeType === 'shelf') {
+            // For shelf nodes, use a more descriptive label
+            if (nodeType === 'shelf') {
+                const label = data.label || data.id;
+                // Extract just the meaningful part (e.g., "node1 (host_0)" or hostname)
+                path.unshift(label);
+            } else if (nodeType === 'graph') {
+                // For graph nodes, use just the label (e.g., "superpod1", "node1")
+                const label = data.label || data.id;
+                // Remove "graph_" prefix if present for cleaner display
+                const cleanLabel = label.replace(/^graph_/, '');
+                path.unshift(cleanLabel);
+            }
+        }
+
+        // Move to parent
+        currentNode = currentNode.parent();
+    }
+
+    return path.join(' > ');
+}
+
 // ===== Event Handler Helpers =====
 
 /**
@@ -374,6 +460,7 @@ function clearAllSelections() {
 function getPortLocationInfo(portNode) {
     /**
      * Build detailed location string for a port
+     * Always shows the full path regardless of collapsed state
      * @param {Object} portNode - Cytoscape port node
      * @returns {String} Formatted location string
      */
@@ -404,7 +491,7 @@ function getPortLocationInfo(portNode) {
         locationParts.push(shelfNode.data('label'));
     }
 
-    // Add tray and port info
+    // Always add tray and port info - do NOT simplify based on collapsed state
     locationParts.push(trayLabel);
     locationParts.push(portLabel);
 
@@ -585,13 +672,37 @@ function createEmptyVisualization() {
 
 function resetLayout() {
     /**
-     * Reset and recalculate layout for all nodes based on rack/shelf hierarchy
+     * Reset and recalculate layout based on current visualization mode
+     * - Location mode: Recalculate based on rack/shelf hierarchy
+     * - Hierarchy mode: Recalculate based on logical topology (superpod/pod/node)
      */
     if (!cy) {
-        alert('No visualization loaded. Please upload a CSV file first.');
+        alert('No visualization loaded. Please upload a file first.');
         return;
     }
 
+    const mode = getVisualizationMode();
+
+    if (mode === 'hierarchy') {
+        // Hierarchy mode - recalculate hierarchical layout
+        showExportStatus('Resetting hierarchical layout...', 'info');
+
+        // In hierarchy mode, we need to re-upload/regenerate the visualization
+        // because the layout is calculated server-side based on the descriptor
+        alert('Hierarchical layout reset requires re-importing the descriptor file.\n\nPlease re-upload your textproto file to regenerate the layout.');
+
+        // Hide the status message
+        setTimeout(() => {
+            const statusDiv = document.getElementById('rangeStatus');
+            if (statusDiv) {
+                statusDiv.textContent = '';
+            }
+        }, 2000);
+
+        return;
+    }
+
+    // Location mode - recalculate based on rack/shelf positions
     // Get all racks and sort by rack_num
     const racks = cy.nodes('[type="rack"]');
     if (racks.length === 0) {
@@ -601,7 +712,7 @@ function resetLayout() {
     }
 
     // Show status message
-    showExportStatus('Resetting layout...', 'info');
+    showExportStatus('Resetting location-based layout...', 'info');
 
     // Sort racks by rack number (right to left - descending)
     const sortedRacks = [];
@@ -1246,7 +1357,7 @@ async function uploadFile() {
             }
 
             initVisualization(result.data);
-            
+
             // Update legend based on file type
             updateConnectionLegend(result.data);
 
@@ -1307,24 +1418,24 @@ function updateConnectionLegend(data) {
      */
     const csvLegend = document.getElementById('csvLegend');
     const descriptorLegend = document.getElementById('descriptorLegend');
-    
+
     if (!csvLegend || !descriptorLegend) {
         console.warn('Legend elements not found');
         return;
     }
-    
+
     // Check if this is a descriptor format (textproto)
-    const isDescriptor = data.metadata && data.metadata.csv_format === 'descriptor';
-    
+    const isDescriptor = data.metadata && data.metadata.file_format === 'descriptor';
+
     if (isDescriptor) {
         // Show descriptor legend, hide CSV legend
         csvLegend.style.display = 'none';
         descriptorLegend.style.display = 'block';
-        
+
         // Dynamically generate legend based on actual connection depths
         const edges = data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target));
         console.log(`Total edges found: ${edges.length}`);
-        
+
         // Group edges by depth and template_name
         const depthTemplateMap = new Map(); // depth -> template_name
         edges.forEach(e => {
@@ -1332,23 +1443,24 @@ function updateConnectionLegend(data) {
                 depthTemplateMap.set(e.data.depth, e.data.template_name);
             }
         });
-        
+
         console.log(`Depth->Template mapping:`, Object.fromEntries(depthTemplateMap));
-        
-        // Color map matching Python code
+
+        // Rainbow color map matching Python code - distinct colors for easy visual separation
         const depthColors = {
-            0: '#FF6B6B',  // Red
-            1: '#4ECDC4',  // Teal
-            2: '#95E1D3',  // Light teal
-            3: '#FFA07A',  // Light salmon
-            4: '#98D8C8',  // Seafoam
-            5: '#F7DC6F'   // Yellow
+            0: '#E74C3C',  // Red (cluster level)
+            1: '#E67E22',  // Orange (superpod level)
+            2: '#F1C40F',  // Yellow
+            3: '#27AE60',  // Green
+            4: '#3498DB',  // Blue
+            5: '#9B59B6',  // Purple
+            6: '#E91E63'   // Magenta/Pink
         };
-        
+
         // Generate legend items for depths that actually exist
         const sortedDepths = Array.from(depthTemplateMap.keys()).sort((a, b) => a - b);
         let legendHTML = '';
-        
+
         if (sortedDepths.length === 0) {
             legendHTML = '<div style="font-size: 13px; color: #666;">No connection depth information available</div>';
         } else {
@@ -1363,7 +1475,7 @@ function updateConnectionLegend(data) {
                 `;
             });
         }
-        
+
         descriptorLegend.innerHTML = legendHTML;
         console.log(`Generated descriptor legend for templates: ${Array.from(depthTemplateMap.values()).join(', ')}`);
     } else {
@@ -1391,6 +1503,19 @@ function initVisualization(data) {
     console.log('Container dimensions:', cyContainer.offsetWidth, 'x', cyContainer.offsetHeight);
     console.log('Elements count:', data.elements ? data.elements.length : 'undefined');
 
+    // Detect and set visualization mode based on data
+    // Check if this is a descriptor/hierarchical import (has graph nodes)
+    const hasGraphNodes = data.elements && data.elements.some(el => el.data && el.data.type === 'graph');
+    const isDescriptor = data.metadata && data.metadata.file_format === 'descriptor';
+
+    if (hasGraphNodes || isDescriptor) {
+        setVisualizationMode('hierarchy');
+        console.log('Detected hierarchy mode (descriptor/textproto import)');
+    } else {
+        setVisualizationMode('location');
+        console.log('Detected location mode (CSV import)');
+    }
+
     // Ensure container has proper dimensions
     if (cyContainer.offsetWidth === 0 || cyContainer.offsetHeight === 0) {
         console.warn('Container has zero dimensions, setting explicit size');
@@ -1411,22 +1536,23 @@ function initVisualization(data) {
             // Create new Cytoscape instance
             console.log('Creating new Cytoscape instance');
             console.log('Data elements:', data.elements.length);
-            
+
             // Debug: Log graph node positions
             const graphNodes = data.elements.filter(e => e.data && e.data.type === 'graph');
             console.log('Graph nodes found:', graphNodes.length);
             graphNodes.forEach(g => {
-                console.log(`  ${g.data.label} @ (${g.position.x}, ${g.position.y}), parent=${g.data.parent || 'NONE'}`);
+                const posStr = g.position ? `(${g.position.x}, ${g.position.y})` : 'auto-layout';
+                console.log(`  ${g.data.label} @ ${posStr}, parent=${g.data.parent || 'NONE'}`);
             });
-            
+
             // CRITICAL: Cytoscape auto-centers compound nodes based on children
             // Strategy: Add ALL elements first, THEN manually lock positions
-            
+
             cy = cytoscape({
                 container: cyContainer,
                 elements: data.elements,  // Add everything at once
                 style: getCytoscapeStyles(),
-                layout: { 
+                layout: {
                     name: 'preset',
                     animate: false,
                     fit: false  // Don't auto-fit viewport
@@ -1440,10 +1566,10 @@ function initVisualization(data) {
                 autolock: false,
                 autoungrabify: false
             });
-            
+
             // IMMEDIATELY lock compound node positions before any rendering happens
             // This must happen synchronously to prevent auto-centering
-            const compoundTypes = ['graph', 'node_instance', 'rack'];
+            const compoundTypes = ['graph', 'rack'];
             cy.nodes().forEach(node => {
                 const nodeType = node.data('type');
                 if (compoundTypes.includes(nodeType) && node.isParent()) {
@@ -1461,9 +1587,9 @@ function initVisualization(data) {
                     }
                 }
             });
-            
+
             console.log('All compound node positions locked');
-            
+
             // Debug: Check rendered positions
             setTimeout(() => {
                 const graphsInCy = cy.nodes('[type="graph"]');
@@ -1491,9 +1617,9 @@ function initVisualization(data) {
                     collapseCueImage: undefined,
                     expandCollapseCueSensitivity: 1,
                     // Check if node is collapsible - only allow specific types
-                    isCollapsible: function(node) {
+                    isCollapsible: function (node) {
                         const nodeType = node.data('type');
-                        const allowed = nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                        const allowed = nodeType === 'graph' || nodeType === 'rack';
                         console.log('isCollapsible check:', node.data('id'), 'type:', nodeType, 'allowed:', allowed);
                         return allowed;
                     },
@@ -1501,47 +1627,47 @@ function initVisualization(data) {
                     allowNestedEdgeCollapse: false
                 });
                 console.log('Expand-collapse extension v4.1.1 initialized with isCollapsible filter');
-                
+
                 // Wrap the collapse and expand methods to prevent disallowed nodes (extra safety)
                 if (window.api) {
                     const originalCollapse = window.api.collapse;
                     const originalExpand = window.api.expand;
-                    
-                    window.api.collapse = function(nodes) {
+
+                    window.api.collapse = function (nodes) {
                         // Filter to only allowed node types
-                        const filtered = cy.collection(nodes).filter(function(node) {
+                        const filtered = cy.collection(nodes).filter(function (node) {
                             const nodeType = node.data('type');
-                            return nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                            return nodeType === 'graph' || nodeType === 'rack';
                         });
                         if (filtered.length > 0) {
                             return originalCollapse.call(this, filtered);
                         }
                     };
-                    
-                    window.api.expand = function(nodes) {
+
+                    window.api.expand = function (nodes) {
                         // Filter to only allowed node types
-                        const filtered = cy.collection(nodes).filter(function(node) {
+                        const filtered = cy.collection(nodes).filter(function (node) {
                             const nodeType = node.data('type');
-                            return nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack';
+                            return nodeType === 'graph' || nodeType === 'rack';
                         });
                         if (filtered.length > 0) {
                             return originalExpand.call(this, filtered);
                         }
                     };
-                    
+
                     console.log('Wrapped collapse/expand methods for extra safety');
                 }
             }
 
-            // Make only top-level nodes draggable (graph, node_instance, rack)
-            // Everything else should be non-draggable
-            cy.nodes().forEach(function(node) {
+            // Make compound nodes draggable (graph, rack, shelf)
+            // Only trays and ports should be non-draggable
+            cy.nodes().forEach(function (node) {
                 const nodeType = node.data('type');
-                if (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') {
-                    // Top-level nodes are draggable
+                if (nodeType === 'graph' || nodeType === 'rack' || nodeType === 'shelf') {
+                    // Compound nodes are draggable
                     node.grabify();
                 } else {
-                    // Shelves, trays, ports are NOT draggable
+                    // Trays and ports are NOT draggable
                     node.ungrabify();
                 }
             });
@@ -1748,6 +1874,7 @@ function getCytoscapeStyles() {
         },
 
         // Graph styles - top-level containers for superpods (NO auto-positioning!)
+        // Base graph style
         {
             selector: '.graph',
             style: {
@@ -1767,37 +1894,82 @@ function getCytoscapeStyles() {
                 'text-background-opacity': 0.95,
                 'text-border-width': 2,
                 'text-border-color': '#cc0000',
-                'padding': 100,
-                'min-width': '3000px',
-                'min-height': '700px',
+                'padding': 80,  // Padding for children
                 'z-index': 0
+                // Removed min-width and min-height to allow full auto-sizing
             }
         },
 
-        // Node instance styles - containers for individual nodes/hosts
+        // Depth-specific graph colors (correlate with connections WITHIN the container)
+        // Graph at depth N contains connections at depth N+1
         {
-            selector: '.node-instance',
+            selector: '.graph[depth = 0]',
             style: {
-                'shape': 'round-rectangle',
-                'background-color': '#f0f0ff',
-                'background-opacity': 0.4,
+                'border-color': '#E67E22',  // Orange - contains depth 1 connections (intra-superpod)
+                'border-width': 5,
+                'background-color': '#fff3e6',
+                'color': '#E67E22',
+                'text-border-color': '#E67E22'
+            }
+        },
+        {
+            selector: '.graph[depth = 1]',
+            style: {
+                'border-color': '#F1C40F',  // Yellow - contains depth 2 connections (intra-pod)
+                'border-width': 4,
+                'background-color': '#fffbe6',
+                'color': '#D4AC0D',
+                'text-border-color': '#F1C40F'
+            }
+        },
+        {
+            selector: '.graph[depth = 2]',
+            style: {
+                'border-color': '#27AE60',  // Green - contains depth 3 connections
+                'border-width': 4,
+                'background-color': '#e6f9f0',
+                'color': '#27AE60',
+                'text-border-color': '#27AE60'
+            }
+        },
+        {
+            selector: '.graph[depth = 3]',
+            style: {
+                'border-color': '#3498DB',  // Blue - contains depth 4 connections
                 'border-width': 3,
-                'border-color': '#0000cc',
-                'border-opacity': 1.0,
-                'label': 'data(label)',
-                'text-valign': 'top',
-                'text-halign': 'center',
-                'font-size': 16,
-                'font-weight': 'bold',
-                'color': '#0000cc',
-                'text-background-color': '#ffffff',
-                'text-background-opacity': 0.9,
-                'text-border-width': 1,
-                'text-border-color': '#0000cc',
-                'padding': 15,
-                'width': 550,
-                'height': 500,
-                'z-index': 1
+                'background-color': '#e6f3ff',
+                'color': '#3498DB',
+                'text-border-color': '#3498DB'
+            }
+        },
+        {
+            selector: '.graph[depth = 4]',
+            style: {
+                'border-color': '#9B59B6',  // Purple - contains depth 5 connections
+                'border-width': 3,
+                'background-color': '#f4e6ff',
+                'color': '#9B59B6',
+                'text-border-color': '#9B59B6'
+            }
+        },
+        {
+            selector: '.graph[depth = 5]',
+            style: {
+                'border-color': '#E91E63',  // Magenta/Pink - contains depth 6+ connections
+                'border-width': 3,
+                'background-color': '#ffe6f2',
+                'color': '#E91E63',
+                'text-border-color': '#E91E63'
+            }
+        },
+        {
+            selector: '.graph[depth >= 6]',
+            style: {
+                'border-color': '#E91E63',  // Magenta/Pink - contains depth 6+ connections
+                'border-width': 3,
+                'background-color': '#ffe6f2',
+                'color': '#E91E63',
+                'text-border-color': '#E91E63'
             }
         },
 
@@ -1822,13 +1994,12 @@ function getCytoscapeStyles() {
                 'text-border-width': 1,
                 'text-border-color': '#333333',
                 'padding': 15,
-                'min-width': '380px',
-                'min-height': '500px',
                 'z-index': 1
+                // Removed min-width and min-height to allow full auto-sizing
             }
         },
 
-        // Shelf unit styles - medium containers with blue theme (draggable)
+        // Shelf unit styles - medium containers with blue theme (draggable - user can move shelf nodes)
         {
             selector: '.shelf',
             style: {
@@ -1906,7 +2077,7 @@ function getCytoscapeStyles() {
             }
         },
 
-        // Collapsed compound node style
+        // Collapsed compound node style - smaller size for compact view
         {
             selector: '.cy-expand-collapse-collapsed-node',
             style: {
@@ -1915,11 +2086,15 @@ function getCytoscapeStyles() {
                 'border-width': 3,
                 'border-style': 'dashed',
                 'label': 'data(label)',
-                'font-size': 14,
+                'font-size': 12,
                 'font-weight': 'bold',
                 'text-valign': 'center',
                 'text-halign': 'center',
-                'shape': 'roundrectangle'
+                'shape': 'roundrectangle',
+                'width': '120px',
+                'height': '60px',
+                'padding': 5
+                // Removed min-width and min-height to allow full auto-sizing
             }
         },
 
@@ -1974,10 +2149,10 @@ function addCytoscapeEventHandlers() {
             return;
         }
 
-        // Only allow collapse/expand for high-level compound nodes (graph, node_instance, rack)
+        // Only allow collapse/expand for high-level compound nodes (graph, rack)
         if (node.isParent() && window.api) {
-            // Strict whitelist - only these three types can collapse
-            if (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') {
+            // Strict whitelist - only these types can collapse
+            if (nodeType === 'graph' || nodeType === 'rack') {
                 toggleNodeCollapse(node);
                 return;
             }
@@ -2196,23 +2371,41 @@ function populateNodeFilterDropdown() {
     // Clear existing options
     nodeFilterSelect.innerHTML = '<option value="">Show all nodes</option>';
 
+    // Check if this is a descriptor/hierarchical import
+    const isDescriptor = cy.nodes().some(node => node.data('type') === 'graph');
+
     // Get all shelf nodes (main nodes, not trays or ports)
     const shelfNodes = cy.nodes().filter(function (node) {
         const nodeType = node.data('type');
         return nodeType === 'shelf' || nodeType === 'node';
     });
 
-    // Add each shelf node to the dropdown
+    // Build array of options with labels for sorting
+    const options = [];
     shelfNodes.forEach(function (node) {
         const nodeId = node.id();
         const nodeData = node.data();
         let nodeLabel;
 
-        nodeLabel = getNodeDisplayLabel(nodeData);
+        if (isDescriptor) {
+            // For hierarchical imports, show full path (e.g., "superpod1 > node2 > n300_lb (host_0)")
+            nodeLabel = getHierarchicalPath(node);
+        } else {
+            // For CSV imports, use the standard display label
+            nodeLabel = getNodeDisplayLabel(nodeData);
+        }
 
+        options.push({ value: nodeId, label: nodeLabel });
+    });
+
+    // Sort options alphabetically by label
+    options.sort((a, b) => a.label.localeCompare(b.label));
+
+    // Add sorted options to dropdown
+    options.forEach(function (opt) {
         const option = document.createElement('option');
-        option.value = nodeId;
-        option.textContent = nodeLabel;
+        option.value = opt.value;
+        option.textContent = opt.label;
         nodeFilterSelect.appendChild(option);
     });
 }
@@ -2297,6 +2490,7 @@ function hideNodeInfo() {
 function showConnectionInfo(edge, position) {
     /**
      * Show detailed information about a connection
+     * Always shows full path regardless of collapsed state
      * @param {Object} edge - Cytoscape edge element
      * @param {Object} position - Position to display the info panel
      */
@@ -2304,10 +2498,12 @@ function showConnectionInfo(edge, position) {
     const content = document.getElementById('nodeInfoContent');
 
     const edgeData = edge.data();
+    // Always use the original port IDs from edge data, not the visual source/target
+    // which might point to collapsed parents
     const sourceNode = cy.getElementById(edgeData.source);
     const targetNode = cy.getElementById(edgeData.target);
 
-    // Get detailed location info for both endpoints
+    // Get detailed location info for both endpoints - always full path
     const sourceInfo = getPortLocationInfo(sourceNode);
     const targetInfo = getPortLocationInfo(targetNode);
 
@@ -2343,9 +2539,22 @@ function enableShelfEditing(node, position) {
     const nodeInfo = document.getElementById('nodeInfo');
     const content = document.getElementById('nodeInfoContent');
 
+    // Check visualization mode
+    const isHierarchyMode = getVisualizationMode() === 'hierarchy';
+
     // Create editing interface for all shelf fields
     let html = `<strong>Edit Shelf Node</strong><br>`;
-    html += `Node: ${data.label || data.id}<br><br>`;
+    html += `Node: ${data.label || data.id}<br>`;
+
+    if (isHierarchyMode) {
+        // In hierarchy mode, show warning that location changes won't affect visualization
+        html += `<div style="background: #fff3cd; padding: 6px; margin: 8px 0; border-radius: 4px; border: 1px solid #ffc107; font-size: 12px;">`;
+        html += `<strong style="color: #856404;">⚠️ Hierarchy Mode:</strong><br>`;
+        html += `<span style="color: #856404;">Location changes will be saved but won't affect the visualization layout.</span>`;
+        html += `</div>`;
+    }
+
+    html += `<br>`;
 
     html += `<div style="margin-bottom: 10px;">`;
     html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Hostname:</label>`;
@@ -2458,7 +2667,7 @@ window.saveShelfEdit = function (nodeId) {
     // Update the node data only with changed values
     if (hostnameChanged) {
         updateNodeAndDescendants(node, 'hostname', newHostname);
-        
+
         // CRITICAL FIX: Update edge data for all connections from this shelf's ports
         // This ensures exports use the updated hostname instead of stale edge data
         node.descendants('[type="port"]').forEach(function (portNode) {
@@ -2466,12 +2675,12 @@ window.saveShelfEdit = function (nodeId) {
             portNode.connectedEdges().forEach(function (edge) {
                 const sourceId = edge.data('source');
                 const targetId = edge.data('target');
-                
+
                 // Update source_hostname if this port is the source
                 if (sourceId === portNode.id()) {
                     edge.data('source_hostname', newHostname);
                 }
-                
+
                 // Update destination_hostname if this port is the target
                 if (targetId === portNode.id()) {
                     edge.data('destination_hostname', newHostname);
@@ -3270,90 +3479,138 @@ document.addEventListener('keydown', function (event) {
 // Expand/Collapse Functions
 function expandAllNodes() {
     /**
-     * Expand all high-level compound nodes (graphs, node instances, racks)
-     * Does NOT expand shelves, trays, or ports
+     * Expand all collapsed high-level compound nodes (graphs, racks)
+     * Only expands one level at a time - keeps nested nodes collapsed
      */
     if (!cy || !window.api) {
         console.error('Cytoscape or expand-collapse API not available');
         return;
     }
-    
-    // Get all collapsed high-level nodes (graph, node_instance, rack only)
+
+    // Get all collapsed high-level nodes (graph, rack only)
     const collapsedNodes = cy.nodes(':parent').filter(node => {
         const nodeType = node.data('type');
-        return (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') &&
-               node.hasClass('cy-expand-collapse-collapsed-node');
+        return (nodeType === 'graph' || nodeType === 'rack') &&
+            node.hasClass('cy-expand-collapse-collapsed-node');
     });
-    
+
     if (collapsedNodes.length === 0) {
         showExportStatus('All high-level nodes are already expanded', 'info');
         return;
     }
-    
+
     // Expand all collapsed nodes (layout will automatically run per the extension config)
-    collapsedNodes.forEach(node => window.api.expand(node));
+    collapsedNodes.forEach(node => {
+        if (window.api && window.api.expand) {
+            window.api.expand(node);
+        }
+    });
     showExportStatus(`Expanded ${collapsedNodes.length} node(s)`, 'success');
 }
 
 function collapseAllNodes() {
     /**
-     * Collapse all high-level compound nodes (graphs, node instances, racks)
-     * Does NOT collapse shelves, trays, or ports
+     * Recursively collapse all compound nodes from bottom-up
+     * This ensures that when a parent is expanded, its children are still collapsed
      */
     if (!cy || !window.api) {
         console.error('Cytoscape or expand-collapse API not available');
         return;
     }
-    
-    // Get all expandable high-level nodes (graph, node_instance, rack only)
+
+    // Get all expandable nodes (graph, rack only), sorted by depth (deepest first)
     const expandableNodes = cy.nodes(':parent').filter(node => {
         const nodeType = node.data('type');
-        return (nodeType === 'graph' || nodeType === 'node_instance' || nodeType === 'rack') &&
-               !node.hasClass('cy-expand-collapse-collapsed-node');
+        return (nodeType === 'graph' || nodeType === 'rack') &&
+            !node.hasClass('cy-expand-collapse-collapsed-node');
     });
-    
+
     if (expandableNodes.length === 0) {
         showExportStatus('All high-level nodes are already collapsed', 'info');
         return;
     }
-    
-    // Collapse all expandable nodes (layout will automatically run per the extension config)
-    expandableNodes.forEach(node => window.api.collapse(node));
-    showExportStatus(`Collapsed ${expandableNodes.length} node(s)`, 'success');
+
+    // Sort by depth (deepest first) to collapse from bottom-up
+    const nodesByDepth = [];
+    expandableNodes.forEach(node => {
+        let depth = 0;
+        let current = node.parent();
+        while (current && current.length > 0) {
+            depth++;
+            current = current.parent();
+        }
+        nodesByDepth.push({ node: node, depth: depth });
+    });
+
+    // Sort descending by depth (collapse deepest nodes first)
+    nodesByDepth.sort((a, b) => b.depth - a.depth);
+
+    // Collapse all nodes from deepest to shallowest
+    let collapseCount = 0;
+    nodesByDepth.forEach(item => {
+        if (window.api && window.api.collapse) {
+            window.api.collapse(item.node);
+            collapseCount++;
+        }
+    });
+
+    showExportStatus(`Collapsed ${collapseCount} node(s) recursively`, 'success');
 }
 
 function toggleNodeCollapse(node) {
     /**
      * Toggle collapse/expand state of a single high-level compound node
-     * Only works for graph, node_instance, and rack types
+     * Only works for graph and rack types
      */
     if (!cy || !window.api) {
         console.error('Cytoscape or expand-collapse API not available');
         return;
     }
-    
+
     if (!node.isParent()) {
         return; // Only compound nodes can be collapsed
     }
-    
+
     // Only allow collapse for high-level nodes
     const nodeType = node.data('type');
-    
+
     // Explicitly block shelf, tray, and port from collapsing
     if (nodeType === 'shelf' || nodeType === 'tray' || nodeType === 'port') {
         console.log('Node type', nodeType, 'is explicitly blocked from collapsing');
         return;
     }
-    
-    if (nodeType !== 'graph' && nodeType !== 'node_instance' && nodeType !== 'rack') {
+
+    if (nodeType !== 'graph' && nodeType !== 'rack') {
         console.log('Node type', nodeType, 'is not collapsible');
         return;
     }
-    
+
     // Check if node is currently collapsed
     if (node.hasClass('cy-expand-collapse-collapsed-node')) {
+        // Expand this node
         window.api.expand(node);
         console.log('Expanded node:', node.data('id'));
+
+        // After expanding, ensure all child graph nodes are collapsed
+        // This prevents nested graphs from being automatically expanded
+        setTimeout(() => {
+            const childGraphs = node.descendants().filter(child => {
+                const childType = child.data('type');
+                return (childType === 'graph' || childType === 'rack') &&
+                    child.isParent() &&
+                    !child.hasClass('cy-expand-collapse-collapsed-node');
+            });
+
+            childGraphs.forEach(childGraph => {
+                if (window.api && window.api.collapse) {
+                    window.api.collapse(childGraph);
+                }
+            });
+
+            if (childGraphs.length > 0) {
+                console.log(`Collapsed ${childGraphs.length} child graph(s) within ${node.data('id')}`);
+            }
+        }, 100); // Small delay to ensure expansion completes first
     } else {
         window.api.collapse(node);
         console.log('Collapsed node:', node.data('id'));
@@ -3364,13 +3621,13 @@ function toggleNodeCollapse(node) {
 // Add double-click handler for compound nodes (in addCytoscapeEventHandlers)
 function addExpandCollapseHandlers() {
     if (!cy) return;
-    
+
     // Double-click to toggle collapse/expand
-    cy.on('dblclick', 'node:parent', function(evt) {
+    cy.on('dblclick', 'node:parent', function (evt) {
         const node = evt.target;
         toggleNodeCollapse(node);
     });
-    
+
     console.log('Expand-collapse double-click handler added');
 }
 
