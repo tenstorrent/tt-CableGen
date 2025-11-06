@@ -2,6 +2,7 @@
 #
 # This compose file sets up a complete CableGen deployment with:
 # - CableGen Flask application (port 5000 internal)
+# - OAuth2 Proxy for authentication via Entra ID/OIDC
 # - Nginx reverse proxy with ACME certificate support (ports 80/443 external)
 # - Automatic SSL certificate provisioning via Vault ACME
 # - Persistent volumes for data and certificate cache
@@ -14,14 +15,31 @@
 #   make status   # Check service status
 #
 # Environment Variables (set in .env):
-#   VAULT_ACME_DIRECTORY_URL - Vault ACME directory endpoint
-#   VAULT_ACME_CONTACT       - Contact email for ACME certificates
-#   FQDN                     - Fully qualified domain name for certificates
+#   ACME_DIRECTORY_URL           - ACME directory endpoint (Let's Encrypt or Vault)
+#   ACME_CONTACT                 - Contact email for ACME certificates
+#   FQDN                         - Fully qualified domain name for certificates
+#   OAUTH2_PROXY_*               - OAuth2 proxy configuration (see env.example)
 #
 # The Nginx service automatically provisions SSL certificates and redirects
-# all HTTP traffic to HTTPS. All requests are reverse-proxied to the Flask app.
+# all HTTP traffic to HTTPS. All requests go through OAuth2 proxy for authentication
+# before being reverse-proxied to the Flask app.
 
 services:
+  # Redis for OAuth2 Proxy session storage (avoids 4KB cookie limit)
+  redis:
+    image: redis:7-alpine
+    container_name: cablegen-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - cablegen-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
   # Tenstorrent CableGen Flask Application
   cablegen:
     build:
@@ -41,6 +59,50 @@ services:
       retries: 3
       start_period: 40s
 
+  # OAuth2 Proxy for Authentication
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.12.0-alpine
+    container_name: cablegen-oauth2-proxy
+    restart: unless-stopped
+    command:
+      - --http-address=0.0.0.0:4180
+      - --reverse-proxy=true
+      - --upstream=static://202
+      - --set-xauthrequest=true
+      - --pass-access-token=true
+      - --pass-user-headers=true
+      - --cookie-refresh=1h
+      - --cookie-expire=24h
+      - --session-store-type=redis
+      - --redis-connection-url=redis://redis:6379
+    environment:
+      OAUTH2_PROXY_PROVIDER: ${OAUTH2_PROXY_PROVIDER:-entra-id}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL:-https://login.microsoftonline.com/${OAUTH2_PROXY_AZURE_TENANT}/v2.0}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_PROXY_REDIRECT_URL:-https://cablegen.yourcompany.com/oauth2/callback}
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OAUTH2_PROXY_EMAIL_DOMAINS:-*}
+      OAUTH2_PROXY_COOKIE_SECURE: ${OAUTH2_PROXY_COOKIE_SECURE:-true}
+      OAUTH2_PROXY_COOKIE_SAMESITE: ${OAUTH2_PROXY_COOKIE_SAMESITE:-lax}
+      OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-.yourcompany.com}
+      OAUTH2_PROXY_COOKIE_DOMAINS: ${OAUTH2_PROXY_COOKIE_DOMAINS:-.yourcompany.com}
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: ${OAUTH2_PROXY_SKIP_PROVIDER_BUTTON:-true}
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: ${OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION:-true}
+    networks:
+      - cablegen-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4180/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      cablegen:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # Nginx Reverse Proxy with ACME Support
   nginx:
     build:
@@ -52,12 +114,11 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - VAULT_ACME_DIRECTORY_URL=${VAULT_ACME_DIRECTORY_URL:-https://vault.yourcompany.com/v1/pki/acme/directory}
-      - VAULT_ACME_CONTACT=${VAULT_ACME_CONTACT:-it@yourcompany.com}
+      - ACME_DIRECTORY_URL=${ACME_DIRECTORY_URL:-https://acme-v02.api.letsencrypt.org/directory}
+      - ACME_CONTACT=${ACME_CONTACT:-it@yourcompany.com}
       - FQDN=${FQDN:-cablegen.yourcompany.com}
     volumes:
       - nginx-logs:/var/log/nginx
-
       # Mount Ubuntu standard CA certificates to trust enterprise roots.
       # May need to be changed for other distros.
       - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
@@ -65,6 +126,10 @@ services:
       - cablegen-network
     depends_on:
       cablegen:
+        condition: service_healthy
+      oauth2-proxy:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
