@@ -25,6 +25,21 @@
 # before being reverse-proxied to the Flask app.
 
 services:
+  # Redis for OAuth2 Proxy session storage (avoids 4KB cookie limit)
+  redis:
+    image: redis:7-alpine
+    container_name: cablegen-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - cablegen-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
   # Tenstorrent CableGen Flask Application
   cablegen:
     build:
@@ -56,6 +71,10 @@ services:
       - --set-xauthrequest=true
       - --pass-access-token=true
       - --pass-user-headers=true
+      - --cookie-refresh=1h
+      - --cookie-expire=24h
+      - --session-store-type=redis
+      - --redis-connection-url=redis://redis:6379
     environment:
       OAUTH2_PROXY_PROVIDER: ${OAUTH2_PROXY_PROVIDER:-entra-id}
       OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL:-https://login.microsoftonline.com/${OAUTH2_PROXY_AZURE_TENANT}/v2.0}
@@ -80,6 +99,8 @@ services:
       start_period: 10s
     depends_on:
       cablegen:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Nginx Reverse Proxy with ACME Support
@@ -107,6 +128,8 @@ services:
       cablegen:
         condition: service_healthy
       oauth2-proxy:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
