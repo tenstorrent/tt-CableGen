@@ -46,7 +46,8 @@ function initializeNodeConfigs() {
             'WH_GALAXY': { tray_count: 4, ports_per_tray: 6, tray_layout: 'vertical' },
             'BH_GALAXY': { tray_count: 4, ports_per_tray: 14, tray_layout: 'vertical' },
             'P150_QB_GLOBAL': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' },
-            'P150_QB_AMERICA': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' }
+            'P150_QB_AMERICA': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' },
+            'P150_LB': { tray_count: 8, ports_per_tray: 4, tray_layout: 'horizontal' }
         };
         console.warn('Using fallback node configurations - server configs not available');
     }
@@ -116,6 +117,7 @@ function getEthChannelMapping(nodeType, portNumber) {
 
         case 'P150_QB_GLOBAL':
         case 'P150_QB_AMERICA':
+        case 'P150_LB':
             // P150 nodes: 4 ports per tray, specific channel mapping
             if (portNumber === 1) return 'ASIC: 0 Channel: 9, ASIC: 0 Channel: 11';
             if (portNumber === 2) return 'ASIC: 0 Channel: 8, ASIC: 0 Channel: 10';
@@ -418,6 +420,15 @@ function deleteSelectedConnection() {
     }
 
     const edge = selectedConnection;
+    
+    // Check if edge still exists and is valid
+    if (!edge || !edge.cy() || edge.removed()) {
+        alert('Selected connection is no longer valid.');
+        selectedConnection = null;
+        updateDeleteButtonState();
+        return;
+    }
+    
     const sourceNode = cy.getElementById(edge.data('source'));
     const targetNode = cy.getElementById(edge.data('target'));
 
@@ -436,15 +447,28 @@ function deleteSelectedConnection() {
 }
 
 function updatePortConnectionStatus() {
+    if (!cy) return;
+    
     // Reset all ports to default state
     cy.nodes('.port').removeClass('connected-port');
 
     // Mark ports that have connections
     cy.edges().forEach(function (edge) {
+        // Skip if edge has been removed or is invalid
+        if (!edge || !edge.cy() || edge.removed()) return;
+        
         const sourceId = edge.data('source');
         const targetId = edge.data('target');
-        cy.getElementById(sourceId).addClass('connected-port');
-        cy.getElementById(targetId).addClass('connected-port');
+        const sourceNode = cy.getElementById(sourceId);
+        const targetNode = cy.getElementById(targetId);
+        
+        // Only add class if nodes exist and are valid
+        if (sourceNode.length && !sourceNode.removed()) {
+            sourceNode.addClass('connected-port');
+        }
+        if (targetNode.length && !targetNode.removed()) {
+            targetNode.addClass('connected-port');
+        }
     });
 }
 
@@ -621,6 +645,9 @@ function resetLayout() {
     // Calculate average/max rack width
     let maxRackWidth = 0;
     racks.forEach(function (rack) {
+        // Skip if rack has been removed or is invalid
+        if (!rack || !rack.cy() || rack.removed()) return;
+        
         const bb = rack.boundingBox();
         const width = bb.w;
         if (width > maxRackWidth) maxRackWidth = width;
@@ -633,7 +660,13 @@ function resetLayout() {
     let shelfCount = 0;
 
     racks.forEach(function (rack) {
+        // Skip if rack has been removed or is invalid
+        if (!rack || !rack.cy() || rack.removed()) return;
+        
         rack.children('[type="shelf"]').forEach(function (shelf) {
+            // Skip if shelf has been removed or is invalid
+            if (!shelf || !shelf.cy() || shelf.removed()) return;
+            
             // Get bounding box of shelf including all its children
             const bb = shelf.boundingBox({ includeLabels: false, includeOverlays: false });
             const height = bb.h;
@@ -2171,7 +2204,7 @@ window.saveShelfEdit = function (nodeId) {
     // Update the node data only with changed values
     if (hostnameChanged) {
         updateNodeAndDescendants(node, 'hostname', newHostname);
-        
+
         // CRITICAL FIX: Update edge data for all connections from this shelf's ports
         // This ensures exports use the updated hostname instead of stale edge data
         node.descendants('[type="port"]').forEach(function (portNode) {
@@ -2179,12 +2212,12 @@ window.saveShelfEdit = function (nodeId) {
             portNode.connectedEdges().forEach(function (edge) {
                 const sourceId = edge.data('source');
                 const targetId = edge.data('target');
-                
+
                 // Update source_hostname if this port is the source
                 if (sourceId === portNode.id()) {
                     edge.data('source_hostname', newHostname);
                 }
-                
+
                 // Update destination_hostname if this port is the target
                 if (targetId === portNode.id()) {
                     edge.data('destination_hostname', newHostname);
