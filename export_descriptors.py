@@ -423,6 +423,18 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     This function is used by BOTH CablingDescriptor and DeploymentDescriptor exports
     to ensure they have the exact same host list in the exact same order.
     
+    IMPORTANT FOR EMPTY CANVAS:
+    This function works correctly for empty canvas scenarios where users:
+    - Create an empty canvas (createEmptyVisualization in visualizer.js)
+    - Manually add nodes using the "Add Node" button (addNewNode in visualizer.js)
+    - Draw connections between ports
+    - Export descriptors
+    
+    The addNewNode function creates shelf nodes with:
+    - hostname: Required for host identification
+    - shelf_node_type: Required for node type (WH_N150, GS_E150, etc.)
+    - hall, aisle, rack_num, shelf_u: Optional location data
+    
     Returns:
         List of (hostname, node_type) tuples, sorted alphabetically by hostname
         

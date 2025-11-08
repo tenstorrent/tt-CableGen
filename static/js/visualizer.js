@@ -538,6 +538,22 @@ function updateAddNodeButtonState() {
 }
 
 function createEmptyVisualization() {
+    /**
+     * Create an empty canvas for manual node creation and connection drawing.
+     * 
+     * WORKFLOW:
+     * 1. User clicks "Create Empty Canvas" button
+     * 2. This function initializes an empty Cytoscape visualization
+     * 3. User adds nodes via "Add Node" button (calls addNewNode)
+     * 4. User draws connections between ports using edge handles
+     * 5. User exports CablingDescriptor and DeploymentDescriptor
+     * 
+     * EXPORT COMPATIBILITY:
+     * Nodes created with addNewNode() include all required fields (hostname, shelf_node_type)
+     * for proper descriptor export with consistent host list/enumeration between
+     * CablingDescriptor and DeploymentDescriptor.
+     * See: export_descriptors.py::extract_host_list_from_connections()
+     */
     // Hide upload section
     const uploadSection = document.getElementById('uploadSection');
     const cyLoading = document.getElementById('cyLoading');
@@ -553,6 +569,7 @@ function createEmptyVisualization() {
     currentData = {
         nodes: [],
         edges: [],
+        elements: [],  // Empty elements array for Cytoscape
         metadata: {
             total_connections: 0,
             total_nodes: 0
@@ -755,6 +772,20 @@ function resetLayout() {
 }
 
 function addNewNode() {
+    /**
+     * Add a new node to the empty canvas.
+     * 
+     * IMPORTANT FOR EXPORT CONSISTENCY:
+     * This function creates shelf nodes with the required fields for proper descriptor export:
+     * - hostname: Used for host identification in both CablingDescriptor and DeploymentDescriptor
+     * - shelf_node_type: Node type (WH_N150, GS_E150, etc.) required for host_id mapping
+     * - hall, aisle, rack_num, shelf_u: Optional location data for DeploymentDescriptor
+     * 
+     * The export logic (export_descriptors.py) uses extract_host_list_from_connections()
+     * to ensure both CablingDescriptor and DeploymentDescriptor have the exact same host list
+     * in the exact same order, which is critical for the cabling generator to correctly map
+     * host_id indices between the two descriptors.
+     */
     const nodeTypeSelect = document.getElementById('nodeTypeSelect');
     const hostnameInput = document.getElementById('nodeHostnameInput');
     const hallInput = document.getElementById('nodeHallInput');
