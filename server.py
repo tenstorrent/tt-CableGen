@@ -208,8 +208,8 @@ def _has_location_info(cytoscape_data):
         has_location = all([
             hall and str(hall).strip(),
             aisle and str(aisle).strip(),
-            rack_num is not None and str(rack_num).strip(),
-            shelf_u is not None and str(shelf_u).strip()
+            rack_num is not None and str(rack_num).strip() != '',
+            shelf_u is not None and str(shelf_u).strip() != ''
         ])
         
         if not has_location:
