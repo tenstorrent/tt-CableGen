@@ -409,7 +409,7 @@
                 <div class="success" id="success"></div>
             </div>
 
-            <!-- Visualization Mode Indicator -->
+            <!-- Visualization Mode Indicator with Toggle -->
             <div id="visualizationModeIndicator" style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div>
@@ -417,6 +417,12 @@
                         <div id="currentMode" style="font-size: 13px; color: #333; margin-top: 4px;">
                             Loading...
                         </div>
+                    </div>
+                    <div>
+                        <button id="toggleModeButton" onclick="toggleVisualizationMode()" 
+                                style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                            Switch Mode
+                        </button>
                     </div>
                 </div>
                 <div id="modeDescription" style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bbdefb;">
@@ -668,6 +674,41 @@
                     </button>
                     <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
                         Upload a visualization first to enable node creation
+                    </div>
+                </div>
+
+                <div id="addGraphSection"
+                    style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
+                    <h4 style="margin-bottom: 10px; color: #333;">Add Graph Template Instance</h4>
+
+                    <div style="margin-bottom: 10px;">
+                        <label for="graphTemplateSelect"
+                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Select Graph Template:</label>
+                        <select id="graphTemplateSelect"
+                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                            <option value="" disabled>No templates available (load a textproto first)</option>
+                        </select>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            Templates are loaded from imported textproto files
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label for="graphLabelInput"
+                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Instance Label:</label>
+                        <input type="text" id="graphLabelInput" placeholder="e.g., superpod1, pod_a, cluster_west"
+                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            This will be the display name for the graph instance
+                        </div>
+                    </div>
+
+                    <button id="addGraphBtn" onclick="addNewGraph()" disabled
+                        style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
+                        ➕ Add Graph Instance
+                    </button>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                        Load a textproto with graph templates to enable
                     </div>
                 </div>
             </div>

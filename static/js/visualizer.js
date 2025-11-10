@@ -25,9 +25,11 @@ const DEFAULT_CABLE_CONFIG = {
 // ===== Global Variables =====
 let cy;
 let currentData = null;
+let initialVisualizationData = null;  // Store initial data for reset functionality
 let selectedConnection = null;
 let isEdgeCreationMode = false;
 let sourcePort = null;
+let availableGraphTemplates = {};  // Store graph templates from loaded textproto
 
 // Visualization Mode Management
 let visualizationMode = 'location'; // 'location' or 'hierarchy'
@@ -66,15 +68,328 @@ function updateModeIndicator() {
         indicator.style.background = '#fff3cd';
         indicator.style.borderColor = '#ffc107';
         currentModeDiv.innerHTML = '<strong>🌳 Hierarchy Mode</strong> (TextProto)';
-        currentModeDiv.style.color = '#856404';
-        descriptionDiv.textContent = 'Visualizing logical network topology from descriptor file. Location/rack information is not used.';
+        descriptionDiv.textContent = 'Logical topology view with hierarchical groupings';
     } else {
-        indicator.style.background = '#e7f3ff';
-        indicator.style.borderColor = '#2196F3';
+        indicator.style.background = '#d1ecf1';
+        indicator.style.borderColor = '#0c5460';
         currentModeDiv.innerHTML = '<strong>📍 Location Mode</strong> (CSV)';
-        currentModeDiv.style.color = '#1976D2';
-        descriptionDiv.textContent = 'Visualizing physical network layout based on rack locations and shelf positions.';
+        descriptionDiv.textContent = 'Physical layout view organized by rack locations';
     }
+}
+
+/**
+ * Extract graph templates from loaded data metadata
+ * @param {Object} data - The visualization data
+ */
+function extractGraphTemplates(data) {
+    availableGraphTemplates = {};
+    
+    // Check if metadata contains graph_templates
+    if (data.metadata && data.metadata.graph_templates) {
+        availableGraphTemplates = data.metadata.graph_templates;
+        console.log('Extracted graph templates:', Object.keys(availableGraphTemplates));
+    } else {
+        console.log('No graph templates found in data');
+    }
+    
+    // Update the dropdown
+    populateGraphTemplateDropdown();
+}
+
+/**
+ * Populate the graph template dropdown with available templates
+ */
+function populateGraphTemplateDropdown() {
+    const graphTemplateSelect = document.getElementById('graphTemplateSelect');
+    if (!graphTemplateSelect) return;
+    
+    // Clear existing options
+    graphTemplateSelect.innerHTML = '';
+    
+    const templateCount = Object.keys(availableGraphTemplates).length;
+    
+    if (templateCount === 0) {
+        // No templates available - show message
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No graph templates available (load a textproto first)';
+        option.disabled = true;
+        graphTemplateSelect.appendChild(option);
+        
+        // Disable the Add Graph button
+        const addGraphBtn = document.getElementById('addGraphBtn');
+        if (addGraphBtn) {
+            addGraphBtn.disabled = true;
+            addGraphBtn.style.cursor = 'not-allowed';
+            addGraphBtn.style.background = '#6c757d';
+            addGraphBtn.style.opacity = '0.6';
+        }
+    } else {
+        // Add available templates
+        Object.keys(availableGraphTemplates).sort().forEach(templateName => {
+            const option = document.createElement('option');
+            option.value = templateName;
+            option.textContent = `${templateName} (Graph Template)`;
+            graphTemplateSelect.appendChild(option);
+        });
+        
+        console.log(`Populated ${templateCount} graph template(s) in dropdown`);
+    }
+}
+
+/**
+ * Toggle between hierarchy and location visualization modes
+ */
+function toggleVisualizationMode() {
+    if (!cy) {
+        alert('No visualization loaded. Please upload a file first.');
+        return;
+    }
+
+    // Toggle the mode
+    const newMode = visualizationMode === 'hierarchy' ? 'location' : 'hierarchy';
+    
+    console.log(`Switching visualization mode from ${visualizationMode} to ${newMode}`);
+    
+    // Set the new mode
+    setVisualizationMode(newMode);
+    
+    // Update the connection legend based on the new mode if we have initial data
+    if (initialVisualizationData) {
+        updateConnectionLegend(initialVisualizationData);
+    }
+    
+    // Restructure the visualization based on the new mode
+    if (newMode === 'location') {
+        // Switching to location mode: remove hierarchical containers and reorganize by location
+        switchToLocationMode();
+    } else {
+        // Switching to hierarchy mode: restore original hierarchical structure
+        switchToHierarchyMode();
+    }
+    
+    // Show a status message
+    const modeLabel = newMode === 'hierarchy' ? 'Hierarchy Mode' : 'Location Mode';
+    showExportStatus(`Switched to ${modeLabel}`, 'success');
+    
+    setTimeout(() => {
+        const statusDiv = document.getElementById('rangeStatus');
+        if (statusDiv) {
+            statusDiv.textContent = '';
+        }
+    }, 2000);
+}
+
+/**
+ * Switch to location mode: remove hierarchical containers and arrange by location
+ */
+function switchToLocationMode() {
+    console.log('Switching to location mode - restructuring visualization');
+    
+    // Get all shelf nodes (the actual hardware nodes)
+    const shelfNodes = cy.nodes('[type="shelf"]');
+    
+    if (shelfNodes.length === 0) {
+        console.warn('No shelf nodes found');
+        return;
+    }
+    
+    // Check if any shelf nodes have location information
+    let hasLocationInfo = false;
+    shelfNodes.forEach(node => {
+        const rack = node.data('rack_num');
+        const hall = node.data('hall');
+        const aisle = node.data('aisle');
+        const shelfU = node.data('shelf_u');
+        
+        if ((rack !== undefined && rack !== null) || hall || aisle || (shelfU !== undefined && shelfU !== null)) {
+            hasLocationInfo = true;
+        }
+    });
+    
+    console.log(`Location info available: ${hasLocationInfo}`);
+    
+    // Remove hierarchical parent nodes (graphs, superpods, pods, clusters)
+    // but keep rack nodes if they exist and have location info
+    const hierarchicalTypes = ['graph', 'superpod', 'pod', 'cluster'];
+    cy.nodes().forEach(node => {
+        const nodeType = node.data('type');
+        if (hierarchicalTypes.includes(nodeType)) {
+            // Move children out of this parent before removing
+            const children = node.children();
+            children.forEach(child => {
+                child.move({ parent: null });
+            });
+            node.remove();
+        }
+    });
+    
+    if (hasLocationInfo) {
+        // Organize by location information (racks, aisles, etc.)
+        organizeByLocation();
+    } else {
+        // No location info - arrange in a simple grid
+        organizeInGrid();
+    }
+    
+    // Unlock all nodes so they can be moved in location mode
+    cy.nodes().unlock();
+    
+    console.log('Location mode switch complete');
+}
+
+/**
+ * Switch to hierarchy mode: restore original hierarchical structure
+ */
+function switchToHierarchyMode() {
+    console.log('Switching to hierarchy mode - restoring original structure');
+    
+    if (!initialVisualizationData || !initialVisualizationData.elements) {
+        alert('Cannot restore hierarchy mode - initial data not available. Please re-upload your file.');
+        return;
+    }
+    
+    // Remove all current elements
+    cy.elements().remove();
+    
+    // Re-add all elements from initial data
+    cy.add(initialVisualizationData.elements);
+    
+    // Make trays and ports non-draggable
+    cy.nodes('.tray, .port').ungrabify();
+    
+    // Lock compound nodes and restore their positions
+    const compoundTypes = ['graph', 'rack'];
+    cy.nodes().forEach(node => {
+        const nodeType = node.data('type');
+        if (compoundTypes.includes(nodeType) && node.isParent()) {
+            const originalData = initialVisualizationData.elements.find(e => e.data && e.data.id === node.id());
+            if (originalData && originalData.position) {
+                node.lock();
+                node.position({
+                    x: originalData.position.x,
+                    y: originalData.position.y
+                });
+            }
+        }
+    });
+    
+    // Run preset layout to position nodes
+    cy.layout({ name: 'preset' }).run();
+    
+    console.log('Hierarchy mode switch complete');
+}
+
+/**
+ * Organize nodes by location information (racks, halls, aisles)
+ */
+function organizeByLocation() {
+    console.log('Organizing nodes by location');
+    
+    const shelfNodes = cy.nodes('[type="shelf"]');
+    
+    // Group shelves by rack number
+    const rackGroups = new Map();
+    
+    shelfNodes.forEach(node => {
+        const rackNum = node.data('rack_num');
+        const hall = node.data('hall') || '';
+        const aisle = node.data('aisle') || '';
+        
+        // Create rack key
+        const rackKey = rackNum !== undefined && rackNum !== null ? `${hall}_${aisle}_${rackNum}` : 'no_rack';
+        
+        if (!rackGroups.has(rackKey)) {
+            rackGroups.set(rackKey, []);
+        }
+        rackGroups.get(rackKey).push(node);
+    });
+    
+    // Create or reuse rack nodes for grouping
+    let rackX = LAYOUT_CONSTANTS.MIN_START_X;
+    const rackSpacing = 600;
+    
+    rackGroups.forEach((shelves, rackKey) => {
+        if (rackKey !== 'no_rack') {
+            // Create/find rack node
+            const parts = rackKey.split('_');
+            const rackNum = parseInt(parts[parts.length - 1]);
+            const hall = parts.length > 2 ? parts[0] : '';
+            const aisle = parts.length > 2 ? parts[1] : '';
+            
+            const rackId = `rack_${rackKey}`;
+            let rackNode = cy.getElementById(rackId);
+            
+            if (rackNode.length === 0) {
+                // Create new rack node
+                cy.add({
+                    group: 'nodes',
+                    data: {
+                        id: rackId,
+                        label: `Rack ${rackNum}`,
+                        type: 'rack',
+                        rack_num: rackNum,
+                        hall: hall,
+                        aisle: aisle
+                    },
+                    classes: 'rack',
+                    position: { x: rackX, y: LAYOUT_CONSTANTS.MIN_START_Y }
+                });
+                rackNode = cy.getElementById(rackId);
+            }
+            
+            // Move shelves into this rack
+            shelves.forEach(shelf => {
+                shelf.move({ parent: rackId });
+            });
+            
+            rackX += rackSpacing;
+        } else {
+            // No rack info - arrange standalone
+            shelves.forEach((shelf, idx) => {
+                shelf.move({ parent: null });
+                shelf.position({
+                    x: LAYOUT_CONSTANTS.MIN_START_X + (idx % 3) * 500,
+                    y: LAYOUT_CONSTANTS.MIN_START_Y + Math.floor(idx / 3) * 400
+                });
+            });
+        }
+    });
+    
+    // Run reset layout to properly arrange the racks
+    setTimeout(() => {
+        resetLayout();
+    }, 100);
+}
+
+/**
+ * Organize nodes in a simple grid when no location info is available
+ */
+function organizeInGrid() {
+    console.log('Organizing nodes in grid (no location info)');
+    
+    const shelfNodes = cy.nodes('[type="shelf"]');
+    const cols = 3;
+    const spacing = 500;
+    const startX = 300;
+    const startY = 300;
+    
+    shelfNodes.forEach((node, idx) => {
+        // Remove from any parent
+        node.move({ parent: null });
+        
+        // Position in grid
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        
+        node.position({
+            x: startX + col * spacing,
+            y: startY + row * spacing
+        });
+    });
+    
+    // Fit view to show all nodes
+    cy.fit(null, 50);
 }
 
 // Node configurations - now loaded from server-side to ensure consistency
@@ -583,8 +898,7 @@ function createConnection(sourceId, targetId) {
             target: targetId,
             cable_type: DEFAULT_CABLE_CONFIG.type,
             cable_length: DEFAULT_CABLE_CONFIG.length,
-            label: `#${connectionNumber}`,
-            connection_number: connectionNumber,
+            connection_number: connectionNumber,  // Keep for internal tracking/filtering
             color: connectionColor,
             source_hostname: sourceHostname,
             destination_hostname: targetHostname
@@ -625,6 +939,22 @@ function updateAddNodeButtonState() {
 }
 
 function createEmptyVisualization() {
+    /**
+     * Create an empty canvas for manual node creation and connection drawing.
+     * 
+     * WORKFLOW:
+     * 1. User clicks "Create Empty Canvas" button
+     * 2. This function initializes an empty Cytoscape visualization
+     * 3. User adds nodes via "Add Node" button (calls addNewNode)
+     * 4. User draws connections between ports using edge handles
+     * 5. User exports CablingDescriptor and DeploymentDescriptor
+     * 
+     * EXPORT COMPATIBILITY:
+     * Nodes created with addNewNode() include all required fields (hostname, shelf_node_type)
+     * for proper descriptor export with consistent host list/enumeration between
+     * CablingDescriptor and DeploymentDescriptor.
+     * See: export_descriptors.py::extract_host_list_from_connections()
+     */
     // Hide upload section
     const uploadSection = document.getElementById('uploadSection');
     const cyLoading = document.getElementById('cyLoading');
@@ -640,6 +970,7 @@ function createEmptyVisualization() {
     currentData = {
         nodes: [],
         edges: [],
+        elements: [],  // Empty elements array for Cytoscape
         metadata: {
             total_connections: 0,
             total_nodes: 0
@@ -672,9 +1003,9 @@ function createEmptyVisualization() {
 
 function resetLayout() {
     /**
-     * Reset and recalculate layout based on current visualization mode
-     * - Location mode: Recalculate based on rack/shelf hierarchy
-     * - Hierarchy mode: Recalculate based on logical topology (superpod/pod/node)
+     * Recalculate layout based on current visualization mode and current node data
+     * - Location mode: Recalculate based on rack/shelf hierarchy and location data
+     * - Hierarchy mode: Recalculate hierarchical positions based on parent-child relationships
      */
     if (!cy) {
         alert('No visualization loaded. Please upload a file first.');
@@ -684,20 +1015,62 @@ function resetLayout() {
     const mode = getVisualizationMode();
 
     if (mode === 'hierarchy') {
-        // Hierarchy mode - recalculate hierarchical layout
-        showExportStatus('Resetting hierarchical layout...', 'info');
+        // Hierarchy mode - recalculate hierarchical layout based on structure
+        showExportStatus('Recalculating hierarchical layout...', 'info');
 
-        // In hierarchy mode, we need to re-upload/regenerate the visualization
-        // because the layout is calculated server-side based on the descriptor
-        alert('Hierarchical layout reset requires re-importing the descriptor file.\n\nPlease re-upload your textproto file to regenerate the layout.');
+        // Use a hierarchical layout algorithm for compound nodes
+        // This will position parents based on their children
+        const hierarchyNodes = cy.nodes('[type="graph"], [type="superpod"], [type="pod"], [type="cluster"]');
+        
+        if (hierarchyNodes.length === 0) {
+            // No hierarchy - might be a flat structure
+            cy.fit(null, 50);
+            showExportStatus('No hierarchical structure to layout', 'info');
+            setTimeout(() => {
+                const statusDiv = document.getElementById('rangeStatus');
+                if (statusDiv) {
+                    statusDiv.textContent = '';
+                }
+            }, 2000);
+            return;
+        }
 
-        // Hide the status message
+        // Unlock all nodes temporarily for layout calculation
+        cy.nodes().unlock();
+
+        // Run a hierarchical layout that respects compound node structure
+        // Use breadthfirst for hierarchy visualization
+        const layout = cy.layout({
+            name: 'breadthfirst',
+            directed: true,
+            padding: 50,
+            spacingFactor: 1.5,
+            avoidOverlap: true,
+            nodeDimensionsIncludeLabels: true
+        });
+        
+        layout.run();
+
+        // After layout, lock compound nodes again
         setTimeout(() => {
-            const statusDiv = document.getElementById('rangeStatus');
-            if (statusDiv) {
-                statusDiv.textContent = '';
-            }
-        }, 2000);
+            const compoundTypes = ['graph', 'superpod', 'pod', 'cluster', 'rack'];
+            cy.nodes().forEach(node => {
+                const nodeType = node.data('type');
+                if (compoundTypes.includes(nodeType) && node.isParent()) {
+                    node.lock();
+                }
+            });
+            
+            console.log('Recalculated hierarchical layout');
+            showExportStatus('Hierarchical layout recalculated', 'success');
+            
+            setTimeout(() => {
+                const statusDiv = document.getElementById('rangeStatus');
+                if (statusDiv) {
+                    statusDiv.textContent = '';
+                }
+            }, 2000);
+        }, 500);
 
         return;
     }
@@ -712,7 +1085,7 @@ function resetLayout() {
     }
 
     // Show status message
-    showExportStatus('Resetting location-based layout...', 'info');
+    showExportStatus('Recalculating location-based layout...', 'info');
 
     // Sort racks by rack number (right to left - descending)
     const sortedRacks = [];
@@ -866,6 +1239,20 @@ function resetLayout() {
 }
 
 function addNewNode() {
+    /**
+     * Add a new node to the empty canvas.
+     * 
+     * IMPORTANT FOR EXPORT CONSISTENCY:
+     * This function creates shelf nodes with the required fields for proper descriptor export:
+     * - hostname: Used for host identification in both CablingDescriptor and DeploymentDescriptor
+     * - shelf_node_type: Node type (WH_N150, GS_E150, etc.) required for host_id mapping
+     * - hall, aisle, rack_num, shelf_u: Optional location data for DeploymentDescriptor
+     * 
+     * The export logic (export_descriptors.py) uses extract_host_list_from_connections()
+     * to ensure both CablingDescriptor and DeploymentDescriptor have the exact same host list
+     * in the exact same order, which is critical for the cabling generator to correctly map
+     * host_id indices between the two descriptors.
+     */
     const nodeTypeSelect = document.getElementById('nodeTypeSelect');
     const hostnameInput = document.getElementById('nodeHostnameInput');
     const hallInput = document.getElementById('nodeHallInput');
@@ -1183,6 +1570,394 @@ function addNewNode() {
     }
 }
 
+function addNewGraph() {
+    const graphTemplateSelect = document.getElementById('graphTemplateSelect');
+    const graphLabelInput = document.getElementById('graphLabelInput');
+
+    const selectedTemplate = graphTemplateSelect.value;
+    const graphLabel = graphLabelInput.value.trim();
+
+    // Check if cytoscape is initialized
+    if (!cy) {
+        alert('Please upload a file and generate a visualization first before adding graph instances.');
+        return;
+    }
+
+    // Check if there are any templates available
+    if (Object.keys(availableGraphTemplates).length === 0) {
+        alert('No graph templates available. Please load a textproto file that contains graph_templates first.');
+        return;
+    }
+
+    // Validate template selection
+    if (!selectedTemplate) {
+        alert('Please select a graph template.');
+        graphTemplateSelect.focus();
+        return;
+    }
+
+    // Validate label
+    if (!graphLabel) {
+        alert('Please enter a label for the graph instance.');
+        graphLabelInput.focus();
+        return;
+    }
+
+    // Check for existing graph with same label
+    const existingGraph = cy.nodes(`[label="${graphLabel}"]`).filter(node => node.isParent());
+    if (existingGraph.length > 0) {
+        alert(`A graph instance with label "${graphLabel}" already exists. Please choose a different label.`);
+        graphLabelInput.focus();
+        return;
+    }
+
+    // Get the template structure
+    const template = availableGraphTemplates[selectedTemplate];
+    if (!template) {
+        alert(`Template "${selectedTemplate}" not found.`);
+        return;
+    }
+
+    console.log('Instantiating template:', selectedTemplate, template);
+
+    // Generate graph ID
+    const graphId = `graph_${Date.now()}_${graphLabel.replace(/\s+/g, '_')}`;
+
+    // Infer the type from the template name (for display/styling purposes)
+    let graphType = 'graph'; // default
+    const templateLower = selectedTemplate.toLowerCase();
+    if (templateLower.includes('superpod')) graphType = 'superpod';
+    else if (templateLower.includes('pod')) graphType = 'pod';
+    else if (templateLower.includes('cluster')) graphType = 'cluster';
+    else if (templateLower.includes('zone')) graphType = 'zone';
+    else if (templateLower.includes('region')) graphType = 'region';
+
+    // Find a good position for the new graph
+    let newX = 0;
+    let newY = 0;
+    
+    const existingGraphs = cy.nodes().filter(node => node.isParent() && !['rack', 'tray', 'port'].includes(node.data('type')));
+    
+    if (existingGraphs.length > 0) {
+        // Position new graph to the right of existing graphs
+        let maxX = -Infinity;
+        existingGraphs.forEach(graph => {
+            const pos = graph.position();
+            const boundingBox = graph.boundingBox();
+            const rightEdge = boundingBox.x2 || (pos.x + 300);
+            if (rightEdge > maxX) {
+                maxX = rightEdge;
+                newY = pos.y;
+            }
+        });
+        newX = maxX + 600; // 600px spacing between graphs
+    } else {
+        // First graph - place at a reasonable starting position
+        newX = 300;
+        newY = 300;
+    }
+
+    try {
+        // Instantiate the template recursively
+        const nodesToAdd = [];
+        const edgesToAdd = [];
+        
+        instantiateTemplateRecursive(
+            template, 
+            selectedTemplate,
+            graphId, 
+            graphLabel, 
+            graphType,
+            null, // no parent for top-level graph
+            newX, 
+            newY,
+            nodesToAdd,
+            edgesToAdd,
+            {} // node path mapping for connections
+        );
+
+        // Add all nodes to cytoscape
+        cy.add(nodesToAdd);
+        
+        // Add all edges
+        cy.add(edgesToAdd);
+
+        // Lock compound nodes
+        const addedGraph = cy.getElementById(graphId);
+        if (addedGraph.isParent()) {
+            addedGraph.lock();
+            // Lock all nested compound nodes as well
+            addedGraph.descendants().filter(n => n.isParent() && n.data('type') !== 'rack').forEach(n => n.lock());
+        }
+
+        // Make trays and ports non-draggable
+        cy.nodes('.tray, .port').ungrabify();
+
+        // Apply styling
+        setTimeout(() => {
+            forceApplyCurveStyles();
+            updatePortConnectionStatus();
+        }, 100);
+
+        // Clear inputs
+        graphLabelInput.value = '';
+
+        // Show success message
+        const childCount = template.children ? template.children.length : 0;
+        const connectionCount = template.connections ? template.connections.length : 0;
+        alert(`Successfully instantiated graph template "${selectedTemplate}" as "${graphLabel}"!\n\n` +
+              `Created ${childCount} child node(s) and ${connectionCount} connection(s).`);
+
+    } catch (error) {
+        console.error('Error instantiating graph template:', error);
+        alert(`Failed to instantiate graph template: ${error.message}`);
+    }
+}
+
+/**
+ * Recursively instantiate a graph template with all its children and connections
+ * @param {Object} template - The template structure
+ * @param {string} templateName - The template name (for graph_ref lookups)
+ * @param {string} graphId - The ID for this graph instance
+ * @param {string} graphLabel - The label for this graph instance
+ * @param {string} graphType - The type (superpod, pod, cluster, etc.)
+ * @param {string|null} parentId - The parent node ID (null for top-level)
+ * @param {number} baseX - Base X position
+ * @param {number} baseY - Base Y position
+ * @param {Array} nodesToAdd - Array to accumulate nodes
+ * @param {Array} edgesToAdd - Array to accumulate edges
+ * @param {Object} pathMapping - Maps child names to their full node IDs for connection resolution
+ */
+function instantiateTemplateRecursive(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping) {
+    // Create the graph container node
+    const graphNode = {
+        data: {
+            id: graphId,
+            label: graphLabel,
+            type: graphType,
+            template_name: templateName,
+            parent: parentId
+        },
+        position: { x: baseX, y: baseY },
+        classes: 'graph'
+    };
+    nodesToAdd.push(graphNode);
+    
+    console.log(`Creating graph "${graphLabel}" (${graphId}) with ${template.children ? template.children.length : 0} children`);
+    
+    // Process children
+    if (template.children && template.children.length > 0) {
+        const childSpacing = 400;
+        const startX = baseX - ((template.children.length - 1) * childSpacing / 2);
+        
+        template.children.forEach((child, index) => {
+            const childX = startX + (index * childSpacing);
+            const childY = baseY + 200; // Position children below parent
+            const childId = `${graphId}_${child.name}`;
+            
+            // Update path mapping for connection resolution
+            pathMapping[child.name] = childId;
+            
+            if (child.type === 'node') {
+                // Create a shelf node (leaf node)
+                let nodeType = child.node_descriptor || 'WH_GALAXY';
+                
+                // Normalize node type names (e.g., N300_LB_DEFAULT -> N300_LB)
+                nodeType = nodeType.replace(/_DEFAULT$/, '').replace(/_GLOBAL$/, '').replace(/_AMERICA$/, '');
+                
+                let config = NODE_CONFIGS[nodeType];
+                
+                if (!config) {
+                    console.warn(`Unknown node type: ${child.node_descriptor}, normalized to ${nodeType}, using WH_GALAXY as fallback`);
+                    nodeType = 'WH_GALAXY';
+                    config = NODE_CONFIGS['WH_GALAXY'];
+                }
+                
+                // Create shelf node
+                const shelfNode = {
+                    data: {
+                        id: childId,
+                        parent: graphId,
+                        label: child.name,
+                        type: 'shelf',
+                        hostname: child.name,
+                        shelf_node_type: nodeType
+                    },
+                    position: { x: childX, y: childY },
+                    classes: 'shelf'
+                };
+                nodesToAdd.push(shelfNode);
+                
+                // Create trays and ports
+                createTraysAndPorts(childId, child.name, nodeType, config, childX, childY, nodesToAdd);
+                
+            } else if (child.type === 'graph') {
+                // Recursively instantiate nested graph
+                const nestedTemplate = availableGraphTemplates[child.graph_template];
+                if (!nestedTemplate) {
+                    console.error(`Template not found: ${child.graph_template}`);
+                    return;
+                }
+                
+                // Infer nested graph type
+                let nestedType = 'graph';
+                const templateLower = child.graph_template.toLowerCase();
+                if (templateLower.includes('superpod')) nestedType = 'superpod';
+                else if (templateLower.includes('pod')) nestedType = 'pod';
+                else if (templateLower.includes('cluster')) nestedType = 'cluster';
+                
+                // Create a new path mapping for the nested scope
+                const nestedPathMapping = {};
+                
+                instantiateTemplateRecursive(
+                    nestedTemplate,
+                    child.graph_template,
+                    childId,
+                    child.name,
+                    nestedType,
+                    graphId, // parent is current graph
+                    childX,
+                    childY,
+                    nodesToAdd,
+                    edgesToAdd,
+                    nestedPathMapping
+                );
+                
+                // Merge nested path mapping into current scope with prefix
+                for (const [name, id] of Object.entries(nestedPathMapping)) {
+                    pathMapping[`${child.name}.${name}`] = id;
+                }
+            }
+        });
+    }
+    
+    // Create connections
+    if (template.connections && template.connections.length > 0) {
+        console.log(`Creating ${template.connections.length} connections for ${graphLabel}`);
+        
+        template.connections.forEach((conn, connIndex) => {
+            try {
+                // Resolve source node ID
+                const sourceNodeName = conn.port_a.path[0];
+                const sourceNodeId = pathMapping[sourceNodeName];
+                
+                if (!sourceNodeId) {
+                    console.warn(`Source node not found: ${sourceNodeName} in path mapping`, pathMapping);
+                    return;
+                }
+                
+                const sourcePortId = `${sourceNodeId}-tray${conn.port_a.tray_id}-port${conn.port_a.port_id}`;
+                
+                // Resolve target node ID
+                const targetNodeName = conn.port_b.path[0];
+                const targetNodeId = pathMapping[targetNodeName];
+                
+                if (!targetNodeId) {
+                    console.warn(`Target node not found: ${targetNodeName} in path mapping`, pathMapping);
+                    return;
+                }
+                
+                const targetPortId = `${targetNodeId}-tray${conn.port_b.tray_id}-port${conn.port_b.port_id}`;
+                
+                // Determine connection color based on whether it's intra-node or inter-node
+                const sourceNodeIdBase = sourceNodeId.split('-')[0];
+                const targetNodeIdBase = targetNodeId.split('-')[0];
+                const connectionColor = (sourceNodeIdBase === targetNodeIdBase) 
+                    ? CONNECTION_COLORS.INTRA_NODE 
+                    : CONNECTION_COLORS.INTER_NODE;
+                
+                // Create edge
+                const edgeId = `${graphId}_conn_${connIndex}`;
+                const edge = {
+                    data: {
+                        id: edgeId,
+                        source: sourcePortId,
+                        target: targetPortId,
+                        cableType: conn.cable_type || 'QSFP_DD',
+                        cableLength: 'Unknown',
+                        color: connectionColor
+                    }
+                };
+                edgesToAdd.push(edge);
+                
+                console.log(`  Connection: ${sourcePortId} -> ${targetPortId}`);
+                
+            } catch (error) {
+                console.error(`Error creating connection ${connIndex}:`, error, conn);
+            }
+        });
+    }
+}
+
+/**
+ * Helper function to create trays and ports for a shelf node
+ */
+function createTraysAndPorts(shelfId, hostname, nodeType, config, baseX, baseY, nodesToAdd) {
+    const trayHeight = 60;
+    const traySpacing = 10;
+    const portWidth = 45;
+    const portSpacing = 5;
+
+    for (let trayNum = 1; trayNum <= config.tray_count; trayNum++) {
+        const trayId = `${shelfId}-tray${trayNum}`;
+
+        let trayX, trayY;
+        if (config.tray_layout === 'vertical') {
+            trayX = baseX;
+            trayY = baseY - 150 + (trayNum - 1) * (trayHeight + traySpacing);
+        } else {
+            trayX = baseX - 150 + (trayNum - 1) * (trayHeight + traySpacing);
+            trayY = baseY;
+        }
+
+        const trayNode = {
+            data: {
+                id: trayId,
+                parent: shelfId,
+                label: `T${trayNum}`,
+                type: 'tray',
+                tray: trayNum,
+                hostname: hostname,
+                shelf_node_type: nodeType
+            },
+            position: { x: trayX, y: trayY },
+            classes: 'tray'
+        };
+        nodesToAdd.push(trayNode);
+
+        // Create ports
+        const portsPerTray = config.ports_per_tray;
+        for (let portNum = 1; portNum <= portsPerTray; portNum++) {
+            const portId = `${shelfId}-tray${trayNum}-port${portNum}`;
+
+            let portX, portY;
+            if (config.tray_layout === 'vertical') {
+                portX = trayX - 120 + (portNum - 1) * (portWidth + portSpacing);
+                portY = trayY;
+            } else {
+                portX = trayX;
+                portY = trayY - 100 + (portNum - 1) * (portWidth + portSpacing);
+            }
+
+            const portNode = {
+                data: {
+                    id: portId,
+                    parent: trayId,
+                    label: `P${portNum}`,
+                    type: 'port',
+                    tray: trayNum,
+                    port: portNum,
+                    hostname: hostname,
+                    shelf_node_type: nodeType
+                },
+                position: { x: portX, y: portY },
+                classes: 'port'
+            };
+            nodesToAdd.push(portNode);
+        }
+    }
+}
+
 function toggleEdgeHandles() {
     const btn = document.getElementById('toggleEdgeHandlesBtn');
 
@@ -1202,6 +1977,9 @@ function toggleEdgeHandles() {
 
         // Show add node section
         document.getElementById('addNodeSection').style.display = 'block';
+
+        // Show add graph section
+        document.getElementById('addGraphSection').style.display = 'block';
 
         // Add visual feedback only for available (unconnected) ports
         updatePortEditingHighlight();
@@ -1227,6 +2005,9 @@ function toggleEdgeHandles() {
 
         // Hide add node section
         document.getElementById('addNodeSection').style.display = 'none';
+
+        // Hide add graph section
+        document.getElementById('addGraphSection').style.display = 'none';
 
         // Clear any selected connection and remove its styling
         if (selectedConnection) {
@@ -1502,6 +2283,13 @@ function initVisualization(data) {
     console.log('Container element:', cyContainer);
     console.log('Container dimensions:', cyContainer.offsetWidth, 'x', cyContainer.offsetHeight);
     console.log('Elements count:', data.elements ? data.elements.length : 'undefined');
+
+    // Store initial visualization data for reset functionality
+    initialVisualizationData = JSON.parse(JSON.stringify(data));
+    console.log('Stored initial visualization data for reset');
+
+    // Extract available graph templates from metadata (for textproto imports)
+    extractGraphTemplates(data);
 
     // Detect and set visualization mode based on data
     // Check if this is a descriptor/hierarchical import (has graph nodes)
@@ -1795,15 +2583,6 @@ function getCytoscapeStyles() {
                 'curve-style': 'unbundled-bezier',
                 'control-point-distances': ['100px'],
                 'control-point-weights': [0.5],
-                'label': 'data(label)',
-                'font-size': 12,
-                'font-weight': 'bold',
-                'text-background-color': '#ffffff',
-                'text-background-opacity': 1.0,
-                'text-background-padding': 2,
-                'text-border-width': 2,
-                'text-border-color': '#333333',
-                'text-border-opacity': 1.0,
                 'z-index': 1000,
                 'z-compound-depth': 'top'
             }
@@ -1817,13 +2596,7 @@ function getCytoscapeStyles() {
                 'line-color': 'data(color)',
                 'line-opacity': 1,
                 'z-index': 2000,
-                'z-compound-depth': 'top',
-                'text-background-color': '#ffff99',
-                'text-background-opacity': 1.0,
-                'text-background-padding': 2,
-                'text-border-width': 2,
-                'text-border-color': '#ff6600',
-                'text-border-opacity': 1.0
+                'z-compound-depth': 'top'
             }
         },
 
@@ -1900,8 +2673,36 @@ function getCytoscapeStyles() {
             }
         },
 
+        // Generic graph container styles - hierarchical containers (superpod, pod, cluster, etc.)
+        // This provides default styling for any graph-type containers
+        {
+            selector: '[type="superpod"], [type="pod"], [type="cluster"], [type="zone"], [type="region"], [type="datacenter"]',
+            style: {
+                'shape': 'round-rectangle',
+                'background-color': '#f0f8ff',
+                'background-opacity': 0.3,
+                'border-width': 5,
+                'border-color': '#4169e1',
+                'border-opacity': 0.8,
+                'border-style': 'dashed',
+                'label': 'data(label)',
+                'text-valign': 'top',
+                'text-halign': 'center',
+                'font-size': 24,
+                'font-weight': 'bold',
+                'color': '#1e3a8a',
+                'text-background-color': '#ffffff',
+                'text-background-opacity': 0.95,
+                'text-border-width': 2,
+                'text-border-color': '#4169e1',
+                'padding': 20,
+                'z-index': 0
+            }
+        },
+
         // Depth-specific graph colors (correlate with connections WITHIN the container)
         // Graph at depth N contains connections at depth N+1
+        // These come AFTER the generic styles so they override based on depth attribute
         {
             selector: '.graph[depth = 0]',
             style: {
@@ -1909,7 +2710,8 @@ function getCytoscapeStyles() {
                 'border-width': 5,
                 'background-color': '#fff3e6',
                 'color': '#E67E22',
-                'text-border-color': '#E67E22'
+                'text-border-color': '#E67E22',
+                'border-style': 'solid'
             }
         },
         {
@@ -1919,7 +2721,8 @@ function getCytoscapeStyles() {
                 'border-width': 4,
                 'background-color': '#fffbe6',
                 'color': '#D4AC0D',
-                'text-border-color': '#F1C40F'
+                'text-border-color': '#F1C40F',
+                'border-style': 'solid'
             }
         },
         {
@@ -1929,7 +2732,8 @@ function getCytoscapeStyles() {
                 'border-width': 4,
                 'background-color': '#e6f9f0',
                 'color': '#27AE60',
-                'text-border-color': '#27AE60'
+                'text-border-color': '#27AE60',
+                'border-style': 'solid'
             }
         },
         {
@@ -1939,7 +2743,8 @@ function getCytoscapeStyles() {
                 'border-width': 3,
                 'background-color': '#e6f3ff',
                 'color': '#3498DB',
-                'text-border-color': '#3498DB'
+                'text-border-color': '#3498DB',
+                'border-style': 'solid'
             }
         },
         {
@@ -1949,7 +2754,8 @@ function getCytoscapeStyles() {
                 'border-width': 3,
                 'background-color': '#f4e6ff',
                 'color': '#9B59B6',
-                'text-border-color': '#9B59B6'
+                'text-border-color': '#9B59B6',
+                'border-style': 'solid'
             }
         },
         {
@@ -1959,7 +2765,8 @@ function getCytoscapeStyles() {
                 'border-width': 3,
                 'background-color': '#ffe6f2',
                 'color': '#E91E63',
-                'text-border-color': '#E91E63'
+                'text-border-color': '#E91E63',
+                'border-style': 'solid'
             }
         },
         {
@@ -1969,7 +2776,8 @@ function getCytoscapeStyles() {
                 'border-width': 3,
                 'background-color': '#ffe6f2',
                 'color': '#E91E63',
-                'text-border-color': '#E91E63'
+                'text-border-color': '#E91E63',
+                'border-style': 'solid'
             }
         },
 
@@ -2418,8 +3226,53 @@ function showNodeInfo(node, position) {
     let html = `<strong>${data.label || data.id}</strong><br>`;
     html += `Type: ${data.type || 'Unknown'}<br>`;
 
+    // Show hierarchical graph information (superpod, pod, cluster, etc.)
+    const hierarchicalTypes = ['graph', 'superpod', 'pod', 'cluster'];
+    const isHierarchical = !['rack', 'tray', 'port', 'shelf'].includes(data.type);
+    
+    if (isHierarchical && node.isParent()) {
+        html += `<br><strong>Graph Hierarchy Info:</strong><br>`;
+        
+        // Show template name if available
+        if (data.template_name) {
+            html += `Template: ${data.template_name}<br>`;
+        }
+        
+        // Show node type (the actual type field)
+        if (data.type) {
+            html += `Node Type: ${data.type}<br>`;
+        }
+        
+        // Show label
+        if (data.label) {
+            html += `Label: ${data.label}<br>`;
+        }
+        
+        // Show child count
+        const childCount = node.children().length;
+        html += `Children: ${childCount}<br>`;
+        
+        // Show depth in hierarchy
+        let depth = 0;
+        let current = node;
+        while (current.parent().length > 0) {
+            depth++;
+            current = current.parent();
+        }
+        html += `Hierarchy Depth: ${depth}<br>`;
+        
+        // Show host_id if available
+        if (data.host_id !== undefined) {
+            html += `Host ID: ${data.host_id}<br>`;
+        }
+        
+        // Show child_name if available
+        if (data.child_name) {
+            html += `Child Name: ${data.child_name}<br>`;
+        }
+    }
     // Show location information for rack nodes
-    if (data.type === 'rack') {
+    else if (data.type === 'rack') {
         if (data.hall || data.aisle || data.rack_num) {
             html += `<br><strong>Location:</strong><br>`;
             if (data.hall !== undefined && data.hall !== '') html += `Hall: ${data.hall}<br>`;
@@ -2447,6 +3300,21 @@ function showNodeInfo(node, position) {
         // Show node type if available
         if (data.shelf_node_type) {
             html += `Node Type: ${data.shelf_node_type.toUpperCase()}<br>`;
+        }
+        
+        // Show node descriptor type if available
+        if (data.node_descriptor_type) {
+            html += `Node Descriptor: ${data.node_descriptor_type.toUpperCase()}<br>`;
+        }
+        
+        // Show host_id if available
+        if (data.host_id !== undefined) {
+            html += `Host ID: ${data.host_id}<br>`;
+        }
+        
+        // Show child_name if available
+        if (data.child_name) {
+            html += `Child Name: ${data.child_name}<br>`;
         }
     } else {
         // For other node types (tray, port), show hierarchical location with individual fields
@@ -2546,44 +3414,44 @@ function enableShelfEditing(node, position) {
     let html = `<strong>Edit Shelf Node</strong><br>`;
     html += `Node: ${data.label || data.id}<br>`;
 
+    html += `<br>`;
+
     if (isHierarchyMode) {
-        // In hierarchy mode, show warning that location changes won't affect visualization
-        html += `<div style="background: #fff3cd; padding: 6px; margin: 8px 0; border-radius: 4px; border: 1px solid #ffc107; font-size: 12px;">`;
-        html += `<strong style="color: #856404;">⚠️ Hierarchy Mode:</strong><br>`;
-        html += `<span style="color: #856404;">Location changes will be saved but won't affect the visualization layout.</span>`;
+        // In hierarchy mode, show blank section (no editing allowed)
+        html += `<div style="margin: 10px 0; padding: 20px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; text-align: center; color: #6c757d;">`;
+        html += `<!-- Editing disabled in hierarchy mode -->`;
         html += `</div>`;
+    } else {
+        // In location mode, show all editable fields
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Hostname:</label>`;
+        html += `<input type="text" id="hostnameEditInput" value="${data.hostname || ''}" placeholder="Enter hostname" style="width: 200px; padding: 5px;">`;
+        html += `</div>`;
+
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Hall:</label>`;
+        html += `<input type="text" id="hallEditInput" value="${data.hall || ''}" placeholder="Enter hall" style="width: 200px; padding: 5px;">`;
+        html += `</div>`;
+
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Aisle:</label>`;
+        html += `<input type="text" id="aisleEditInput" value="${data.aisle || ''}" placeholder="Enter aisle" style="width: 200px; padding: 5px;">`;
+        html += `</div>`;
+
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Rack:</label>`;
+        html += `<input type="number" id="rackEditInput" value="${data.rack_num || ''}" placeholder="Enter rack number" style="width: 200px; padding: 5px;">`;
+        html += `</div>`;
+
+        html += `<div style="margin-bottom: 10px;">`;
+        html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Shelf U:</label>`;
+        html += `<input type="number" id="shelfUEditInput" value="${data.shelf_u || ''}" placeholder="Enter shelf U" style="width: 200px; padding: 5px;">`;
+        html += `</div>`;
+
+        html += `<br>`;
+        html += `<button onclick="saveShelfEdit('${node.id()}')" style="background: #007bff; color: white; border: none; padding: 8px 15px; margin-right: 5px; cursor: pointer;">Save</button>`;
+        html += `<button onclick="cancelShelfEdit()" style="background: #6c757d; color: white; border: none; padding: 8px 15px; cursor: pointer;">Cancel</button>`;
     }
-
-    html += `<br>`;
-
-    html += `<div style="margin-bottom: 10px;">`;
-    html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Hostname:</label>`;
-    html += `<input type="text" id="hostnameEditInput" value="${data.hostname || ''}" placeholder="Enter hostname" style="width: 200px; padding: 5px;">`;
-    html += `</div>`;
-
-    html += `<div style="margin-bottom: 10px;">`;
-    html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Hall:</label>`;
-    html += `<input type="text" id="hallEditInput" value="${data.hall || ''}" placeholder="Enter hall" style="width: 200px; padding: 5px;">`;
-    html += `</div>`;
-
-    html += `<div style="margin-bottom: 10px;">`;
-    html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Aisle:</label>`;
-    html += `<input type="text" id="aisleEditInput" value="${data.aisle || ''}" placeholder="Enter aisle" style="width: 200px; padding: 5px;">`;
-    html += `</div>`;
-
-    html += `<div style="margin-bottom: 10px;">`;
-    html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Rack:</label>`;
-    html += `<input type="number" id="rackEditInput" value="${data.rack_num || ''}" placeholder="Enter rack number" style="width: 200px; padding: 5px;">`;
-    html += `</div>`;
-
-    html += `<div style="margin-bottom: 10px;">`;
-    html += `<label style="display: block; margin-bottom: 3px; font-weight: bold;">Shelf U:</label>`;
-    html += `<input type="number" id="shelfUEditInput" value="${data.shelf_u || ''}" placeholder="Enter shelf U" style="width: 200px; padding: 5px;">`;
-    html += `</div>`;
-
-    html += `<br>`;
-    html += `<button onclick="saveShelfEdit('${node.id()}')" style="background: #007bff; color: white; border: none; padding: 8px 15px; margin-right: 5px; cursor: pointer;">Save</button>`;
-    html += `<button onclick="cancelShelfEdit()" style="background: #6c757d; color: white; border: none; padding: 8px 15px; cursor: pointer;">Cancel</button>`;
 
     content.innerHTML = html;
 
@@ -2592,14 +3460,16 @@ function enableShelfEditing(node, position) {
     nodeInfo.style.top = `${position.y - 10}px`;
     nodeInfo.style.display = 'block';
 
-    // Focus on the hostname input field
-    setTimeout(() => {
-        const input = document.getElementById('hostnameEditInput');
-        if (input) {
-            input.focus();
-            input.select();
-        }
-    }, 100);
+    if (!isHierarchyMode) {
+        // Focus on the hostname input field (only in location mode)
+        setTimeout(() => {
+            const input = document.getElementById('hostnameEditInput');
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }, 100);
+    }
 }
 
 /**
@@ -2624,10 +3494,11 @@ window.saveShelfEdit = function (nodeId) {
     const shelfUInput = document.getElementById('shelfUEditInput');
 
     const newHostname = hostnameInput.value.trim();
-    const newHall = hallInput.value.trim();
-    const newAisle = aisleInput.value.trim();
-    const newRack = rackInput.value ? parseInt(rackInput.value) : undefined;
-    const newShelfU = shelfUInput.value ? parseInt(shelfUInput.value) : undefined;
+    // Location inputs may not exist in hierarchy mode
+    const newHall = hallInput ? hallInput.value.trim() : '';
+    const newAisle = aisleInput ? aisleInput.value.trim() : '';
+    const newRack = rackInput && rackInput.value ? parseInt(rackInput.value) : undefined;
+    const newShelfU = shelfUInput && shelfUInput.value ? parseInt(shelfUInput.value) : undefined;
 
     // Get the node to check for changes
     const node = cy.getElementById(nodeId);
@@ -2813,8 +3684,10 @@ window.saveShelfEdit = function (nodeId) {
         }
     }
 
-    // If rack or shelf_u changed, automatically reset layout to properly reposition nodes
-    if (rackChanged || shelfUChanged) {
+    // If rack or shelf_u changed in location mode, automatically reset layout to properly reposition nodes
+    // In hierarchy mode, location changes don't affect the visualization layout
+    const mode = getVisualizationMode();
+    if ((rackChanged || shelfUChanged) && mode === 'location') {
         // Hide the editing interface first
         hideNodeInfo();
 
@@ -3072,9 +3945,12 @@ async function exportCablingDescriptor() {
         exportBtn.disabled = true;
         showExportStatus('Generating CablingDescriptor...', 'info');
 
-        // Get current cytoscape data
+        // Get current cytoscape data with visualization mode metadata
         const cytoscapeData = {
-            elements: cy.elements().jsons()
+            elements: cy.elements().jsons(),
+            metadata: {
+                visualization_mode: getVisualizationMode()
+            }
         };
 
         // Send to server for processing
@@ -3633,3 +4509,43 @@ function addExpandCollapseHandlers() {
 
 // Initialize node configurations when the page loads
 initializeNodeConfigs();
+
+// Add event listener for graph template dropdown to enable/disable button
+document.getElementById('graphTemplateSelect').addEventListener('change', function() {
+    const addGraphBtn = document.getElementById('addGraphBtn');
+    const graphLabelInput = document.getElementById('graphLabelInput');
+    const hasTemplate = this.value && this.value !== '';
+    const hasLabel = graphLabelInput.value.trim().length > 0;
+    
+    if (cy && hasTemplate && hasLabel) {
+        addGraphBtn.disabled = false;
+        addGraphBtn.style.cursor = 'pointer';
+        addGraphBtn.style.background = '#007bff';
+        addGraphBtn.style.opacity = '1';
+    } else {
+        addGraphBtn.disabled = true;
+        addGraphBtn.style.cursor = 'not-allowed';
+        addGraphBtn.style.background = '#6c757d';
+        addGraphBtn.style.opacity = '0.6';
+    }
+});
+
+// Add event listener for graph label input to enable/disable Add Graph button
+document.getElementById('graphLabelInput').addEventListener('input', function() {
+    const addGraphBtn = document.getElementById('addGraphBtn');
+    const graphTemplateSelect = document.getElementById('graphTemplateSelect');
+    const hasLabel = this.value.trim().length > 0;
+    const hasTemplate = graphTemplateSelect.value && graphTemplateSelect.value !== '';
+    
+    if (cy && hasTemplate && hasLabel) {
+        addGraphBtn.disabled = false;
+        addGraphBtn.style.cursor = 'pointer';
+        addGraphBtn.style.background = '#007bff';
+        addGraphBtn.style.opacity = '1';
+    } else {
+        addGraphBtn.disabled = true;
+        addGraphBtn.style.cursor = 'not-allowed';
+        addGraphBtn.style.background = '#6c757d';
+        addGraphBtn.style.opacity = '0.6';
+    }
+});

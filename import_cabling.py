@@ -1865,8 +1865,10 @@ class NetworkCablingCytoscapeVisualizer:
             x,
             y,
             host_id=host_id,
-            node_descriptor_type=node_type,
-            child_name=child_name
+            shelf_node_type=node_type,  # Store as shelf_node_type (standard field)
+            node_descriptor_type=node_type,  # Keep for compatibility
+            child_name=child_name,
+            hostname=child_name  # Also store as hostname
         )
         
         self.nodes.append(shelf_node)
@@ -2100,7 +2102,6 @@ class NetworkCablingCytoscapeVisualizer:
                     "id": f"connection_{i}",
                     "source": src_port_id,
                     "target": dst_port_id,
-                    "label": f"#{i}",
                     "cable_length": connection["cable_length"],
                     "cable_type": connection["cable_type"],
                     "connection_number": i,
@@ -2167,7 +2168,6 @@ class NetworkCablingCytoscapeVisualizer:
                     "id": f"connection_{i}",
                     "source": src_port_id,
                     "target": dst_port_id,
-                    "label": f"#{i}",
                     "cable_type": conn['cable_type'],
                     "connection_number": i,
                     "color": color,
@@ -2240,14 +2240,65 @@ class NetworkCablingCytoscapeVisualizer:
         connection_count = (len(self.descriptor_connections) if self.file_format == "descriptor" and self.descriptor_connections 
                           else len(self.connections))
         
+        metadata = {
+            "total_connections": connection_count,
+            "total_nodes": len([n for n in cytoscape_data["elements"] if "source" not in n.get("data", {})]),
+            "file_format": self.file_format,  # Include format for legend switching
+        }
+        
+        # If this is a descriptor file, include the graph templates for the UI
+        if self.file_format == "descriptor" and self.cluster_descriptor:
+            # Extract template names and their full structure from the cluster descriptor
+            template_data = {}
+            for template_name, template_proto in self.cluster_descriptor.graph_templates.items():
+                # Store the template structure for instantiation in the UI
+                template_info = {
+                    "name": template_name,
+                    "children": []
+                }
+                
+                # Extract children (nodes or graph references)
+                for child in template_proto.children:
+                    child_info = {
+                        "name": child.name
+                    }
+                    
+                    if child.HasField("node_ref"):
+                        child_info["type"] = "node"
+                        child_info["node_descriptor"] = child.node_ref.node_descriptor
+                    elif child.HasField("graph_ref"):
+                        child_info["type"] = "graph"
+                        child_info["graph_template"] = child.graph_ref.graph_template
+                    
+                    template_info["children"].append(child_info)
+                
+                # Extract internal connections
+                template_info["connections"] = []
+                for cable_type, conn_list in template_proto.internal_connections.items():
+                    for conn in conn_list.connections:
+                        template_info["connections"].append({
+                            "cable_type": cable_type,
+                            "port_a": {
+                                "path": list(conn.port_a.path),
+                                "tray_id": conn.port_a.tray_id,
+                                "port_id": conn.port_a.port_id
+                            },
+                            "port_b": {
+                                "path": list(conn.port_b.path),
+                                "tray_id": conn.port_b.tray_id,
+                                "port_id": conn.port_b.port_id
+                            }
+                        })
+                
+                template_data[template_name] = template_info
+            
+            metadata["graph_templates"] = template_data
+            print(f"Added {len(template_data)} graph templates to metadata: {list(template_data.keys())}")
+        
         return {
             "nodes": cytoscape_data["elements"],
             "edges": [],
-            "metadata": {
-                "total_connections": connection_count,
-                "total_nodes": len([n for n in cytoscape_data["elements"] if "source" not in n.get("data", {})]),
-                "file_format": self.file_format,  # Include format for legend switching
-            },
+            "metadata": metadata,
             "elements": cytoscape_data["elements"],
         }
 
