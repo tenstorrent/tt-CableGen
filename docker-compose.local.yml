@@ -1,0 +1,51 @@
+services:
+  cablegen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cablegen-app-local
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=development
+      - FLASK_APP=server.py
+    ports:
+      - "5000:5000"
+    networks:
+      - cablegen-local-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: cablegen-nginx-local
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - FQDN=localhost
+    volumes:
+      - ./nginx/nginx.local.conf:/etc/nginx/templates/default.conf.template:ro
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    networks:
+      - cablegen-local-network
+    depends_on:
+      cablegen:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  cablegen-local-network:
+    driver: bridge
+    name: cablegen-local-network
+
