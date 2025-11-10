@@ -906,7 +906,7 @@ function addNewNode() {
      * IMPORTANT FOR EXPORT CONSISTENCY:
      * This function creates shelf nodes with the required fields for proper descriptor export:
      * - hostname: Used for host identification in both CablingDescriptor and DeploymentDescriptor
-     * - shelf_node_type: Node type (WH_N150, GS_E150, etc.) required for host_id mapping
+     * - shelf_node_type: Node type (WH_GALAXY, N300_LB, BH_GALAXY, P150_LB, etc.) required for host_id mapping
      * - hall, aisle, rack_num, shelf_u: Optional location data for DeploymentDescriptor
      * 
      * The export logic (export_descriptors.py) uses extract_host_list_from_connections()

@@ -432,7 +432,7 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     
     The addNewNode function creates shelf nodes with:
     - hostname: Required for host identification
-    - shelf_node_type: Required for node type (WH_N150, GS_E150, etc.)
+    - shelf_node_type: Required for node type (WH_GALAXY, N300_LB, BH_GALAXY, P150_LB, etc.)
     - hall, aisle, rack_num, shelf_u: Optional location data
     
     Returns:
