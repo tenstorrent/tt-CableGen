@@ -26,6 +26,7 @@ const DEFAULT_CABLE_CONFIG = {
 let cy;
 let currentData = null;
 let selectedConnection = null;
+let selectedNode = null;  // Track selected node for deletion
 let isEdgeCreationMode = false;
 let sourcePort = null;
 
@@ -128,10 +129,20 @@ function getEthChannelMapping(nodeType, portNumber) {
 }
 
 function updateDeleteButtonState() {
-    const deleteBtn = document.getElementById('deleteConnectionBtn');
+    const deleteBtn = document.getElementById('deleteElementBtn');
+    if (!deleteBtn) return; // Button might not exist yet
 
-    // Only enable the button if we're in editing mode AND have a selected connection
-    if (isEdgeCreationMode && selectedConnection && selectedConnection.length > 0) {
+    // Enable button if we're in editing mode AND have either a selected connection or deletable node
+    const hasConnection = selectedConnection && selectedConnection.length > 0;
+    const hasNode = selectedNode && selectedNode.length > 0;
+    
+    let isDeletable = false;
+    if (hasNode) {
+        const nodeType = selectedNode.data('type');
+        isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+    }
+
+    if (isEdgeCreationMode && (hasConnection || isDeletable)) {
         deleteBtn.disabled = false;
         deleteBtn.style.opacity = '1';
         deleteBtn.style.cursor = 'pointer';
@@ -140,6 +151,11 @@ function updateDeleteButtonState() {
         deleteBtn.style.opacity = '0.5';
         deleteBtn.style.cursor = 'not-allowed';
     }
+}
+
+// Kept for backward compatibility - now just calls updateDeleteButtonState
+function updateDeleteNodeButtonState() {
+    updateDeleteButtonState();
 }
 
 // ===== Utility Functions =====
@@ -367,6 +383,12 @@ function clearAllSelections() {
         selectedConnection = null;
         updateDeleteButtonState();
     }
+
+    if (selectedNode) {
+        selectedNode.removeClass('selected-node');
+        selectedNode = null;
+        updateDeleteNodeButtonState();
+    }
 }
 
 // ===== End Event Handler Helpers =====
@@ -432,6 +454,79 @@ function deleteSelectedConnection() {
         updateDeleteButtonState();
         updatePortConnectionStatus();
         updatePortEditingHighlight();
+    }
+}
+
+function deleteSelectedNode() {
+    if (!selectedNode || selectedNode.length === 0) {
+        alert('Please select a node first by clicking on it.');
+        return;
+    }
+
+    const node = selectedNode;
+    const nodeType = node.data('type');
+    const nodeLabel = node.data('label') || node.id();
+
+    // Check if node type is deletable
+    if (!['shelf', 'rack', 'graph'].includes(nodeType)) {
+        alert('Only shelf, rack, and graph nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
+        return;
+    }
+
+    // Build description for confirmation
+    let message = `Delete ${nodeType}: "${nodeLabel}"`;
+    
+    // Count children for compound nodes
+    if (node.isParent()) {
+        const descendants = node.descendants();
+        const childCount = descendants.length;
+        const connectedEdges = descendants.connectedEdges();
+        const edgeCount = connectedEdges.length;
+        
+        message += `\n\nThis will also delete:`;
+        message += `\n  • ${childCount} child node(s)`;
+        if (edgeCount > 0) {
+            message += `\n  • ${edgeCount} connection(s)`;
+        }
+    } else {
+        // Check for connected edges
+        const connectedEdges = node.connectedEdges();
+        if (connectedEdges.length > 0) {
+            message += `\n\nThis will also delete ${connectedEdges.length} connection(s)`;
+        }
+    }
+    
+    message += '\n\nThis action cannot be undone.';
+
+    if (confirm(message)) {
+        // If it's a compound node, Cytoscape will automatically remove all descendants
+        node.remove();
+        
+        selectedNode = null;
+        updateDeleteNodeButtonState();
+        updatePortConnectionStatus();
+        updatePortEditingHighlight();
+        
+        // Update node filter dropdown if it exists
+        if (typeof populateNodeFilterDropdown === 'function') {
+            populateNodeFilterDropdown();
+        }
+        
+        console.log(`Deleted ${nodeType} node: ${nodeLabel}`);
+    }
+}
+
+function deleteSelectedElement() {
+    /**
+     * Combined delete function that deletes either a selected connection or node.
+     * Priority: Connection first, then node.
+     */
+    if (selectedConnection && selectedConnection.length > 0) {
+        deleteSelectedConnection();
+    } else if (selectedNode && selectedNode.length > 0) {
+        deleteSelectedNode();
+    } else {
+        alert('Please select a connection or node first by clicking on it.');
     }
 }
 
@@ -1117,8 +1212,8 @@ function toggleEdgeHandles() {
         btn.textContent = '🔗 Disable Connection Editing';
         btn.style.backgroundColor = '#dc3545';
 
-        // Show delete connection section
-        document.getElementById('deleteConnectionSection').style.display = 'block';
+        // Show delete element section (combined connection and node deletion)
+        document.getElementById('deleteElementSection').style.display = 'block';
 
         // Show add node section
         document.getElementById('addNodeSection').style.display = 'block';
@@ -1127,7 +1222,7 @@ function toggleEdgeHandles() {
         updatePortEditingHighlight();
 
         // Show instruction
-        alert('Connection editing enabled!\n\n• Click unconnected port → Click another port = Create connection\n• Click connection to select it, then use Delete button or Backspace/Delete key\n• Click empty space = Cancel selection\n\nNote: Only unconnected ports are highlighted in orange');
+        alert('Connection editing enabled!\n\n• Click unconnected port → Click another port = Create connection\n• Click connection to select it, then use Delete button or Backspace/Delete key\n• Click deletable nodes (shelf/rack/graph) to select for deletion\n• Click empty space = Cancel selection\n\nNote: Only unconnected ports are highlighted in orange');
 
     } else {
         // Disable connection creation mode
@@ -1142,8 +1237,8 @@ function toggleEdgeHandles() {
         btn.textContent = '🔗 Enable Connection Editing';
         btn.style.backgroundColor = '#28a745';
 
-        // Hide delete connection section
-        document.getElementById('deleteConnectionSection').style.display = 'none';
+        // Hide delete element section
+        document.getElementById('deleteElementSection').style.display = 'none';
 
         // Hide add node section
         document.getElementById('addNodeSection').style.display = 'none';
@@ -1153,8 +1248,15 @@ function toggleEdgeHandles() {
             selectedConnection.removeClass('selected-connection');
         }
         selectedConnection = null;
-        document.getElementById('deleteConnectionBtn').disabled = true;
-        document.getElementById('deleteConnectionBtn').style.opacity = '0.5';
+
+        // Clear any selected node and remove its styling
+        if (selectedNode) {
+            selectedNode.removeClass('selected-node');
+        }
+        selectedNode = null;
+        
+        // Update delete button state
+        updateDeleteButtonState();
 
         // Remove visual feedback from all ports
         cy.nodes('.port').style({
@@ -1168,6 +1270,9 @@ function toggleEdgeHandles() {
 
         // Remove selected-connection class from all edges
         cy.edges().removeClass('selected-connection');
+
+        // Remove selected-node class from all nodes
+        cy.nodes().removeClass('selected-node');
     }
 }
 
@@ -1557,6 +1662,19 @@ function getCytoscapeStyles() {
             }
         },
 
+        // Style for selected node (for deletion)
+        {
+            selector: '.selected-node',
+            style: {
+                'border-color': '#ff0000',
+                'border-width': '4px',
+                'border-style': 'solid',
+                'overlay-color': '#ff0000',
+                'overlay-opacity': 0.2,
+                'overlay-padding': 5
+            }
+        },
+
         // Style for source port selection during connection creation
         {
             selector: '.port.source-selected',
@@ -1707,12 +1825,37 @@ function addCytoscapeEventHandlers() {
                 handlePortClickViewMode(node, evt);
             }
         } else {
-            // Non-port node clicked - clear connection selection
+            // Non-port node clicked
+            const nodeType = node.data('type');
+            const isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+
+            // Clear connection selection when clicking on any non-port node
             if (selectedConnection) {
                 selectedConnection.removeClass('selected-connection');
                 selectedConnection = null;
                 updateDeleteButtonState();
             }
+
+            // In editing mode, allow selection of deletable nodes
+            if (isEdgeCreationMode && isDeletable) {
+                // Deselect previously selected node
+                if (selectedNode) {
+                    selectedNode.removeClass('selected-node');
+                }
+
+                // Select this node
+                selectedNode = node;
+                node.addClass('selected-node');
+                updateDeleteNodeButtonState();
+            } else {
+                // Clear node selection if not in editing mode or not deletable
+                if (selectedNode) {
+                    selectedNode.removeClass('selected-node');
+                    selectedNode = null;
+                    updateDeleteNodeButtonState();
+                }
+            }
+
             showNodeInfo(node, evt.renderedPosition || evt.position);
         }
     });
@@ -1737,6 +1880,13 @@ function addCytoscapeEventHandlers() {
         if (isEdgeCreationMode && sourcePort) {
             sourcePort.removeClass('source-selected');
             sourcePort = null;
+        }
+
+        // Clear node selection when clicking on an edge
+        if (selectedNode) {
+            selectedNode.removeClass('selected-node');
+            selectedNode = null;
+            updateDeleteNodeButtonState();
         }
 
         // Deselect previously selected connection (works in both editing and normal mode)
@@ -2984,13 +3134,16 @@ document.addEventListener('keydown', function (event) {
         }
     }
 
-    // Backspace or Delete to delete selected connection (only in editing mode)
+    // Backspace or Delete to delete selected connection or node (only in editing mode)
     if (event.key === 'Backspace' || event.key === 'Delete') {
-        // Only delete if we're in editing mode, have a selected connection, and not typing in an input
-        if (isEdgeCreationMode && selectedConnection && selectedConnection.length > 0 &&
-            !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-            event.preventDefault();
-            deleteSelectedConnection();
+        // Only delete if we're in editing mode and not typing in an input
+        if (isEdgeCreationMode && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            // Check if there's something selected to delete
+            if ((selectedConnection && selectedConnection.length > 0) || 
+                (selectedNode && selectedNode.length > 0)) {
+                event.preventDefault();
+                deleteSelectedElement();
+            }
         }
     }
 
