@@ -118,7 +118,7 @@ function getEthChannelMapping(nodeType, portNumber) {
         case 'P150_QB_GLOBAL':
         case 'P150_QB_AMERICA':
         case 'P150_LB':
-            // P150 nodes: 4 ports per tray, specific channel mapping
+            // P150 nodes: 4 ports per tray (4 trays for QB variants, 8 trays for LB), specific channel mapping
             if (portNumber === 1) return 'ASIC: 0 Channel: 9, ASIC: 0 Channel: 11';
             if (portNumber === 2) return 'ASIC: 0 Channel: 8, ASIC: 0 Channel: 10';
             if (portNumber === 3) return 'ASIC: 0 Channel: 5, ASIC: 0 Channel: 7';
