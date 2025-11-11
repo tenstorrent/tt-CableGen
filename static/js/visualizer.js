@@ -137,7 +137,7 @@ function updateDeleteButtonState() {
     // Enable button if we're in editing mode AND have either a selected connection or deletable node
     const hasConnection = selectedConnection && selectedConnection.length > 0;
     const hasNode = selectedNode && selectedNode.length > 0;
-    
+
     let isDeletable = false;
     if (hasNode) {
         const nodeType = selectedNode.data('type');
@@ -442,7 +442,7 @@ function deleteSelectedConnection() {
     }
 
     const edge = selectedConnection;
-    
+
     // Check if edge still exists and is valid
     if (!edge || !edge.cy() || edge.removed()) {
         alert('Selected connection is no longer valid.');
@@ -450,7 +450,7 @@ function deleteSelectedConnection() {
         updateDeleteButtonState();
         return;
     }
-    
+
     const sourceNode = cy.getElementById(edge.data('source'));
     const targetNode = cy.getElementById(edge.data('target'));
 
@@ -486,14 +486,14 @@ function deleteSelectedNode() {
 
     // Build description for confirmation
     let message = `Delete ${nodeType}: "${nodeLabel}"`;
-    
+
     // Count children for compound nodes
     if (node.isParent()) {
         const descendants = node.descendants();
         const childCount = descendants.length;
         const connectedEdges = descendants.connectedEdges();
         const edgeCount = connectedEdges.length;
-        
+
         message += `\n\nThis will also delete:`;
         message += `\n  • ${childCount} child node(s)`;
         if (edgeCount > 0) {
@@ -506,23 +506,23 @@ function deleteSelectedNode() {
             message += `\n\nThis will also delete ${connectedEdges.length} connection(s)`;
         }
     }
-    
+
     message += '\n\nThis action cannot be undone.';
 
     if (confirm(message)) {
         // If it's a compound node, Cytoscape will automatically remove all descendants
         node.remove();
-        
+
         selectedNode = null;
         updateDeleteNodeButtonState();
         updatePortConnectionStatus();
         updatePortEditingHighlight();
-        
+
         // Update node filter dropdown if it exists
         if (typeof populateNodeFilterDropdown === 'function') {
             populateNodeFilterDropdown();
         }
-        
+
         console.log(`Deleted ${nodeType} node: ${nodeLabel}`);
     }
 }
@@ -543,7 +543,7 @@ function deleteSelectedElement() {
 
 function updatePortConnectionStatus() {
     if (!cy) return;
-    
+
     // Reset all ports to default state
     cy.nodes('.port').removeClass('connected-port');
 
@@ -551,12 +551,12 @@ function updatePortConnectionStatus() {
     cy.edges().forEach(function (edge) {
         // Skip if edge has been removed or is invalid
         if (!edge || !edge.cy() || edge.removed()) return;
-        
+
         const sourceId = edge.data('source');
         const targetId = edge.data('target');
         const sourceNode = cy.getElementById(sourceId);
         const targetNode = cy.getElementById(targetId);
-        
+
         // Only add class if nodes exist and are valid
         if (sourceNode.length && !sourceNode.removed()) {
             sourceNode.addClass('connected-port');
@@ -695,13 +695,7 @@ function createEmptyVisualization() {
         }
     };
 
-    // Initialize Cytoscape with empty data
-    initVisualization(currentData);
-
-    // Enable the Add Node button
-    updateAddNodeButtonState();
-
-    // Open the Cabling Editor section
+    // Open the Cabling Editor section FIRST (before accessing its child elements)
     if (typeof toggleCollapsible === 'function') {
         const cablingEditorContent = document.getElementById('cablingEditor');
         if (cablingEditorContent && cablingEditorContent.classList.contains('collapsed')) {
@@ -709,14 +703,24 @@ function createEmptyVisualization() {
         }
     }
 
-    // Enable Connection Editing (suppress alert since we're showing custom success message)
-    const toggleBtn = document.getElementById('toggleEdgeHandlesBtn');
-    if (toggleBtn && toggleBtn.textContent.includes('Enable')) {
-        toggleEdgeHandles(true);
-    }
+    // Wait for collapsible animation to complete (300ms transition) before accessing child elements
+    // This prevents timing issues on slower production servers or different browsers
+    setTimeout(() => {
+        // Initialize Cytoscape with empty data (now that the section is fully expanded)
+        initVisualization(currentData);
 
-    // Show success message
-    showSuccess('Empty visualization created! Connection editing is enabled. You can now add nodes using the "Add New Node" section.');
+        // Enable the Add Node button
+        updateAddNodeButtonState();
+
+        // Enable Connection Editing (suppress alert since we're showing custom success message)
+        const toggleBtn = document.getElementById('toggleEdgeHandlesBtn');
+        if (toggleBtn && toggleBtn.textContent.includes('Enable')) {
+            toggleEdgeHandles(true);
+        }
+
+        // Show success message
+        showSuccess('Empty visualization created! Connection editing is enabled. You can now add nodes using the "Add New Node" section.');
+    }, 350); // Wait slightly longer than the 300ms CSS transition
 }
 
 function resetLayout() {
@@ -759,7 +763,7 @@ function resetLayout() {
     racks.forEach(function (rack) {
         // Skip if rack has been removed or is invalid
         if (!rack || !rack.cy() || rack.removed()) return;
-        
+
         const bb = rack.boundingBox();
         const width = bb.w;
         if (width > maxRackWidth) maxRackWidth = width;
@@ -774,11 +778,11 @@ function resetLayout() {
     racks.forEach(function (rack) {
         // Skip if rack has been removed or is invalid
         if (!rack || !rack.cy() || rack.removed()) return;
-        
+
         rack.children('[type="shelf"]').forEach(function (shelf) {
             // Skip if shelf has been removed or is invalid
             if (!shelf || !shelf.cy() || shelf.removed()) return;
-            
+
             // Get bounding box of shelf including all its children
             const bb = shelf.boundingBox({ includeLabels: false, includeOverlays: false });
             const height = bb.h;
@@ -1234,6 +1238,11 @@ function addNewNode() {
 function toggleEdgeHandles() {
     const btn = document.getElementById('toggleEdgeHandlesBtn');
 
+    if (!btn) {
+        console.error('Toggle edge handles button not found');
+        return;
+    }
+
     if (!cy) {
         console.error('Cytoscape instance not available');
         return;
@@ -1246,10 +1255,16 @@ function toggleEdgeHandles() {
         btn.style.backgroundColor = '#dc3545';
 
         // Show delete element section (combined connection and node deletion)
-        document.getElementById('deleteElementSection').style.display = 'block';
+        const deleteSection = document.getElementById('deleteElementSection');
+        if (deleteSection) {
+            deleteSection.style.display = 'block';
+        }
 
         // Show add node section
-        document.getElementById('addNodeSection').style.display = 'block';
+        const addNodeSection = document.getElementById('addNodeSection');
+        if (addNodeSection) {
+            addNodeSection.style.display = 'block';
+        }
 
         // Add visual feedback only for available (unconnected) ports
         updatePortEditingHighlight();
@@ -1271,10 +1286,16 @@ function toggleEdgeHandles() {
         btn.style.backgroundColor = '#28a745';
 
         // Hide delete element section
-        document.getElementById('deleteElementSection').style.display = 'none';
+        const deleteSection = document.getElementById('deleteElementSection');
+        if (deleteSection) {
+            deleteSection.style.display = 'none';
+        }
 
         // Hide add node section
-        document.getElementById('addNodeSection').style.display = 'none';
+        const addNodeSection = document.getElementById('addNodeSection');
+        if (addNodeSection) {
+            addNodeSection.style.display = 'none';
+        }
 
         // Clear any selected connection and remove its styling
         if (selectedConnection) {
@@ -1287,7 +1308,7 @@ function toggleEdgeHandles() {
             selectedNode.removeClass('selected-node');
         }
         selectedNode = null;
-        
+
         // Update delete button state
         updateDeleteButtonState();
 
@@ -3172,7 +3193,7 @@ document.addEventListener('keydown', function (event) {
         // Only delete if we're in editing mode and not typing in an input
         if (isEdgeCreationMode && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
             // Check if there's something selected to delete
-            if ((selectedConnection && selectedConnection.length > 0) || 
+            if ((selectedConnection && selectedConnection.length > 0) ||
                 (selectedNode && selectedNode.length > 0)) {
                 event.preventDefault();
                 deleteSelectedElement();
