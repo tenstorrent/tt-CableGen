@@ -521,14 +521,14 @@
                     </div>
                 </div>
 
-                <div id="deleteConnectionSection" style="margin-bottom: 15px; display: none;">
-                    <button id="deleteConnectionBtn" onclick="deleteSelectedConnection()" disabled
+                <div id="deleteElementSection" style="margin-bottom: 15px; display: none;">
+                    <button id="deleteElementBtn" onclick="deleteSelectedElement()" disabled
                         style="width: 100%; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; opacity: 0.5;">
-                        🗑️ Delete Selected Connection
+                        🗑️ Delete Selected Element
                     </button>
                     <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Select a connection or an associated port first, then click to delete (or press
-                        Backspace/Delete)
+                        Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete (or press Backspace/Delete).<br>
+                        Compound nodes will delete all children.
                     </div>
                 </div>
 
