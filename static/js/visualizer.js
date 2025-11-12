@@ -259,26 +259,32 @@ function switchToHierarchyMode() {
     // Make trays and ports non-draggable
     cy.nodes('.tray, .port').ungrabify();
 
-    // Lock compound nodes and restore their positions
-    const compoundTypes = ['graph', 'rack'];
-    cy.nodes().forEach(node => {
-        const nodeType = node.data('type');
-        if (compoundTypes.includes(nodeType) && node.isParent()) {
-            const originalData = initialVisualizationData.elements.find(e => e.data && e.data.id === node.id());
-            if (originalData && originalData.position) {
-                node.lock();
-                node.position({
-                    x: originalData.position.x,
-                    y: originalData.position.y
-                });
-            }
-        }
-    });
-
-    // Run preset layout to position nodes
+    // Run preset layout first (use Python positions)
     cy.layout({ name: 'preset' }).run();
 
-    console.log('Hierarchy mode switch complete');
+    // Then apply fcose ONLY to graph-level nodes to prevent overlap
+    setTimeout(() => {
+        const graphNodes = cy.nodes('[type="graph"]');
+        if (graphNodes.length > 0) {
+            cy.layout({
+                name: 'fcose',
+                eles: graphNodes,  // Only apply to graph nodes
+                quality: 'default',
+                randomize: false,
+                animate: true,
+                animationDuration: 500,
+                fit: false,
+                nodeDimensionsIncludeLabels: true,
+                nodeRepulsion: 4500,
+                idealEdgeLength: 200,
+                nestingFactor: 0.1,
+                gravity: 0,
+                numIter: 500
+            }).run();
+        }
+    }, 100);
+
+    console.log('Hierarchy mode switch complete - graph nodes spaced with fcose');
 }
 
 /**
@@ -1134,54 +1140,54 @@ function resetLayout() {
     const mode = getVisualizationMode();
 
     if (mode === 'hierarchy') {
-        // Hierarchy mode - recalculate hierarchical layout based on structure
-        showExportStatus('Recalculating hierarchical layout...', 'info');
+        // Hierarchy mode - restore original positions and apply overlap prevention to graph nodes only
+        showExportStatus('Restoring original layout...', 'info');
 
-        // Use a hierarchical layout algorithm for compound nodes
-        // This will position parents based on their children
-        const hierarchyNodes = cy.nodes('[type="graph"], [type="superpod"], [type="pod"], [type="cluster"]');
-
-        if (hierarchyNodes.length === 0) {
-            // No hierarchy - might be a flat structure
-            cy.fit(null, 50);
-            showExportStatus('No hierarchical structure to layout', 'info');
-            setTimeout(() => {
-                const statusDiv = document.getElementById('rangeStatus');
-                if (statusDiv) {
-                    statusDiv.textContent = '';
-                }
-            }, 2000);
+        if (!initialVisualizationData || !initialVisualizationData.elements) {
+            showExportStatus('No initial data to restore', 'error');
             return;
         }
 
-        // Unlock all nodes temporarily for layout calculation
-        cy.nodes().unlock();
+        // Restore all positions from initial data
+        cy.nodes().forEach(node => {
+            const nodeId = node.id();
+            const originalElement = initialVisualizationData.elements.find(e => e.data && e.data.id === nodeId);
 
-        // Run a hierarchical layout that respects compound node structure
-        // Use breadthfirst for hierarchy visualization
-        const layout = cy.layout({
-            name: 'breadthfirst',
-            directed: true,
-            padding: 50,
-            spacingFactor: 1.5,
-            avoidOverlap: true,
-            nodeDimensionsIncludeLabels: true
+            if (originalElement && originalElement.position) {
+                node.position({
+                    x: originalElement.position.x,
+                    y: originalElement.position.y
+                });
+            }
         });
 
-        layout.run();
+        // Apply fcose ONLY to graph-level nodes (superpods, clusters, etc.) to prevent overlap
+        // This keeps shelf/tray/port positions precise (from Python)
+        const graphNodes = cy.nodes('[type="graph"]');
+        if (graphNodes.length > 1) {
+            console.log(`Applying overlap prevention to ${graphNodes.length} graph nodes only`);
+            cy.layout({
+                name: 'fcose',
+                eles: graphNodes,  // ONLY graph nodes, not their children
+                quality: 'default',
+                randomize: false,
+                animate: true,
+                animationDuration: 500,
+                fit: false,
+                nodeDimensionsIncludeLabels: true,
+                nodeRepulsion: 4500,
+                idealEdgeLength: 200,
+                nestingFactor: 0.1,
+                gravity: 0,
+                numIter: 500
+            }).run();
+        }
 
-        // After layout, lock compound nodes again
+        // Fit viewport to show all nodes
         setTimeout(() => {
-            const compoundTypes = ['graph', 'superpod', 'pod', 'cluster', 'rack'];
-            cy.nodes().forEach(node => {
-                const nodeType = node.data('type');
-                if (compoundTypes.includes(nodeType) && node.isParent()) {
-                    node.lock();
-                }
-            });
-
-            console.log('Recalculated hierarchical layout');
-            showExportStatus('Hierarchical layout recalculated', 'success');
+            cy.fit(null, 50);
+            console.log('Restored layout with graph-level overlap prevention');
+            showExportStatus('Layout restored - graph nodes spaced to avoid overlaps', 'success');
 
             setTimeout(() => {
                 const statusDiv = document.getElementById('rangeStatus');
@@ -1189,7 +1195,7 @@ function resetLayout() {
                     statusDiv.textContent = '';
                 }
             }, 2000);
-        }, 500);
+        }, 600);
 
         return;
     }
@@ -1789,6 +1795,7 @@ function addNewGraph() {
         // Instantiate the template recursively
         const nodesToAdd = [];
         const edgesToAdd = [];
+        const deferredConnections = [];
 
         instantiateTemplateRecursive(
             template,
@@ -1801,13 +1808,20 @@ function addNewGraph() {
             newY,
             nodesToAdd,
             edgesToAdd,
-            {} // node path mapping for connections
+            {}, // node path mapping for connections
+            deferredConnections
         );
 
-        // Add all nodes to cytoscape
+        // Add all nodes to cytoscape FIRST
+        console.log(`Adding ${nodesToAdd.length} nodes to Cytoscape`);
         cy.add(nodesToAdd);
 
+        // NOW process deferred connections (all nodes exist)
+        console.log(`Processing ${deferredConnections.length} deferred connection groups`);
+        processDeferredConnections(deferredConnections, edgesToAdd);
+
         // Add all edges
+        console.log(`Adding ${edgesToAdd.length} edges to Cytoscape`);
         cy.add(edgesToAdd);
 
         // Lock compound nodes
@@ -1843,6 +1857,70 @@ function addNewGraph() {
 }
 
 /**
+ * Process all deferred connections after all nodes have been created
+ * @param {Array} deferredConnections - Array of deferred connection groups
+ * @param {Array} edgesToAdd - Array to add the created edges to
+ */
+function processDeferredConnections(deferredConnections, edgesToAdd) {
+    deferredConnections.forEach(deferred => {
+        const { graphId, graphLabel, connections, pathMapping } = deferred;
+        console.log(`Creating ${connections.length} connections for ${graphLabel}`);
+
+        connections.forEach((conn, connIndex) => {
+            try {
+                // Resolve source node ID
+                const sourceNodeName = conn.port_a.path[0];
+                const sourceNodeId = pathMapping[sourceNodeName];
+
+                if (!sourceNodeId) {
+                    console.warn(`Source node not found: ${sourceNodeName} in path mapping for ${graphLabel}`, pathMapping);
+                    return;
+                }
+
+                const sourcePortId = `${sourceNodeId}-tray${conn.port_a.tray_id}-port${conn.port_a.port_id}`;
+
+                // Resolve target node ID
+                const targetNodeName = conn.port_b.path[0];
+                const targetNodeId = pathMapping[targetNodeName];
+
+                if (!targetNodeId) {
+                    console.warn(`Target node not found: ${targetNodeName} in path mapping for ${graphLabel}`, pathMapping);
+                    return;
+                }
+
+                const targetPortId = `${targetNodeId}-tray${conn.port_b.tray_id}-port${conn.port_b.port_id}`;
+
+                // Determine connection color based on whether it's intra-node or inter-node
+                const sourceNodeIdBase = sourceNodeId.split('-')[0];
+                const targetNodeIdBase = targetNodeId.split('-')[0];
+                const connectionColor = (sourceNodeIdBase === targetNodeIdBase)
+                    ? CONNECTION_COLORS.INTRA_NODE
+                    : CONNECTION_COLORS.INTER_NODE;
+
+                // Create edge
+                const edgeId = `${graphId}_conn_${connIndex}`;
+                const edge = {
+                    data: {
+                        id: edgeId,
+                        source: sourcePortId,
+                        target: targetPortId,
+                        cableType: conn.cable_type || 'QSFP_DD',
+                        cableLength: 'Unknown',
+                        color: connectionColor
+                    }
+                };
+                edgesToAdd.push(edge);
+
+                console.log(`  Connection: ${sourcePortId} -> ${targetPortId}`);
+
+            } catch (error) {
+                console.error(`Error creating connection ${connIndex} for ${graphLabel}:`, error, conn);
+            }
+        });
+    });
+}
+
+/**
  * Recursively instantiate a graph template with all its children and connections
  * @param {Object} template - The template structure
  * @param {string} templateName - The template name (for graph_ref lookups)
@@ -1855,8 +1933,9 @@ function addNewGraph() {
  * @param {Array} nodesToAdd - Array to accumulate nodes
  * @param {Array} edgesToAdd - Array to accumulate edges
  * @param {Object} pathMapping - Maps child names to their full node IDs for connection resolution
+ * @param {Array} deferredConnections - Array to defer connection creation until all nodes exist
  */
-function instantiateTemplateRecursive(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping) {
+function instantiateTemplateRecursive(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping, deferredConnections) {
     // Create the graph container node
     const graphNode = {
         data: {
@@ -1948,7 +2027,8 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                     childY,
                     nodesToAdd,
                     edgesToAdd,
-                    nestedPathMapping
+                    nestedPathMapping,
+                    deferredConnections
                 );
 
                 // Merge nested path mapping into current scope with prefix
@@ -1959,60 +2039,19 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
         });
     }
 
-    // Create connections
+    // Defer connection creation until all nodes are instantiated
+    // Store the connection data and path mapping for later processing
     if (template.connections && template.connections.length > 0) {
-        console.log(`Creating ${template.connections.length} connections for ${graphLabel}`);
+        console.log(`Deferring ${template.connections.length} connections for ${graphLabel}`);
 
-        template.connections.forEach((conn, connIndex) => {
-            try {
-                // Resolve source node ID
-                const sourceNodeName = conn.port_a.path[0];
-                const sourceNodeId = pathMapping[sourceNodeName];
+        // Clone the pathMapping for this scope to use later
+        const pathMappingCopy = Object.assign({}, pathMapping);
 
-                if (!sourceNodeId) {
-                    console.warn(`Source node not found: ${sourceNodeName} in path mapping`, pathMapping);
-                    return;
-                }
-
-                const sourcePortId = `${sourceNodeId}-tray${conn.port_a.tray_id}-port${conn.port_a.port_id}`;
-
-                // Resolve target node ID
-                const targetNodeName = conn.port_b.path[0];
-                const targetNodeId = pathMapping[targetNodeName];
-
-                if (!targetNodeId) {
-                    console.warn(`Target node not found: ${targetNodeName} in path mapping`, pathMapping);
-                    return;
-                }
-
-                const targetPortId = `${targetNodeId}-tray${conn.port_b.tray_id}-port${conn.port_b.port_id}`;
-
-                // Determine connection color based on whether it's intra-node or inter-node
-                const sourceNodeIdBase = sourceNodeId.split('-')[0];
-                const targetNodeIdBase = targetNodeId.split('-')[0];
-                const connectionColor = (sourceNodeIdBase === targetNodeIdBase)
-                    ? CONNECTION_COLORS.INTRA_NODE
-                    : CONNECTION_COLORS.INTER_NODE;
-
-                // Create edge
-                const edgeId = `${graphId}_conn_${connIndex}`;
-                const edge = {
-                    data: {
-                        id: edgeId,
-                        source: sourcePortId,
-                        target: targetPortId,
-                        cableType: conn.cable_type || 'QSFP_DD',
-                        cableLength: 'Unknown',
-                        color: connectionColor
-                    }
-                };
-                edgesToAdd.push(edge);
-
-                console.log(`  Connection: ${sourcePortId} -> ${targetPortId}`);
-
-            } catch (error) {
-                console.error(`Error creating connection ${connIndex}:`, error, conn);
-            }
+        deferredConnections.push({
+            graphId: graphId,
+            graphLabel: graphLabel,
+            connections: template.connections,
+            pathMapping: pathMappingCopy
         });
     }
 }
@@ -2422,9 +2461,31 @@ function initVisualization(data) {
     console.log('Container dimensions:', cyContainer.offsetWidth, 'x', cyContainer.offsetHeight);
     console.log('Elements count:', data.elements ? data.elements.length : 'undefined');
 
+    // Debug: Check if positions exist in data
+    const graphNodesInData = data.elements?.filter(e => e.data?.type === 'graph') || [];
+    console.log('Graph nodes in data:', graphNodesInData.length);
+    graphNodesInData.forEach(g => {
+        console.log(`  ${g.data?.label}: position=${JSON.stringify(g.position)}, parent=${g.data?.parent}`);
+    });
+
     // Store initial visualization data for reset functionality
     initialVisualizationData = JSON.parse(JSON.stringify(data));
     console.log('Stored initial visualization data for reset');
+
+    // Ensure currentData has metadata for exports (without breaking position references)
+    if (!currentData) {
+        // First time loading - set currentData
+        currentData = data;
+        console.log('Initialized currentData');
+    } else if (data.metadata && data.metadata.graph_templates &&
+        (!currentData.metadata || !currentData.metadata.graph_templates)) {
+        // Data has graph_templates but currentData doesn't - merge metadata only
+        if (!currentData.metadata) {
+            currentData.metadata = {};
+        }
+        currentData.metadata.graph_templates = data.metadata.graph_templates;
+        console.log('Merged graph_templates into currentData.metadata');
+    }
 
     // Extract available graph templates from metadata (for textproto imports)
     extractGraphTemplates(data);
@@ -2479,42 +2540,46 @@ function initVisualization(data) {
                 elements: data.elements,  // Add everything at once
                 style: getCytoscapeStyles(),
                 layout: {
-                    name: 'preset',
+                    name: 'preset',  // Use positions from Python
                     animate: false,
-                    fit: false  // Don't auto-fit viewport
+                    fit: true,
+                    padding: 50
                 },
                 minZoom: 0.1,
                 maxZoom: 5,
                 wheelSensitivity: 0.2,
                 autoungrabify: false,
                 autounselectify: false,
-                // Disable automatic positioning
-                autolock: false,
-                autoungrabify: false
+                autolock: false
             });
 
-            // IMMEDIATELY lock compound node positions before any rendering happens
-            // This must happen synchronously to prevent auto-centering
-            const compoundTypes = ['graph', 'rack'];
-            cy.nodes().forEach(node => {
-                const nodeType = node.data('type');
-                if (compoundTypes.includes(nodeType) && node.isParent()) {
-                    // Get the original position from data.elements
-                    const originalData = data.elements.find(e => e.data && e.data.id === node.id());
-                    if (originalData && originalData.position) {
-                        node.lock();  // Lock the node first
-                        node.position({
-                            x: originalData.position.x,
-                            y: originalData.position.y
-                        });
-                        if (nodeType === 'graph') {
-                            console.log(`Locked ${node.data('label')} at (${originalData.position.x}, ${originalData.position.y})`);
-                        }
-                    }
+            // Preset layout uses Python-calculated positions (horizontal arrangement)
+            // Nodes are draggable - no locking applied
+            console.log('Using preset layout with Python-calculated positions (nodes draggable)');
+
+            // After preset layout, apply fcose ONLY to graph-level nodes to prevent overlap
+            // This keeps shelf/tray/port positions precise while spacing out superpods
+            setTimeout(() => {
+                const graphNodes = cy.nodes('[type="graph"]');
+                if (graphNodes.length > 0) {
+                    console.log(`Applying fcose to ${graphNodes.length} graph nodes to prevent overlap`);
+                    cy.layout({
+                        name: 'fcose',
+                        eles: graphNodes,  // Only apply to graph nodes
+                        quality: 'default',
+                        randomize: false,
+                        animate: false,
+                        fit: false,  // Don't change viewport
+                        nodeDimensionsIncludeLabels: true,
+                        nodeRepulsion: 4500,
+                        idealEdgeLength: 200,
+                        nestingFactor: 0.1,
+                        gravity: 0,
+                        numIter: 500  // Few iterations since we're close to target
+                    }).run();
+                    console.log('Graph-level spacing applied');
                 }
-            });
-
-            console.log('All compound node positions locked');
+            }, 100);
 
             // Debug: Check rendered positions
             setTimeout(() => {
@@ -2818,7 +2883,7 @@ function getCytoscapeStyles() {
                 'text-background-opacity': 0.95,
                 'text-border-width': 2,
                 'text-border-color': '#cc0000',
-                'padding': 80,  // Padding for children
+                'padding': 20,  // Padding for children
                 'z-index': 0
                 // Removed min-width and min-height to allow full auto-sizing
             }
@@ -2846,7 +2911,7 @@ function getCytoscapeStyles() {
                 'text-background-opacity': 0.95,
                 'text-border-width': 2,
                 'text-border-color': '#4169e1',
-                'padding': 20,
+                'padding': 5,
                 'z-index': 0
             }
         },
@@ -2952,7 +3017,7 @@ function getCytoscapeStyles() {
                 'text-background-opacity': 0.9,
                 'text-border-width': 1,
                 'text-border-color': '#333333',
-                'padding': 15,
+                'padding': 4,
                 'z-index': 1
                 // Removed min-width and min-height to allow full auto-sizing
             }
@@ -2981,7 +3046,7 @@ function getCytoscapeStyles() {
                 'text-background-padding': 4,  // Padding around text background for legibility
                 'text-border-width': 1,
                 'text-border-color': '#0066cc',
-                'padding': 12,
+                'padding': 3,
                 'z-index': 1
                 // Removed fixed min-width and min-height to allow auto-sizing
             }
@@ -3010,7 +3075,7 @@ function getCytoscapeStyles() {
                 'text-background-padding': 3,  // Padding around text background for legibility
                 'text-border-width': 1,
                 'text-border-color': '#666666',
-                'padding': 8,
+                'padding': 2,
                 'z-index': 1
                 // Removed fixed min-width and min-height to allow auto-sizing
             }
@@ -3052,7 +3117,7 @@ function getCytoscapeStyles() {
                 'shape': 'roundrectangle',
                 'width': '120px',
                 'height': '60px',
-                'padding': 5
+                'padding': 2
                 // Removed min-width and min-height to allow full auto-sizing
             }
         },
@@ -4128,13 +4193,21 @@ async function exportCablingDescriptor() {
         exportBtn.disabled = true;
         showExportStatus('Generating CablingDescriptor...', 'info');
 
-        // Get current cytoscape data with visualization mode metadata
+        // Get current cytoscape data with full metadata (including graph_templates)
         const cytoscapeData = {
             elements: cy.elements().jsons(),
             metadata: {
-                visualization_mode: getVisualizationMode()
+                ...currentData?.metadata,  // Include original metadata (graph_templates, etc.)
+                visualization_mode: getVisualizationMode()  // Override/add current mode
             }
         };
+
+        // Debug logging
+        if (cytoscapeData.metadata?.graph_templates) {
+            console.log('Exporting with graph_templates:', Object.keys(cytoscapeData.metadata.graph_templates));
+        } else {
+            console.log('Exporting without graph_templates (will build from nodes)');
+        }
 
         // Send to server for processing
         const response = await fetch('/export_cabling_descriptor', {

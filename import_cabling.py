@@ -636,6 +636,7 @@ class NetworkCablingCytoscapeVisualizer:
             """
             self.parent = parent
             self._path_to_host_id_map = {}
+            self._path_to_template_map = {}  # Maps graph instance paths to their template names
         
         def resolve_hierarchy(self):
             """Resolve complete graph hierarchy
@@ -662,6 +663,17 @@ class NetworkCablingCytoscapeVisualizer:
             
             return hierarchy
         
+        def get_template_for_path(self, path):
+            """Get the template name for a graph instance path
+            
+            Args:
+                path: List of strings representing path from root
+                
+            Returns:
+                Template name if found, None otherwise
+            """
+            return self._path_to_template_map.get(tuple(path))
+        
         def path_to_host_id(self, path):
             """Convert a path to a host_id using O(1) lookup
             
@@ -675,6 +687,10 @@ class NetworkCablingCytoscapeVisualizer:
         
         def _resolve_recursive(self, instance, template_name, path, hierarchy, depth):
             """Recursively resolve a Graph Instance"""
+            # Store the template name for this path
+            if path:  # Don't store root with empty path
+                self._path_to_template_map[tuple(path)] = template_name
+            
             def node_callback(child_name, child_mapping, child_instance, path, depth):
                 node_descriptor_name = child_instance.node_ref.node_descriptor
                 hierarchy.append({
@@ -1705,7 +1721,9 @@ class NetworkCablingCytoscapeVisualizer:
         # layout calculations by processing level-by-level
         
         # Track all graph instance paths that need compound visual elements
+        # NOTE: Root cluster is implicit (not visualized), only child graphs are shown
         graph_paths = set()
+        
         for device_info in self.graph_hierarchy:
             path = device_info['path']
             # Add all parent paths (excluding the leaf device itself)
@@ -1743,11 +1761,11 @@ class NetworkCablingCytoscapeVisualizer:
         if graph_path_tuple in graph_node_map:
             return
         
-        # Generate node ID
+        # Generate node ID and label
         graph_id = "graph_" + "_".join(graph_path)
         graph_label = graph_path[-1]  # Use last element as label
         
-        # Determine parent
+        # Determine parent (root cluster is implicit, so depth-1 nodes have no parent)
         parent_id = None
         if len(graph_path) > 1:
             parent_path_tuple = tuple(graph_path[:-1])
@@ -1755,7 +1773,7 @@ class NetworkCablingCytoscapeVisualizer:
         
         # Calculate position using alternating layout based on depth
         # Position type alternates at each depth level
-        depth = len(graph_path) - 1
+        depth = len(graph_path)
         
         # Get parent's position for relative positioning
         parent_x = 0
@@ -1780,14 +1798,20 @@ class NetworkCablingCytoscapeVisualizer:
             parent_path_tuple = tuple(graph_path[:-1])  # Convert to tuple for comparison
             siblings = [p for p in graph_node_map.keys() 
                        if len(p) == len(graph_path) and p[:-1] == parent_path_tuple]
+            index = len(siblings)
         else:
-            # For top-level graphs, count all graphs at depth 0
+            # For top-level graphs (depth 1), count all graphs at depth 1
             siblings = [p for p in graph_node_map.keys() if len(p) == 1]
-        index = len(siblings)
+            index = len(siblings)
         
         # Use calculate_position_in_sequence with parent position for relative positioning
         # This ensures nested graphs are positioned relative to their parent
         x, y = self.calculate_position_in_sequence("graph", index, parent_x=parent_x, parent_y=parent_y, depth=depth)
+        
+        # Get template name for this graph path
+        template_name = None
+        if self._hierarchy_resolver:
+            template_name = self._hierarchy_resolver.get_template_for_path(graph_path)
         
         # Create graph compound node with calculated position to prevent overlaps
         graph_node = self.create_node_from_template(
@@ -1798,7 +1822,8 @@ class NetworkCablingCytoscapeVisualizer:
             x,  # Use calculated position
             y,  # Use calculated position
             graph_path=graph_path,
-            depth=depth
+            depth=depth,
+            template_name=template_name  # Add template name to node data
         )
         
         self.nodes.append(graph_node)
@@ -2184,8 +2209,9 @@ class NetworkCablingCytoscapeVisualizer:
                     "template_name": template_name,
                     "source_info": f"Host {src_host_id} ({src_node_name}) T{src_tray}P{src_port}",
                     "destination_info": f"Host {dst_host_id} ({dst_node_name}) T{dst_tray}P{dst_port}",
-                    "source_hostname": f"host_{src_host_id}",
-                    "destination_hostname": f"host_{dst_host_id}",
+                    # Use template-relative child names (node1, node2) for template export compatibility
+                    "source_hostname": src_node_name if src_node_name else f"host_{src_host_id}",
+                    "destination_hostname": dst_node_name if dst_node_name else f"host_{dst_host_id}",
                 },
                 "classes": f"connection depth-{depth}",
             }

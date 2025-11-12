@@ -239,9 +239,11 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                     or self._get_hostname_from_port(target_id)
                 )
 
-                # Get node_type from the shelf nodes
+                # Get node_type and host_id from the shelf nodes
                 source_node_type = self._get_node_type_from_port(source_id)
                 target_node_type = self._get_node_type_from_port(target_id)
+                source_host_id = self._get_host_id_from_port(source_id)
+                target_host_id = self._get_host_id_from_port(target_id)
 
                 connection = {
                     "source": {
@@ -250,6 +252,7 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                         "tray_id": source_info.get("tray_id"),
                         "port_id": source_info.get("port_id"),
                         "node_type": source_node_type,
+                        "host_id": source_host_id,
                     },
                     "target": {
                         "hostname": target_hostname,
@@ -257,7 +260,12 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                         "tray_id": target_info.get("tray_id"),
                         "port_id": target_info.get("port_id"),
                         "node_type": target_node_type,
+                        "host_id": target_host_id,
                     },
+                    # Extract depth and template info for hierarchical export
+                    "depth": edge_data.get("depth"),
+                    "template_name": edge_data.get("template_name"),
+                    "instance_path": edge_data.get("instance_path"),
                 }
                 connections.append(connection)
 
@@ -322,6 +330,31 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                                 return node_type.upper()
         
         raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
+
+    def _get_host_id_from_port(self, port_id: str) -> Optional[int]:
+        """Get host_id from a port by traversing up to the shelf node (always 2 levels up: Port -> Tray -> Shelf)"""
+        # Find the port node
+        for element in self.data.get("elements", []):
+            if element.get("data", {}).get("id") == port_id:
+                # Get parent (tray)
+                tray_id = element.get("data", {}).get("parent")
+                if not tray_id:
+                    return None
+                
+                # Find tray and get its parent (shelf)
+                for tray_element in self.data.get("elements", []):
+                    if tray_element.get("data", {}).get("id") == tray_id:
+                        shelf_id = tray_element.get("data", {}).get("parent")
+                        if not shelf_id:
+                            return None
+                        
+                        # Find shelf and get host_id
+                        for shelf_element in self.data.get("elements", []):
+                            if shelf_element.get("data", {}).get("id") == shelf_id:
+                                host_id = shelf_element.get("data", {}).get("host_id")
+                                return host_id
+        
+        return None
 
 
 class DeploymentDataParser:
@@ -504,6 +537,120 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
         return export_flat_cabling_descriptor(cytoscape_data)
 
 
+def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: Dict) -> str:
+    """Export using pre-built templates from metadata (descriptor round-trip)
+    
+    When importing a cabling descriptor, the metadata contains the complete template
+    structure. This function converts it back to protobuf format, preserving the
+    original structure exactly.
+    
+    Args:
+        cytoscape_data: The cytoscape visualization data
+        graph_templates_meta: The graph_templates dict from metadata
+        
+    Returns:
+        String representation of the ClusterDescriptor protobuf
+    """
+    cluster_desc = cluster_config_pb2.ClusterDescriptor()
+    
+    # Get root template name from cytoscape data
+    # The visualizer should have stored this during import
+    metadata = cytoscape_data.get("metadata", {})
+    
+    # Try to find root template name - it should be the template that contains graph refs
+    root_template_name = None
+    for template_name, template_info in graph_templates_meta.items():
+        children = template_info.get('children', [])
+        # Root template has children that are graph references
+        if any(child.get('type') == 'graph' for child in children):
+            root_template_name = template_name
+            break
+    
+    if not root_template_name:
+        # If no graph references found, use the first template as root
+        root_template_name = list(graph_templates_meta.keys())[0]
+    
+    print(f"Root template: {root_template_name}")
+    
+    # Build all graph templates from metadata
+    for template_name, template_info in graph_templates_meta.items():
+        graph_template = cluster_config_pb2.GraphTemplate()
+        
+        # Add children
+        for child_info in template_info.get('children', []):
+            child = graph_template.children.add()
+            child.name = child_info['name']
+            
+            if child_info.get('type') == 'node':
+                # Leaf node
+                child.node_ref.node_descriptor = child_info['node_descriptor']
+            elif child_info.get('type') == 'graph':
+                # Graph reference
+                child.graph_ref.graph_template = child_info['graph_template']
+        
+        # Add connections
+        connections_list = template_info.get('connections', [])
+        if connections_list:
+            port_connections = graph_template.internal_connections["QSFP_DD"]
+            for conn_info in connections_list:
+                conn = port_connections.connections.add()
+                
+                # Port A
+                for path_elem in conn_info['port_a']['path']:
+                    conn.port_a.path.append(path_elem)
+                conn.port_a.tray_id = conn_info['port_a']['tray_id']
+                conn.port_a.port_id = conn_info['port_a']['port_id']
+                
+                # Port B
+                for path_elem in conn_info['port_b']['path']:
+                    conn.port_b.path.append(path_elem)
+                conn.port_b.tray_id = conn_info['port_b']['tray_id']
+                conn.port_b.port_id = conn_info['port_b']['port_id']
+        
+        cluster_desc.graph_templates[template_name].CopyFrom(graph_template)
+        print(f"Added template '{template_name}' with {len(template_info.get('children', []))} children and {len(connections_list)} connections")
+    
+    # Build root instance from cytoscape nodes
+    # Parse all elements to get the hierarchy
+    root_instance = cluster_config_pb2.GraphInstance()
+    root_instance.template_name = root_template_name
+    
+    # Find all graph nodes and build the child_mappings hierarchy
+    elements = cytoscape_data.get("elements", [])
+    element_map = {el.get("data", {}).get("id"): el for el in elements if "data" in el}
+    
+    # Find root graph nodes (nodes without parents)
+    # These are the children of the implicit root cluster
+    root_nodes = [el for el in elements 
+                  if el.get("data", {}).get("type") == "graph" 
+                  and not el.get("data", {}).get("parent")]
+    
+    # The root_instance represents the cluster, so root_nodes are its graph children
+    # We need to create nested sub-instances for each
+    host_id = 0
+    for root_node_el in root_nodes:
+        root_node_data = root_node_el.get("data", {})
+        root_node_label = root_node_data.get("label", root_node_data.get("id"))
+        root_node_template = root_node_data.get("template_name", f"template_{root_node_label}")
+        
+        # Create a nested GraphInstance for this child graph
+        nested_instance = cluster_config_pb2.GraphInstance()
+        nested_instance.template_name = root_node_template
+        
+        # Recursively populate the nested instance
+        host_id = add_child_mappings_with_reuse(root_node_el, element_map, nested_instance, host_id)
+        
+        # Add the nested instance to root's child_mappings
+        child_mapping = cluster_config_pb2.ChildMapping()
+        child_mapping.sub_instance.CopyFrom(nested_instance)
+        root_instance.child_mappings[root_node_label].CopyFrom(child_mapping)
+    
+    cluster_desc.root_instance.CopyFrom(root_instance)
+    
+    print(f"Exported {host_id} hosts using metadata templates")
+    return text_format.MessageToString(cluster_desc)
+
+
 def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     """Export CablingDescriptor preserving the hierarchical structure (graphs, superpods, pods, etc.)
     
@@ -512,6 +659,18 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
+    
+    # Check if metadata has pre-built graph_templates (from descriptor import)
+    metadata = cytoscape_data.get("metadata", {})
+    graph_templates_meta = metadata.get("graph_templates")
+    
+    if graph_templates_meta:
+        # Use metadata templates - this preserves the original descriptor structure
+        print("Using graph templates from metadata (descriptor round-trip)")
+        return export_from_metadata_templates(cytoscape_data, graph_templates_meta)
+    
+    # Otherwise, build templates from cytoscape node structure
+    print("Building templates from cytoscape node structure")
     
     # Get connections for building the topology
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
@@ -526,28 +685,43 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
         if "data" in el and "id" in el["data"]:
             element_map[el["data"]["id"]] = el
     
-    # Find root hierarchical nodes (compound nodes without parents, excluding racks)
-    # A hierarchical container is any compound node that isn't a rack/tray/port
-    # (i.e., it contains shelves or other graphs)
-    root_graph_nodes = []
+    # Find root graph node (compound node with type="graph" and no parent)
+    # The import now creates a single root node for the cluster
+    root_graph_node = None
     for el in elements:
         el_data = el.get("data", {})
         el_type = el_data.get("type")
         has_parent = el_data.get("parent")
         
-        # Skip non-hierarchical types (rack, tray, port are physical location containers)
-        if el_type in ["rack", "tray", "port"]:
-            continue
-            
-        # Check if this is a root node (no parent) and has children
-        if not has_parent:
-            # Check if it has children
-            has_children = any(child.get("data", {}).get("parent") == el_data.get("id") 
-                             for child in elements)
-            if has_children:
-                root_graph_nodes.append(el)
+        # Look for graph nodes without parents
+        if el_type == "graph" and not has_parent:
+            root_graph_node = el
+            break
     
-    if not root_graph_nodes:
+    if not root_graph_node:
+        # Fallback: find any compound nodes without parents (shouldn't happen with new import)
+        root_graph_nodes = []
+        for el in elements:
+            el_data = el.get("data", {})
+            el_type = el_data.get("type")
+            has_parent = el_data.get("parent")
+            
+            # Skip non-hierarchical types (rack, tray, port are physical location containers)
+            if el_type in ["rack", "tray", "port", "shelf"]:
+                continue
+                
+            # Check if this is a root node (no parent) and has children
+            if not has_parent:
+                # Check if it has children
+                has_children = any(child.get("data", {}).get("parent") == el_data.get("id") 
+                                 for child in elements)
+                if has_children:
+                    root_graph_nodes.append(el)
+    
+    # Handle the single root node case (new import format)
+    if root_graph_node:
+        root_graph_nodes = [root_graph_node]
+    elif not root_graph_nodes:
         # No hierarchical structure found - fall back to flat export
         print("No hierarchical structure found, using flat export")
         return export_flat_cabling_descriptor(cytoscape_data)
@@ -582,7 +756,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     # Track which templates have been built
     built_templates = set()
     
-    # If there's only one root graph, use it directly
+    # Since we now always create a single root node, this is the standard path
     if len(root_graph_nodes) == 1:
         root_graph_el = root_graph_nodes[0]
         root_graph_data = root_graph_el.get("data", {})
@@ -708,9 +882,14 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
     node_label = node_data.get("label", node_id)
     node_template_name = node_data.get("template_name", f"template_{node_label}")
     
+    # Skip if this template has already been built (from a different instance)
+    if node_template_name in built_templates:
+        print(f"Skipping template '{node_template_name}' - already built from another instance")
+        return None
+    
     print(f"Building template '{node_template_name}' for {node_type} '{node_label}' (id: {node_id})")
     
-    # Mark this template as built
+    # Mark this template as being built (do this BEFORE processing to prevent recursion)
     built_templates.add(node_template_name)
     
     graph_template = cluster_config_pb2.GraphTemplate()
@@ -735,7 +914,9 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
         if is_leaf:
             # This is a leaf node (actual hardware)
             child = graph_template.children.add()
-            child_name = child_data.get("hostname", child_label)
+            # Use child_name field which stores the template-relative name (e.g., "node1")
+            # This is the clean name from the template, independent of instance-specific data
+            child_name = child_data.get("child_name", child_label)
             child.name = child_name
             # Look for node_type in shelf_node_type field (standard field name)
             node_descriptor = child_data.get("shelf_node_type") or child_data.get("node_descriptor_type") or child_data.get("node_type", "UNKNOWN")
@@ -770,33 +951,75 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
             child.graph_ref.graph_template = child_template_name
             print(f"    Added graph_ref to '{child_label}' referencing template '{child_template_name}'")
     
-    # Add connections that are within this graph scope
-    # Only add connections between children of this node
-    child_ids = {child_el.get("data", {}).get("id") for child_el in children}
+    # Build a set of host_ids for THIS instance's children
+    # We need to only include connections from THIS specific instance, not all instances of the template
+    # Using host_id because child_name is the same across all instances (e.g., all have "node1")
+    child_host_ids = set()
+    child_id_to_name = {}  # Map host_id to child_name for path resolution
     
+    for child_el in children:
+        child_data = child_el.get("data", {})
+        child_type = child_data.get("type")
+        if child_type == "shelf":
+            host_id = child_data.get("host_id")
+            child_name = child_data.get("child_name")
+            if host_id is not None:
+                child_host_ids.add(host_id)
+                if child_name:
+                    child_id_to_name[host_id] = child_name
+    
+    # Add connections that belong to this template
+    # IMPORTANT: Since multiple instances use the same template, we only take connections
+    # from THIS specific instance to build the generic template
     port_connections = graph_template.internal_connections["QSFP_DD"]
+    connections_added = 0
+    
     for connection in connections:
-        source_hostname = connection["source"]["hostname"]
-        target_hostname = connection["target"]["hostname"]
+        # Check if this connection belongs to this template AND this specific instance
+        connection_template = connection.get("template_name")
         
-        # Check if both endpoints are within this graph's children
-        # (We need to traverse down to shelf level to check)
-        if is_connection_within_scope(source_hostname, target_hostname, child_ids, element_map):
-            conn = port_connections.connections.add()
-            
-            # Build path to source
-            source_path = get_path_to_host(source_hostname, node_id, element_map)
-            for path_elem in source_path:
-                conn.port_a.path.append(path_elem)
-            conn.port_a.tray_id = connection["source"]["tray_id"]
-            conn.port_a.port_id = connection["source"]["port_id"]
-            
-            # Build path to target
-            target_path = get_path_to_host(target_hostname, node_id, element_map)
-            for path_elem in target_path:
-                conn.port_b.path.append(path_elem)
-            conn.port_b.tray_id = connection["target"]["tray_id"]
-            conn.port_b.port_id = connection["target"]["port_id"]
+        # First check if template matches
+        if connection_template:
+            if connection_template != node_template_name:
+                continue
+        
+        # Then check if BOTH endpoints are from THIS instance (not other instances of same template)
+        # Use host_id to identify the specific instance
+        source_host_id = connection["source"].get("host_id")
+        target_host_id = connection["target"].get("host_id")
+        
+        if source_host_id not in child_host_ids or target_host_id not in child_host_ids:
+            continue  # This connection is from a different instance of the same template
+        
+        # Add the connection to this template
+        conn = port_connections.connections.add()
+        
+        # Get template-relative child names from host_ids
+        source_child_name = child_id_to_name.get(source_host_id)
+        target_child_name = child_id_to_name.get(target_host_id)
+        
+        if not source_child_name or not target_child_name:
+            print(f"    Warning: Could not find child_name for host_id {source_host_id} or {target_host_id}")
+            continue
+        
+        # Build path using template-relative child names
+        source_path = get_path_to_host(source_child_name, node_id, element_map)
+        for path_elem in source_path:
+            conn.port_a.path.append(path_elem)
+        conn.port_a.tray_id = connection["source"]["tray_id"]
+        conn.port_a.port_id = connection["source"]["port_id"]
+        
+        # Build path using template-relative child names
+        target_path = get_path_to_host(target_child_name, node_id, element_map)
+        for path_elem in target_path:
+            conn.port_b.path.append(path_elem)
+        conn.port_b.tray_id = connection["target"]["tray_id"]
+        conn.port_b.port_id = connection["target"]["port_id"]
+        
+        connections_added += 1
+    
+    if connections_added > 0:
+        print(f"  Added {connections_added} connections to template '{node_template_name}'")
     
     return graph_template
 
@@ -835,7 +1058,8 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id)
         
         if child_type == "shelf":
             # This is a leaf node - map it to a host_id
-            child_name = child_data.get("hostname", child_label)
+            # Use child_name which is the template-relative name
+            child_name = child_data.get("child_name", child_label)
             
             child_mapping = cluster_config_pb2.ChildMapping()
             child_mapping.host_id = host_id
@@ -994,18 +1218,24 @@ def is_descendant_of_any(node_el, ancestor_ids, element_map):
     return False
 
 
-def get_path_to_host(hostname, scope_node_id, element_map):
-    """Get the path from scope_node_id down to the host with given hostname"""
-    # Find the shelf node with this hostname
+def get_path_to_host(child_name, scope_node_id, element_map):
+    """Get the path from scope_node_id down to the host with given child_name
+    
+    Args:
+        child_name: Template child name (e.g., "node1")
+        scope_node_id: The scope node ID to build path from
+        element_map: Map of element IDs to elements
+    """
+    # Find the shelf node with this child_name
     shelf_node = None
     for el in element_map.values():
         data = el.get("data", {})
-        if data.get("type") == "shelf" and data.get("hostname") == hostname:
+        if data.get("type") == "shelf" and data.get("child_name") == child_name:
             shelf_node = el
             break
     
     if not shelf_node:
-        return [hostname]
+        return [child_name]
     
     # Build path from scope_node_id down to shelf_node
     path = []
@@ -1018,9 +1248,9 @@ def get_path_to_host(hostname, scope_node_id, element_map):
         if node_id == scope_node_id:
             break
             
-        # Add node label/name to path (at the beginning)
+        # Add node child_name/label to path (at the beginning)
         if data.get("type") == "shelf":
-            path.insert(0, data.get("hostname", data.get("label", node_id)))
+            path.insert(0, data.get("child_name", data.get("label", node_id)))
         else:
             path.insert(0, data.get("label", node_id))
         
@@ -1030,7 +1260,7 @@ def get_path_to_host(hostname, scope_node_id, element_map):
             break
         current = element_map.get(parent_id)
     
-    return path if path else [hostname]
+    return path if path else [child_name]
 
 
 def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
@@ -1060,7 +1290,8 @@ def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
         
         if is_leaf:
             # Leaf node - add mapping
-            child_name = child_data.get("hostname", child_label)
+            # Use child_name which is the template-relative name
+            child_name = child_data.get("child_name", child_label)
             child_mapping = cluster_config_pb2.ChildMapping()
             child_mapping.host_id = host_id
             graph_instance.child_mappings[child_name].CopyFrom(child_mapping)
