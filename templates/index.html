@@ -410,7 +410,8 @@
             </div>
 
             <!-- Visualization Mode Indicator with Toggle -->
-            <div id="visualizationModeIndicator" style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
+            <div id="visualizationModeIndicator"
+                style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div>
                         <strong style="color: #1976D2; font-size: 14px;">📊 Visualization Mode</strong>
@@ -419,13 +420,14 @@
                         </div>
                     </div>
                     <div>
-                        <button id="toggleModeButton" onclick="toggleVisualizationMode()" 
-                                style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                        <button id="toggleModeButton" onclick="toggleVisualizationMode()"
+                            style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
                             Switch Mode
                         </button>
                     </div>
                 </div>
-                <div id="modeDescription" style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bbdefb;">
+                <div id="modeDescription"
+                    style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bbdefb;">
                     Mode information will appear here
                 </div>
             </div>
@@ -596,7 +598,8 @@
                         🗑️ Delete Selected Element
                     </button>
                     <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete (or press Backspace/Delete).<br>
+                        Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete (or
+                        press Backspace/Delete).<br>
                         Compound nodes will delete all children.
                     </div>
                 </div>
@@ -684,7 +687,8 @@
 
                     <div style="margin-bottom: 10px;">
                         <label for="graphTemplateSelect"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Select Graph Template:</label>
+                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Select Graph
+                            Template:</label>
                         <select id="graphTemplateSelect"
                             style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
                             <option value="" disabled>No templates available (load a textproto first)</option>
@@ -696,7 +700,8 @@
 
                     <div style="margin-bottom: 10px;">
                         <label for="graphLabelInput"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Instance Label:</label>
+                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Instance
+                            Label:</label>
                         <input type="text" id="graphLabelInput" placeholder="e.g., superpod1, pod_a, cluster_west"
                             style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                         <div style="font-size: 11px; color: #666; margin-top: 3px;">
@@ -805,7 +810,8 @@
         <div id="cy">
             <div class="loading-overlay" id="cyLoading">
                 <div>🚀 Ready to visualize your network cabling!</div>
-                <div style="font-size: 14px; color: #999; margin-top: 10px;">Upload a CSV or textproto file to get started</div>
+                <div style="font-size: 14px; color: #999; margin-top: 10px;">Upload a CSV or textproto file to get
+                    started</div>
             </div>
         </div>
 
