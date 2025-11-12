@@ -27,6 +27,7 @@ let cy;
 let currentData = null;
 let initialVisualizationData = null;  // Store initial data for reset functionality
 let selectedConnection = null;
+let selectedNode = null;  // Track selected node for deletion
 let isEdgeCreationMode = false;
 let sourcePort = null;
 let availableGraphTemplates = {};  // Store graph templates from loaded textproto
@@ -83,7 +84,7 @@ function updateModeIndicator() {
  */
 function extractGraphTemplates(data) {
     availableGraphTemplates = {};
-    
+
     // Check if metadata contains graph_templates
     if (data.metadata && data.metadata.graph_templates) {
         availableGraphTemplates = data.metadata.graph_templates;
@@ -91,7 +92,7 @@ function extractGraphTemplates(data) {
     } else {
         console.log('No graph templates found in data');
     }
-    
+
     // Update the dropdown
     populateGraphTemplateDropdown();
 }
@@ -102,12 +103,12 @@ function extractGraphTemplates(data) {
 function populateGraphTemplateDropdown() {
     const graphTemplateSelect = document.getElementById('graphTemplateSelect');
     if (!graphTemplateSelect) return;
-    
+
     // Clear existing options
     graphTemplateSelect.innerHTML = '';
-    
+
     const templateCount = Object.keys(availableGraphTemplates).length;
-    
+
     if (templateCount === 0) {
         // No templates available - show message
         const option = document.createElement('option');
@@ -115,7 +116,7 @@ function populateGraphTemplateDropdown() {
         option.textContent = 'No graph templates available (load a textproto first)';
         option.disabled = true;
         graphTemplateSelect.appendChild(option);
-        
+
         // Disable the Add Graph button
         const addGraphBtn = document.getElementById('addGraphBtn');
         if (addGraphBtn) {
@@ -132,7 +133,7 @@ function populateGraphTemplateDropdown() {
             option.textContent = `${templateName} (Graph Template)`;
             graphTemplateSelect.appendChild(option);
         });
-        
+
         console.log(`Populated ${templateCount} graph template(s) in dropdown`);
     }
 }
@@ -148,17 +149,17 @@ function toggleVisualizationMode() {
 
     // Toggle the mode
     const newMode = visualizationMode === 'hierarchy' ? 'location' : 'hierarchy';
-    
+
     console.log(`Switching visualization mode from ${visualizationMode} to ${newMode}`);
-    
+
     // Set the new mode
     setVisualizationMode(newMode);
-    
+
     // Update the connection legend based on the new mode if we have initial data
     if (initialVisualizationData) {
         updateConnectionLegend(initialVisualizationData);
     }
-    
+
     // Restructure the visualization based on the new mode
     if (newMode === 'location') {
         // Switching to location mode: remove hierarchical containers and reorganize by location
@@ -167,11 +168,11 @@ function toggleVisualizationMode() {
         // Switching to hierarchy mode: restore original hierarchical structure
         switchToHierarchyMode();
     }
-    
+
     // Show a status message
     const modeLabel = newMode === 'hierarchy' ? 'Hierarchy Mode' : 'Location Mode';
     showExportStatus(`Switched to ${modeLabel}`, 'success');
-    
+
     setTimeout(() => {
         const statusDiv = document.getElementById('rangeStatus');
         if (statusDiv) {
@@ -185,15 +186,15 @@ function toggleVisualizationMode() {
  */
 function switchToLocationMode() {
     console.log('Switching to location mode - restructuring visualization');
-    
+
     // Get all shelf nodes (the actual hardware nodes)
     const shelfNodes = cy.nodes('[type="shelf"]');
-    
+
     if (shelfNodes.length === 0) {
         console.warn('No shelf nodes found');
         return;
     }
-    
+
     // Check if any shelf nodes have location information
     let hasLocationInfo = false;
     shelfNodes.forEach(node => {
@@ -201,14 +202,14 @@ function switchToLocationMode() {
         const hall = node.data('hall');
         const aisle = node.data('aisle');
         const shelfU = node.data('shelf_u');
-        
+
         if ((rack !== undefined && rack !== null) || hall || aisle || (shelfU !== undefined && shelfU !== null)) {
             hasLocationInfo = true;
         }
     });
-    
+
     console.log(`Location info available: ${hasLocationInfo}`);
-    
+
     // Remove hierarchical parent nodes (graphs, superpods, pods, clusters)
     // but keep rack nodes if they exist and have location info
     const hierarchicalTypes = ['graph', 'superpod', 'pod', 'cluster'];
@@ -223,7 +224,7 @@ function switchToLocationMode() {
             node.remove();
         }
     });
-    
+
     if (hasLocationInfo) {
         // Organize by location information (racks, aisles, etc.)
         organizeByLocation();
@@ -231,10 +232,10 @@ function switchToLocationMode() {
         // No location info - arrange in a simple grid
         organizeInGrid();
     }
-    
+
     // Unlock all nodes so they can be moved in location mode
     cy.nodes().unlock();
-    
+
     console.log('Location mode switch complete');
 }
 
@@ -243,21 +244,21 @@ function switchToLocationMode() {
  */
 function switchToHierarchyMode() {
     console.log('Switching to hierarchy mode - restoring original structure');
-    
+
     if (!initialVisualizationData || !initialVisualizationData.elements) {
         alert('Cannot restore hierarchy mode - initial data not available. Please re-upload your file.');
         return;
     }
-    
+
     // Remove all current elements
     cy.elements().remove();
-    
+
     // Re-add all elements from initial data
     cy.add(initialVisualizationData.elements);
-    
+
     // Make trays and ports non-draggable
     cy.nodes('.tray, .port').ungrabify();
-    
+
     // Lock compound nodes and restore their positions
     const compoundTypes = ['graph', 'rack'];
     cy.nodes().forEach(node => {
@@ -273,10 +274,10 @@ function switchToHierarchyMode() {
             }
         }
     });
-    
+
     // Run preset layout to position nodes
     cy.layout({ name: 'preset' }).run();
-    
+
     console.log('Hierarchy mode switch complete');
 }
 
@@ -285,30 +286,30 @@ function switchToHierarchyMode() {
  */
 function organizeByLocation() {
     console.log('Organizing nodes by location');
-    
+
     const shelfNodes = cy.nodes('[type="shelf"]');
-    
+
     // Group shelves by rack number
     const rackGroups = new Map();
-    
+
     shelfNodes.forEach(node => {
         const rackNum = node.data('rack_num');
         const hall = node.data('hall') || '';
         const aisle = node.data('aisle') || '';
-        
+
         // Create rack key
         const rackKey = rackNum !== undefined && rackNum !== null ? `${hall}_${aisle}_${rackNum}` : 'no_rack';
-        
+
         if (!rackGroups.has(rackKey)) {
             rackGroups.set(rackKey, []);
         }
         rackGroups.get(rackKey).push(node);
     });
-    
+
     // Create or reuse rack nodes for grouping
     let rackX = LAYOUT_CONSTANTS.MIN_START_X;
     const rackSpacing = 600;
-    
+
     rackGroups.forEach((shelves, rackKey) => {
         if (rackKey !== 'no_rack') {
             // Create/find rack node
@@ -316,10 +317,10 @@ function organizeByLocation() {
             const rackNum = parseInt(parts[parts.length - 1]);
             const hall = parts.length > 2 ? parts[0] : '';
             const aisle = parts.length > 2 ? parts[1] : '';
-            
+
             const rackId = `rack_${rackKey}`;
             let rackNode = cy.getElementById(rackId);
-            
+
             if (rackNode.length === 0) {
                 // Create new rack node
                 cy.add({
@@ -337,12 +338,12 @@ function organizeByLocation() {
                 });
                 rackNode = cy.getElementById(rackId);
             }
-            
+
             // Move shelves into this rack
             shelves.forEach(shelf => {
                 shelf.move({ parent: rackId });
             });
-            
+
             rackX += rackSpacing;
         } else {
             // No rack info - arrange standalone
@@ -355,7 +356,7 @@ function organizeByLocation() {
             });
         }
     });
-    
+
     // Run reset layout to properly arrange the racks
     setTimeout(() => {
         resetLayout();
@@ -367,27 +368,27 @@ function organizeByLocation() {
  */
 function organizeInGrid() {
     console.log('Organizing nodes in grid (no location info)');
-    
+
     const shelfNodes = cy.nodes('[type="shelf"]');
     const cols = 3;
     const spacing = 500;
     const startX = 300;
     const startY = 300;
-    
+
     shelfNodes.forEach((node, idx) => {
         // Remove from any parent
         node.move({ parent: null });
-        
+
         // Position in grid
         const col = idx % cols;
         const row = Math.floor(idx / cols);
-        
+
         node.position({
             x: startX + col * spacing,
             y: startY + row * spacing
         });
     });
-    
+
     // Fit view to show all nodes
     cy.fit(null, 50);
 }
@@ -409,7 +410,8 @@ function initializeNodeConfigs() {
             'WH_GALAXY': { tray_count: 4, ports_per_tray: 6, tray_layout: 'vertical' },
             'BH_GALAXY': { tray_count: 4, ports_per_tray: 14, tray_layout: 'vertical' },
             'P150_QB_GLOBAL': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' },
-            'P150_QB_AMERICA': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' }
+            'P150_QB_AMERICA': { tray_count: 4, ports_per_tray: 4, tray_layout: 'horizontal' },
+            'P150_LB': { tray_count: 8, ports_per_tray: 4, tray_layout: 'horizontal' }
         };
         console.warn('Using fallback node configurations - server configs not available');
     }
@@ -479,7 +481,8 @@ function getEthChannelMapping(nodeType, portNumber) {
 
         case 'P150_QB_GLOBAL':
         case 'P150_QB_AMERICA':
-            // P150 nodes: 4 ports per tray, specific channel mapping
+        case 'P150_LB':
+            // P150 nodes: 4 ports per tray (4 trays for QB variants, 8 trays for LB), specific channel mapping
             if (portNumber === 1) return 'ASIC: 0 Channel: 9, ASIC: 0 Channel: 11';
             if (portNumber === 2) return 'ASIC: 0 Channel: 8, ASIC: 0 Channel: 10';
             if (portNumber === 3) return 'ASIC: 0 Channel: 5, ASIC: 0 Channel: 7';
@@ -491,10 +494,20 @@ function getEthChannelMapping(nodeType, portNumber) {
 }
 
 function updateDeleteButtonState() {
-    const deleteBtn = document.getElementById('deleteConnectionBtn');
+    const deleteBtn = document.getElementById('deleteElementBtn');
+    if (!deleteBtn) return; // Button might not exist yet
 
-    // Only enable the button if we're in editing mode AND have a selected connection
-    if (isEdgeCreationMode && selectedConnection && selectedConnection.length > 0) {
+    // Enable button if we're in editing mode AND have either a selected connection or deletable node
+    const hasConnection = selectedConnection && selectedConnection.length > 0;
+    const hasNode = selectedNode && selectedNode.length > 0;
+
+    let isDeletable = false;
+    if (hasNode) {
+        const nodeType = selectedNode.data('type');
+        isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+    }
+
+    if (isEdgeCreationMode && (hasConnection || isDeletable)) {
         deleteBtn.disabled = false;
         deleteBtn.style.opacity = '1';
         deleteBtn.style.cursor = 'pointer';
@@ -503,6 +516,11 @@ function updateDeleteButtonState() {
         deleteBtn.style.opacity = '0.5';
         deleteBtn.style.cursor = 'not-allowed';
     }
+}
+
+// Kept for backward compatibility - now just calls updateDeleteButtonState
+function updateDeleteNodeButtonState() {
+    updateDeleteButtonState();
 }
 
 // ===== Utility Functions =====
@@ -768,6 +786,12 @@ function clearAllSelections() {
         selectedConnection = null;
         updateDeleteButtonState();
     }
+
+    if (selectedNode) {
+        selectedNode.removeClass('selected-node');
+        selectedNode = null;
+        updateDeleteNodeButtonState();
+    }
 }
 
 // ===== End Event Handler Helpers =====
@@ -820,6 +844,15 @@ function deleteSelectedConnection() {
     }
 
     const edge = selectedConnection;
+
+    // Check if edge still exists and is valid
+    if (!edge || !edge.cy() || edge.removed()) {
+        alert('Selected connection is no longer valid.');
+        selectedConnection = null;
+        updateDeleteButtonState();
+        return;
+    }
+
     const sourceNode = cy.getElementById(edge.data('source'));
     const targetNode = cy.getElementById(edge.data('target'));
 
@@ -837,16 +870,102 @@ function deleteSelectedConnection() {
     }
 }
 
+function deleteSelectedNode() {
+    if (!selectedNode || selectedNode.length === 0) {
+        alert('Please select a node first by clicking on it.');
+        return;
+    }
+
+    const node = selectedNode;
+    const nodeType = node.data('type');
+    const nodeLabel = node.data('label') || node.id();
+
+    // Check if node type is deletable
+    if (!['shelf', 'rack', 'graph'].includes(nodeType)) {
+        alert('Only shelf, rack, and graph nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
+        return;
+    }
+
+    // Build description for confirmation
+    let message = `Delete ${nodeType}: "${nodeLabel}"`;
+
+    // Count children for compound nodes
+    if (node.isParent()) {
+        const descendants = node.descendants();
+        const childCount = descendants.length;
+        const connectedEdges = descendants.connectedEdges();
+        const edgeCount = connectedEdges.length;
+
+        message += `\n\nThis will also delete:`;
+        message += `\n  • ${childCount} child node(s)`;
+        if (edgeCount > 0) {
+            message += `\n  • ${edgeCount} connection(s)`;
+        }
+    } else {
+        // Check for connected edges
+        const connectedEdges = node.connectedEdges();
+        if (connectedEdges.length > 0) {
+            message += `\n\nThis will also delete ${connectedEdges.length} connection(s)`;
+        }
+    }
+
+    message += '\n\nThis action cannot be undone.';
+
+    if (confirm(message)) {
+        // If it's a compound node, Cytoscape will automatically remove all descendants
+        node.remove();
+
+        selectedNode = null;
+        updateDeleteNodeButtonState();
+        updatePortConnectionStatus();
+        updatePortEditingHighlight();
+
+        // Update node filter dropdown if it exists
+        if (typeof populateNodeFilterDropdown === 'function') {
+            populateNodeFilterDropdown();
+        }
+
+        console.log(`Deleted ${nodeType} node: ${nodeLabel}`);
+    }
+}
+
+function deleteSelectedElement() {
+    /**
+     * Combined delete function that deletes either a selected connection or node.
+     * Priority: Connection first, then node.
+     */
+    if (selectedConnection && selectedConnection.length > 0) {
+        deleteSelectedConnection();
+    } else if (selectedNode && selectedNode.length > 0) {
+        deleteSelectedNode();
+    } else {
+        alert('Please select a connection or node first by clicking on it.');
+    }
+}
+
 function updatePortConnectionStatus() {
+    if (!cy) return;
+
     // Reset all ports to default state
     cy.nodes('.port').removeClass('connected-port');
 
     // Mark ports that have connections
     cy.edges().forEach(function (edge) {
+        // Skip if edge has been removed or is invalid
+        if (!edge || !edge.cy() || edge.removed()) return;
+
         const sourceId = edge.data('source');
         const targetId = edge.data('target');
-        cy.getElementById(sourceId).addClass('connected-port');
-        cy.getElementById(targetId).addClass('connected-port');
+        const sourceNode = cy.getElementById(sourceId);
+        const targetNode = cy.getElementById(targetId);
+
+        // Only add class if nodes exist and are valid
+        if (sourceNode.length && !sourceNode.removed()) {
+            sourceNode.addClass('connected-port');
+        }
+        if (targetNode.length && !targetNode.removed()) {
+            targetNode.addClass('connected-port');
+        }
     });
 }
 
@@ -1021,7 +1140,7 @@ function resetLayout() {
         // Use a hierarchical layout algorithm for compound nodes
         // This will position parents based on their children
         const hierarchyNodes = cy.nodes('[type="graph"], [type="superpod"], [type="pod"], [type="cluster"]');
-        
+
         if (hierarchyNodes.length === 0) {
             // No hierarchy - might be a flat structure
             cy.fit(null, 50);
@@ -1048,7 +1167,7 @@ function resetLayout() {
             avoidOverlap: true,
             nodeDimensionsIncludeLabels: true
         });
-        
+
         layout.run();
 
         // After layout, lock compound nodes again
@@ -1060,10 +1179,10 @@ function resetLayout() {
                     node.lock();
                 }
             });
-            
+
             console.log('Recalculated hierarchical layout');
             showExportStatus('Hierarchical layout recalculated', 'success');
-            
+
             setTimeout(() => {
                 const statusDiv = document.getElementById('rangeStatus');
                 if (statusDiv) {
@@ -1105,6 +1224,9 @@ function resetLayout() {
     // Calculate average/max rack width
     let maxRackWidth = 0;
     racks.forEach(function (rack) {
+        // Skip if rack has been removed or is invalid
+        if (!rack || !rack.cy() || rack.removed()) return;
+
         const bb = rack.boundingBox();
         const width = bb.w;
         if (width > maxRackWidth) maxRackWidth = width;
@@ -1117,7 +1239,13 @@ function resetLayout() {
     let shelfCount = 0;
 
     racks.forEach(function (rack) {
+        // Skip if rack has been removed or is invalid
+        if (!rack || !rack.cy() || rack.removed()) return;
+
         rack.children('[type="shelf"]').forEach(function (shelf) {
+            // Skip if shelf has been removed or is invalid
+            if (!shelf || !shelf.cy() || shelf.removed()) return;
+
             // Get bounding box of shelf including all its children
             const bb = shelf.boundingBox({ includeLabels: false, includeOverlays: false });
             const height = bb.h;
@@ -1245,7 +1373,7 @@ function addNewNode() {
      * IMPORTANT FOR EXPORT CONSISTENCY:
      * This function creates shelf nodes with the required fields for proper descriptor export:
      * - hostname: Used for host identification in both CablingDescriptor and DeploymentDescriptor
-     * - shelf_node_type: Node type (WH_N150, GS_E150, etc.) required for host_id mapping
+     * - shelf_node_type: Node type (WH_GALAXY, N300_LB, BH_GALAXY, P150_LB, etc.) required for host_id mapping
      * - hall, aisle, rack_num, shelf_u: Optional location data for DeploymentDescriptor
      * 
      * The export logic (export_descriptors.py) uses extract_host_list_from_connections()
@@ -1635,9 +1763,9 @@ function addNewGraph() {
     // Find a good position for the new graph
     let newX = 0;
     let newY = 0;
-    
+
     const existingGraphs = cy.nodes().filter(node => node.isParent() && !['rack', 'tray', 'port'].includes(node.data('type')));
-    
+
     if (existingGraphs.length > 0) {
         // Position new graph to the right of existing graphs
         let maxX = -Infinity;
@@ -1661,15 +1789,15 @@ function addNewGraph() {
         // Instantiate the template recursively
         const nodesToAdd = [];
         const edgesToAdd = [];
-        
+
         instantiateTemplateRecursive(
-            template, 
+            template,
             selectedTemplate,
-            graphId, 
-            graphLabel, 
+            graphId,
+            graphLabel,
             graphType,
             null, // no parent for top-level graph
-            newX, 
+            newX,
             newY,
             nodesToAdd,
             edgesToAdd,
@@ -1678,7 +1806,7 @@ function addNewGraph() {
 
         // Add all nodes to cytoscape
         cy.add(nodesToAdd);
-        
+
         // Add all edges
         cy.add(edgesToAdd);
 
@@ -1706,7 +1834,7 @@ function addNewGraph() {
         const childCount = template.children ? template.children.length : 0;
         const connectionCount = template.connections ? template.connections.length : 0;
         alert(`Successfully instantiated graph template "${selectedTemplate}" as "${graphLabel}"!\n\n` +
-              `Created ${childCount} child node(s) and ${connectionCount} connection(s).`);
+            `Created ${childCount} child node(s) and ${connectionCount} connection(s).`);
 
     } catch (error) {
         console.error('Error instantiating graph template:', error);
@@ -1742,37 +1870,37 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
         classes: 'graph'
     };
     nodesToAdd.push(graphNode);
-    
+
     console.log(`Creating graph "${graphLabel}" (${graphId}) with ${template.children ? template.children.length : 0} children`);
-    
+
     // Process children
     if (template.children && template.children.length > 0) {
         const childSpacing = 400;
         const startX = baseX - ((template.children.length - 1) * childSpacing / 2);
-        
+
         template.children.forEach((child, index) => {
             const childX = startX + (index * childSpacing);
             const childY = baseY + 200; // Position children below parent
             const childId = `${graphId}_${child.name}`;
-            
+
             // Update path mapping for connection resolution
             pathMapping[child.name] = childId;
-            
+
             if (child.type === 'node') {
                 // Create a shelf node (leaf node)
                 let nodeType = child.node_descriptor || 'WH_GALAXY';
-                
+
                 // Normalize node type names (e.g., N300_LB_DEFAULT -> N300_LB)
                 nodeType = nodeType.replace(/_DEFAULT$/, '').replace(/_GLOBAL$/, '').replace(/_AMERICA$/, '');
-                
+
                 let config = NODE_CONFIGS[nodeType];
-                
+
                 if (!config) {
                     console.warn(`Unknown node type: ${child.node_descriptor}, normalized to ${nodeType}, using WH_GALAXY as fallback`);
                     nodeType = 'WH_GALAXY';
                     config = NODE_CONFIGS['WH_GALAXY'];
                 }
-                
+
                 // Create shelf node
                 const shelfNode = {
                     data: {
@@ -1787,10 +1915,10 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                     classes: 'shelf'
                 };
                 nodesToAdd.push(shelfNode);
-                
+
                 // Create trays and ports
                 createTraysAndPorts(childId, child.name, nodeType, config, childX, childY, nodesToAdd);
-                
+
             } else if (child.type === 'graph') {
                 // Recursively instantiate nested graph
                 const nestedTemplate = availableGraphTemplates[child.graph_template];
@@ -1798,17 +1926,17 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                     console.error(`Template not found: ${child.graph_template}`);
                     return;
                 }
-                
+
                 // Infer nested graph type
                 let nestedType = 'graph';
                 const templateLower = child.graph_template.toLowerCase();
                 if (templateLower.includes('superpod')) nestedType = 'superpod';
                 else if (templateLower.includes('pod')) nestedType = 'pod';
                 else if (templateLower.includes('cluster')) nestedType = 'cluster';
-                
+
                 // Create a new path mapping for the nested scope
                 const nestedPathMapping = {};
-                
+
                 instantiateTemplateRecursive(
                     nestedTemplate,
                     child.graph_template,
@@ -1822,7 +1950,7 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                     edgesToAdd,
                     nestedPathMapping
                 );
-                
+
                 // Merge nested path mapping into current scope with prefix
                 for (const [name, id] of Object.entries(nestedPathMapping)) {
                     pathMapping[`${child.name}.${name}`] = id;
@@ -1830,42 +1958,42 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
             }
         });
     }
-    
+
     // Create connections
     if (template.connections && template.connections.length > 0) {
         console.log(`Creating ${template.connections.length} connections for ${graphLabel}`);
-        
+
         template.connections.forEach((conn, connIndex) => {
             try {
                 // Resolve source node ID
                 const sourceNodeName = conn.port_a.path[0];
                 const sourceNodeId = pathMapping[sourceNodeName];
-                
+
                 if (!sourceNodeId) {
                     console.warn(`Source node not found: ${sourceNodeName} in path mapping`, pathMapping);
                     return;
                 }
-                
+
                 const sourcePortId = `${sourceNodeId}-tray${conn.port_a.tray_id}-port${conn.port_a.port_id}`;
-                
+
                 // Resolve target node ID
                 const targetNodeName = conn.port_b.path[0];
                 const targetNodeId = pathMapping[targetNodeName];
-                
+
                 if (!targetNodeId) {
                     console.warn(`Target node not found: ${targetNodeName} in path mapping`, pathMapping);
                     return;
                 }
-                
+
                 const targetPortId = `${targetNodeId}-tray${conn.port_b.tray_id}-port${conn.port_b.port_id}`;
-                
+
                 // Determine connection color based on whether it's intra-node or inter-node
                 const sourceNodeIdBase = sourceNodeId.split('-')[0];
                 const targetNodeIdBase = targetNodeId.split('-')[0];
-                const connectionColor = (sourceNodeIdBase === targetNodeIdBase) 
-                    ? CONNECTION_COLORS.INTRA_NODE 
+                const connectionColor = (sourceNodeIdBase === targetNodeIdBase)
+                    ? CONNECTION_COLORS.INTRA_NODE
                     : CONNECTION_COLORS.INTER_NODE;
-                
+
                 // Create edge
                 const edgeId = `${graphId}_conn_${connIndex}`;
                 const edge = {
@@ -1879,9 +2007,9 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                     }
                 };
                 edgesToAdd.push(edge);
-                
+
                 console.log(`  Connection: ${sourcePortId} -> ${targetPortId}`);
-                
+
             } catch (error) {
                 console.error(`Error creating connection ${connIndex}:`, error, conn);
             }
@@ -1972,8 +2100,8 @@ function toggleEdgeHandles() {
         btn.textContent = '🔗 Disable Connection Editing';
         btn.style.backgroundColor = '#dc3545';
 
-        // Show delete connection section
-        document.getElementById('deleteConnectionSection').style.display = 'block';
+        // Show delete element section (combined connection and node deletion)
+        document.getElementById('deleteElementSection').style.display = 'block';
 
         // Show add node section
         document.getElementById('addNodeSection').style.display = 'block';
@@ -1985,7 +2113,7 @@ function toggleEdgeHandles() {
         updatePortEditingHighlight();
 
         // Show instruction
-        alert('Connection editing enabled!\n\n• Click unconnected port → Click another port = Create connection\n• Click connection to select it, then use Delete button or Backspace/Delete key\n• Click empty space = Cancel selection\n\nNote: Only unconnected ports are highlighted in orange');
+        alert('Connection editing enabled!\n\n• Click unconnected port → Click another port = Create connection\n• Click connection to select it, then use Delete button or Backspace/Delete key\n• Click deletable nodes (shelf/rack/graph) to select for deletion\n• Click empty space = Cancel selection\n\nNote: Only unconnected ports are highlighted in orange');
 
     } else {
         // Disable connection creation mode
@@ -2000,8 +2128,8 @@ function toggleEdgeHandles() {
         btn.textContent = '🔗 Enable Connection Editing';
         btn.style.backgroundColor = '#28a745';
 
-        // Hide delete connection section
-        document.getElementById('deleteConnectionSection').style.display = 'none';
+        // Hide delete element section
+        document.getElementById('deleteElementSection').style.display = 'none';
 
         // Hide add node section
         document.getElementById('addNodeSection').style.display = 'none';
@@ -2014,8 +2142,15 @@ function toggleEdgeHandles() {
             selectedConnection.removeClass('selected-connection');
         }
         selectedConnection = null;
-        document.getElementById('deleteConnectionBtn').disabled = true;
-        document.getElementById('deleteConnectionBtn').style.opacity = '0.5';
+
+        // Clear any selected node and remove its styling
+        if (selectedNode) {
+            selectedNode.removeClass('selected-node');
+        }
+        selectedNode = null;
+
+        // Update delete button state
+        updateDeleteButtonState();
 
         // Remove visual feedback from all ports
         cy.nodes('.port').style({
@@ -2029,6 +2164,9 @@ function toggleEdgeHandles() {
 
         // Remove selected-connection class from all edges
         cy.edges().removeClass('selected-connection');
+
+        // Remove selected-node class from all nodes
+        cy.nodes().removeClass('selected-node');
     }
 }
 
@@ -2626,6 +2764,19 @@ function getCytoscapeStyles() {
             }
         },
 
+        // Style for selected node (for deletion)
+        {
+            selector: '.selected-node',
+            style: {
+                'border-color': '#ff0000',
+                'border-width': '4px',
+                'border-style': 'solid',
+                'overlay-color': '#ff0000',
+                'overlay-opacity': 0.2,
+                'overlay-padding': 5
+            }
+        },
+
         // Style for source port selection during connection creation
         {
             selector: '.port.source-selected',
@@ -2931,12 +3082,37 @@ function addCytoscapeEventHandlers() {
                 handlePortClickViewMode(node, evt);
             }
         } else {
-            // Non-port node clicked - clear connection selection
+            // Non-port node clicked
+            const nodeType = node.data('type');
+            const isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+
+            // Clear connection selection when clicking on any non-port node
             if (selectedConnection) {
                 selectedConnection.removeClass('selected-connection');
                 selectedConnection = null;
                 updateDeleteButtonState();
             }
+
+            // In editing mode, allow selection of deletable nodes
+            if (isEdgeCreationMode && isDeletable) {
+                // Deselect previously selected node
+                if (selectedNode) {
+                    selectedNode.removeClass('selected-node');
+                }
+
+                // Select this node
+                selectedNode = node;
+                node.addClass('selected-node');
+                updateDeleteNodeButtonState();
+            } else {
+                // Clear node selection if not in editing mode or not deletable
+                if (selectedNode) {
+                    selectedNode.removeClass('selected-node');
+                    selectedNode = null;
+                    updateDeleteNodeButtonState();
+                }
+            }
+
             showNodeInfo(node, evt.renderedPosition || evt.position);
         }
     });
@@ -2976,6 +3152,13 @@ function addCytoscapeEventHandlers() {
         if (isEdgeCreationMode && sourcePort) {
             sourcePort.removeClass('source-selected');
             sourcePort = null;
+        }
+
+        // Clear node selection when clicking on an edge
+        if (selectedNode) {
+            selectedNode.removeClass('selected-node');
+            selectedNode = null;
+            updateDeleteNodeButtonState();
         }
 
         // Deselect previously selected connection (works in both editing and normal mode)
@@ -3229,29 +3412,29 @@ function showNodeInfo(node, position) {
     // Show hierarchical graph information (superpod, pod, cluster, etc.)
     const hierarchicalTypes = ['graph', 'superpod', 'pod', 'cluster'];
     const isHierarchical = !['rack', 'tray', 'port', 'shelf'].includes(data.type);
-    
+
     if (isHierarchical && node.isParent()) {
         html += `<br><strong>Graph Hierarchy Info:</strong><br>`;
-        
+
         // Show template name if available
         if (data.template_name) {
             html += `Template: ${data.template_name}<br>`;
         }
-        
+
         // Show node type (the actual type field)
         if (data.type) {
             html += `Node Type: ${data.type}<br>`;
         }
-        
+
         // Show label
         if (data.label) {
             html += `Label: ${data.label}<br>`;
         }
-        
+
         // Show child count
         const childCount = node.children().length;
         html += `Children: ${childCount}<br>`;
-        
+
         // Show depth in hierarchy
         let depth = 0;
         let current = node;
@@ -3260,12 +3443,12 @@ function showNodeInfo(node, position) {
             current = current.parent();
         }
         html += `Hierarchy Depth: ${depth}<br>`;
-        
+
         // Show host_id if available
         if (data.host_id !== undefined) {
             html += `Host ID: ${data.host_id}<br>`;
         }
-        
+
         // Show child_name if available
         if (data.child_name) {
             html += `Child Name: ${data.child_name}<br>`;
@@ -3301,17 +3484,17 @@ function showNodeInfo(node, position) {
         if (data.shelf_node_type) {
             html += `Node Type: ${data.shelf_node_type.toUpperCase()}<br>`;
         }
-        
+
         // Show node descriptor type if available
         if (data.node_descriptor_type) {
             html += `Node Descriptor: ${data.node_descriptor_type.toUpperCase()}<br>`;
         }
-        
+
         // Show host_id if available
         if (data.host_id !== undefined) {
             html += `Host ID: ${data.host_id}<br>`;
         }
-        
+
         // Show child_name if available
         if (data.child_name) {
             html += `Child Name: ${data.child_name}<br>`;
@@ -4325,13 +4508,16 @@ document.addEventListener('keydown', function (event) {
         }
     }
 
-    // Backspace or Delete to delete selected connection (only in editing mode)
+    // Backspace or Delete to delete selected connection or node (only in editing mode)
     if (event.key === 'Backspace' || event.key === 'Delete') {
-        // Only delete if we're in editing mode, have a selected connection, and not typing in an input
-        if (isEdgeCreationMode && selectedConnection && selectedConnection.length > 0 &&
-            !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-            event.preventDefault();
-            deleteSelectedConnection();
+        // Only delete if we're in editing mode and not typing in an input
+        if (isEdgeCreationMode && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            // Check if there's something selected to delete
+            if ((selectedConnection && selectedConnection.length > 0) ||
+                (selectedNode && selectedNode.length > 0)) {
+                event.preventDefault();
+                deleteSelectedElement();
+            }
         }
     }
 
@@ -4511,12 +4697,12 @@ function addExpandCollapseHandlers() {
 initializeNodeConfigs();
 
 // Add event listener for graph template dropdown to enable/disable button
-document.getElementById('graphTemplateSelect').addEventListener('change', function() {
+document.getElementById('graphTemplateSelect').addEventListener('change', function () {
     const addGraphBtn = document.getElementById('addGraphBtn');
     const graphLabelInput = document.getElementById('graphLabelInput');
     const hasTemplate = this.value && this.value !== '';
     const hasLabel = graphLabelInput.value.trim().length > 0;
-    
+
     if (cy && hasTemplate && hasLabel) {
         addGraphBtn.disabled = false;
         addGraphBtn.style.cursor = 'pointer';
@@ -4531,12 +4717,12 @@ document.getElementById('graphTemplateSelect').addEventListener('change', functi
 });
 
 // Add event listener for graph label input to enable/disable Add Graph button
-document.getElementById('graphLabelInput').addEventListener('input', function() {
+document.getElementById('graphLabelInput').addEventListener('input', function () {
     const addGraphBtn = document.getElementById('addGraphBtn');
     const graphTemplateSelect = document.getElementById('graphTemplateSelect');
     const hasLabel = this.value.trim().length > 0;
     const hasTemplate = graphTemplateSelect.value && graphTemplateSelect.value !== '';
-    
+
     if (cy && hasTemplate && hasLabel) {
         addGraphBtn.disabled = false;
         addGraphBtn.style.cursor = 'pointer';

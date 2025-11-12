@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN /bin/bash -c "apt update && apt install -y protobuf-compiler"
 
 # Clone tt-metal
+# Bust cache to ensure fresh clone every time
+RUN echo "Build timestamp: $(date)"
 RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
     https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME}"

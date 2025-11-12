@@ -216,6 +216,15 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
+            "p150_lb": {
+                "tray_count": 8,
+                "port_count": 4,
+                "tray_layout": "horizontal",  # T1-T8 arranged horizontally (left to right)
+                # port_layout auto-inferred as 'vertical' 
+                "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
+                "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
+                "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
+            },
             "bh_galaxy": {
                 "tray_count": 4,
                 "port_count": 14,

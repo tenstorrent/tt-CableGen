@@ -220,6 +220,49 @@ def export_deployment_descriptor():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _has_location_info(cytoscape_data):
+    """Check if ALL shelf nodes have location information (hall/aisle/rack/shelf)"""
+    elements = cytoscape_data.get("elements", [])
+    
+    shelf_nodes = []
+    for element in elements:
+        # Skip edges
+        if "source" in element.get("data", {}):
+            continue
+        
+        node_data = element.get("data", {})
+        node_type = node_data.get("type")
+        
+        # Collect all shelf nodes
+        if node_type == "shelf":
+            shelf_nodes.append(node_data)
+    
+    # If no shelf nodes, return False (no location info)
+    if not shelf_nodes:
+        return False
+    
+    # Check that ALL shelf nodes have location information
+    for node_data in shelf_nodes:
+        hall = node_data.get("hall")
+        aisle = node_data.get("aisle")
+        rack_num = node_data.get("rack_num")
+        shelf_u = node_data.get("shelf_u")
+        
+        # If this node is missing location info, return False
+        has_location = all([
+            hall and str(hall).strip(),
+            aisle and str(aisle).strip(),
+            rack_num is not None and str(rack_num).strip() != '',
+            shelf_u is not None and str(shelf_u).strip() != ''
+        ])
+        
+        if not has_location:
+            return False
+    
+    # All nodes have location info
+    return True
+
+
 @app.route("/generate_cabling_guide", methods=["POST"])
 def generate_cabling_guide():
     """Generate CablingGuide CSV and/or FSD using the cabling generator"""
@@ -237,6 +280,10 @@ def generate_cabling_guide():
         cytoscape_data = data["cytoscape_data"]
         input_prefix = data["input_prefix"]
         generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
+        
+        # Check if location information is present
+        has_location = _has_location_info(cytoscape_data)
+        use_simple_format = not has_location
 
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
@@ -284,6 +331,14 @@ def generate_cabling_guide():
                         "-d", os.path.abspath(deployment_path),  # -d, --deployment  
                         "-o", input_prefix                          # -o, --output
                     ]
+                    
+                    # Add --simple flag if no location information is present
+                    if use_simple_format:
+                        cmd.append("--simple")
+                        print(f"[INFO] No location information detected - using simple format")
+                    else:
+                        print(f"[INFO] Location information detected - using hierarchical format")
+                    
                     print(f"Running command: {' '.join(cmd)}")  # Debug logging
                     print(f"Working directory: {temp_output_dir}")  # Debug logging
 
