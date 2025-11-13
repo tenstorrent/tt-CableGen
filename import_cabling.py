@@ -1084,6 +1084,9 @@ class NetworkCablingCytoscapeVisualizer:
         # If not found, create a dynamic config based on heuristics
         print(f"Creating dynamic config for unknown node type: {node_descriptor_name}")
         
+        # Normalize the node descriptor name
+        node_type_lower = node_descriptor_name.lower()
+        
         # Use reasonable defaults based on naming patterns
         if 'wh' in node_type_lower or 'galaxy' in node_type_lower:
             # Galaxy-style devices typically have 4 trays with 6-14 ports
