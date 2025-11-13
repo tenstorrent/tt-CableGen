@@ -43,7 +43,7 @@ The visualizer supports multiple CSV format variations:
   - Supports hierarchical graph structures with templates and instances
   - Defines node types, connections, and network topology
   - Enables reuse of common topology patterns through templates
-  - See ![TT-Metal Scaleout tools ](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) for more info
+  - See [TT-Metal Scaleout tools ](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) for more info
 
 The parser auto-detects file format and node types, making it easy to work with various input sources.
 
@@ -206,27 +206,7 @@ Options:
 ```
 
 ### Docker Deployment
-
-The project includes Docker support with two configurations:
-
-#### Local Development (No Authentication)
-```bash
-make build-local     # Build Docker images
-make up-local        # Start services
-make logs-local      # View logs
-make shell-local     # Open shell in container
-make down-local      # Stop services
-```
-
-#### Production (With OAuth2 Authentication)
-```bash
-make setup          # Create .env from template
-# Edit .env with OAuth2 configuration
-make build          # Build all services
-make up             # Start with nginx + OAuth2
-make logs           # View logs
-make down           # Stop services
-```
+See [README-COMPOSE.md](README-COMPOSE.md)
 
 ## Usage Guide
 
@@ -419,41 +399,6 @@ tt-CableGen/
 ├── Makefile                  # Docker management commands
 └── nginx/                     # Nginx and OAuth2 configuration
 ```
-
-### Extending Node Types
-
-To add a new node type:
-
-1. To ensure that Cabling Guide exports work makes sure that the NodeType is added in TT-METAL as well 
-
-1. **Add to `import_cabling.py`**:
-```python
-self.shelf_unit_configs = {
-    ...
-    'new_node_type': {
-        'tray_count': 4,
-        'port_count': 6,
-        'tray_layout': 'vertical',
-        'tray_spacing': 30,
-        ...
-    }
-}
-```
-
-2. **Add to `_node_descriptor_to_shelf_type` mapping**:
-```python
-descriptor_to_config_map = {
-    ...
-    'new_node_type': 'new_node_type',
-}
-```
-
-3. **Update `templates/index.html`** dropdown:
-```html
-<option value="NEW_NODE_TYPE">NEW_NODE_TYPE (4 trays, 6 ports each)</option>
-```
-
-The configuration will automatically be synchronized between backend and frontend. 
 
 ## Keyboard Shortcuts
 
