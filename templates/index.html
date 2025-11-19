@@ -25,6 +25,25 @@
             color: #333333;
         }
 
+        /* Mode-specific visibility classes */
+        .location-mode-only {
+            display: none;
+        }
+
+        .hierarchy-mode-only {
+            display: none;
+        }
+
+        /* When in location mode, show location-only elements */
+        body.mode-location .location-mode-only {
+            display: block;
+        }
+
+        /* When in hierarchy mode, show hierarchy-only elements */
+        body.mode-hierarchy .hierarchy-mode-only {
+            display: block;
+        }
+
         /* Ensure all text elements have explicit colors */
         h1,
         h2,
@@ -87,6 +106,47 @@
             padding-bottom: 5px;
         }
 
+        /* Tab Navigation Styles */
+        .tab-navigation {
+            display: flex;
+            margin-bottom: 0;
+            border-bottom: 2px solid #dee2e6;
+            gap: 0;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background-color: #e9ecef;
+            color: #495057;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab-button:hover {
+            background-color: #dee2e6;
+        }
+
+        .tab-button.active {
+            background-color: white;
+            color: #007bff;
+            border-bottom: 3px solid #007bff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .upload-section {
             background-color: #f8f9fa;
             border: 2px dashed #007bff;
@@ -94,11 +154,31 @@
             padding: 20px;
             margin-bottom: 20px;
             text-align: center;
+            margin-top: 15px;
         }
 
         .upload-section.dragover {
             background-color: #e3f2fd;
             border-color: #0056b3;
+        }
+
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .mode-badge.csv-mode {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .mode-badge.textproto-mode {
+            background-color: #cce5ff;
+            color: #004085;
         }
 
         .file-input {
@@ -322,13 +402,209 @@
             border-radius: 8px;
             padding: 15px;
             min-width: 250px;
-            max-width: 400px;
+            max-width: 350px;
             font-size: 16px;
             font-weight: bold;
             box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
             color: #000000;
             display: none;
             z-index: 1000;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            overflow: hidden;
+        }
+
+        /* Modal overlay for connection placement selection */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            color: #333;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #007bff;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+
+        .modal-subheader {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .placement-option {
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .placement-option:hover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+        }
+
+        .placement-option-header {
+            margin-bottom: 10px;
+        }
+
+        .placement-level-name {
+            font-weight: bold;
+            font-size: 18px;
+            color: #333;
+        }
+
+        .placement-instance-highlight {
+            margin: 12px 0;
+            padding: 10px;
+            background: #f0f8ff;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .instance-count-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-weight: bold;
+            font-size: 15px;
+            margin-left: 8px;
+        }
+
+        .placement-option-details {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+
+        .modal-footer {
+            margin-top: 20px;
+            text-align: right;
+            border-top: 1px solid #dee2e6;
+            padding-top: 15px;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .modal-btn-primary:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .modal-btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .modal-btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        /* Physical layout modal form styling */
+        .physical-layout-form {
+            margin: 20px 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .form-textarea {
+            font-family: monospace;
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .layout-info {
+            background: #f0f8ff;
+            border-left: 4px solid #007bff;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .layout-info strong {
+            color: #007bff;
         }
 
         /* Responsive design for smaller screens */
@@ -372,456 +648,728 @@
                 height: calc(100vh - 360px);
             }
         }
+
+        /* Notification banner animation */
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-20px);
+            }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Floating notification banner (fixed at top, below header) -->
+    <div id="notificationBanner"
+        style="display: none; position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 10000; min-width: 400px; max-width: 80%; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; padding: 15px 20px; font-size: 14px; font-weight: 500; animation: slideDown 0.3s ease-out;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div id="notificationContent" style="flex: 1; margin-right: 15px;"></div>
+            <button onclick="hideNotificationBanner()"
+                style="background: none; border: none; font-size: 20px; cursor: pointer; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s;"
+                onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">×</button>
+        </div>
+    </div>
+
     <div class="header">
         <h1>Network Cabling Visualizer</h1>
     </div>
 
     <div class="container">
         <div class="sidebar">
-            <h3>Upload Cabling File</h3>
+            <!-- Initialization Section (shown initially, hidden after initialization) -->
+            <div id="initializationSection">
+                <h3>Initialize Visualization</h3>
 
-            <div class="upload-section" id="uploadSection">
-                <div>📁 Drag & drop your CSV or textproto file here</div>
-                <div style="margin: 10px 0; color: #666;">or</div>
+                <!-- Summary Blurb Section -->
+                <div id="initializationSummary"
+                    style="background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333; min-height: 60px;">
+                    <p style="margin: 0; color: #666;"> Use this visualization tool to plan out
+                        multi-host system connectivity for Tenstorrent boxes. If you're more interested in the logical
+                        topology of the system, use the Topology tab. If you're more interested in the physical layout,
+                        racking, and arrangement of the system, use the Location/Deployment tab.
+                        <br><br>
+                    </p>
 
-                <div class="file-input">
-                    <input type="file" id="csvFile" accept=".csv,.textproto" />
+                    <p style="margin: 0; color: #666;">Note: It is easier to work on stamping out
+                        hierarchies and templates in Topology mode, and then
+                        translate that into Location/Deployment tab for visualization and rack planning. Working from a
+                        cabling guide (starting in Location/Deployment mode) and trying to stamp out hierarchies and
+                        templates (by switching modes to topology mode) is more difficult.
+                    </p>
                 </div>
 
-                <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
-                    <strong>Accepts:</strong> CSV files with cabling data or textproto cabling descriptors
-                </p>
-
-                <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <button class="upload-btn" id="uploadBtn" onclick="uploadFile()" style="flex: 1;">Generate
-                        Visualization</button>
-                    <button class="upload-btn" id="emptyVisualizationBtn" onclick="createEmptyVisualization()"
-                        style="flex: 1; background: #28a745;">
-                        📋 Empty Canvas
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-button" onclick="switchTab('location')" id="locationTab">
+                        📍 Location/Deployment
+                        <span class="mode-badge csv-mode">CSV</span>
+                    </button>
+                    <button class="tab-button" onclick="switchTab('topology')" id="topologyTab">
+                        🔗 Topology
+                        <span class="mode-badge textproto-mode">Textproto</span>
                     </button>
                 </div>
 
-                <div class="loading" id="loading">
-                    🔄 Processing CSV and generating visualization...
+                <!-- Flow Description Section (changes based on active tab) -->
+                <div id="flowDescriptionLocation"
+                    style="display: none; background-color: #f0f8ff; border: 1px solid #b3d9ff; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
+                    <h4 style="margin: 0 0 10px 0; color: #0066cc; font-size: 14px;">📍 Location/Deployment Flow</h4>
+                    <ul style="margin: 8px 0; padding-left: 25px; line-height: 1.6;">
+                        <li><strong>Load CSV:</strong> Import existing cabling data with physical locations (hall,
+                            aisle, rack, shelf)</li>
+                        <li><strong>Empty Canvas:</strong> Start from scratch and manually add nodes with physical
+                            locations</li>
+                        <li><strong>Editing:</strong> Good for editing potential rack deployments. Can edit
+                            specifc connections and nodes. </li>
+                        <li><strong>Exporting:</strong> Good for exporting cabling guide CSV, FactorySystemDescriptor
+                            textproto, and DeploymentDescriptor textproto. Not suggested for CablingDescriptor export.
+                        </li>
+                        <li><strong>Shortcomings:</strong> Not good for visualizing hierarchical network topologies as
+                            nested graph instances. (Use Topology Tab for that.) </li>
+                    </ul>
+                    <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">
+                        <em>Use this mode for physical datacenter layouts organized by rack elevation.</em>
+                    </p>
                 </div>
 
-                <div class="error" id="error"></div>
-                <div class="success" id="success"></div>
-            </div>
+                <div id="flowDescriptionTopology"
+                    style="display: none; background-color: #fff8f0; border: 1px solid #ffd9b3; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
+                    <h4 style="margin: 0 0 10px 0; color: #cc6600; font-size: 14px;">🔗 Topology Flow</h4>
+                    <ul style="margin: 8px 0; padding-left: 25px; line-height: 1.6;">
+                        <li><strong>Load Textproto:</strong> Import hierarchical topology with graph templates and
+                            instances</li>
+                        <li><strong>Empty Canvas:</strong> Start from scratch and manually define logical topology
+                            structure</li>
+                        <li><strong>Editing:</strong> Good for editing/duplicating potential logical topologies with
+                            templates. Can edit templated definitions of connections and nodes. </li>
+                        <li><strong>Exporting:</strong> Good for exporting CablingDescriptor textproto. Can switch mode
+                            to Location to be able to visualize/edit/export Deployment resources (CablingGuide CSV,
+                            FactorySystemDescriptor textproto, and DeploymentDescriptor textproto) </li>
+                        <li><strong>Shortcomings:</strong> Not good for visualizing physical datacenter layouts
+                            organized by rack elevation. (Use Location Tab for that.) </li>
+                    </ul>
+                    <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">
+                        <em>Use this mode for logical network topologies organized by hierarchy (clusters, superpods,
+                            pods).</em>
+                    </p>
+                </div>
 
-            <!-- Visualization Mode Indicator with Toggle -->
-            <div id="visualizationModeIndicator"
-                style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <strong style="color: #1976D2; font-size: 14px;">📊 Visualization Mode</strong>
-                        <div id="currentMode" style="font-size: 13px; color: #333; margin-top: 4px;">
-                            Loading...
+                <!-- Location/Deployment Tab Content -->
+                <div class="tab-content" id="locationTabContent">
+                    <div class="upload-section" id="uploadSectionLocation">
+                        <div>📁 Drag & drop your CSV file here</div>
+                        <div style="margin: 10px 0; color: #666;">or</div>
+
+                        <div class="file-input">
+                            <input type="file" id="csvFileLocation" accept=".csv" />
                         </div>
-                    </div>
-                    <div>
-                        <button id="toggleModeButton" onclick="toggleVisualizationMode()"
-                            style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
-                            Switch Mode
-                        </button>
+
+                        <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
+                            <strong>Accepts:</strong> CSV files with cabling/deployment data
+                            <strong>Notes:</strong> Good for visualizng rack-elevation of cabling.<br>
+                        </p>
+
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button class="upload-btn" id="uploadBtnLocation" onclick="uploadFileLocation()"
+                                style="flex: 1;">
+                                📊 Load CSV
+                            </button>
+                            <button class="upload-btn" id="emptyVisualizationBtnLocation"
+                                onclick="createEmptyVisualizationLocation()" style="flex: 1; background: #28a745;">
+                                📋 Empty Canvas
+                            </button>
+                        </div>
+
+                        <div class="loading" id="loadingLocation">
+                            🔄 Processing CSV and generating visualization...
+                        </div>
+
+                        <div class="error" id="errorLocation"></div>
+                        <div class="success" id="successLocation"></div>
                     </div>
                 </div>
-                <div id="modeDescription"
-                    style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bbdefb;">
-                    Mode information will appear here
-                </div>
-            </div>
 
-            <div id="connectionLegend"
-                style="margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
-                <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Connection Types Legend</h4>
-                <!-- CSV-based legend (default) -->
-                <div id="csvLegend">
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #4CAF50; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Intra-node connections (same node)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #2196F3; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Inter-node connections (different nodes)</span>
-                    </div>
-                </div>
-                <!-- Descriptor-based legend (hidden by default) -->
-                <div id="descriptorLegend" style="display: none;">
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #FF6B6B; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Cluster level (inter-superpod)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #4ECDC4; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Superpod level (intra-superpod)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #95E1D3; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Deeper hierarchy level 1</span>
-                    </div>
-                    <div style="display: flex; align-items: center; margin: 6px 0;">
-                        <div
-                            style="width: 20px; height: 3px; background-color: #FFA07A; margin-right: 10px; border-radius: 2px;">
-                        </div>
-                        <span style="font-size: 13px; color: #333;">Deeper hierarchy level 2</span>
-                    </div>
-                </div>
-            </div>
+                <!-- Topology Tab Content -->
+                <div class="tab-content" id="topologyTabContent">
+                    <div class="upload-section" id="uploadSectionTopology">
+                        <div>📁 Drag & drop your textproto file here</div>
+                        <div style="margin: 10px 0; color: #666;">or</div>
 
-            <div style="margin-bottom: 20px;">
-                <button id="resetLayoutBtn" onclick="resetLayout()"
-                    style="width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                    🔄 Reset Layout
-                </button>
-                <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                    Recalculate and reset all node positions based on rack/shelf hierarchy
-                </div>
-            </div>
-
-            <div style="margin-bottom: 20px;">
-                <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Compound Node Controls</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <button id="expandAllBtn" onclick="expandAllNodes()"
-                        style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
-                        ➕ Expand All
-                    </button>
-                    <button id="collapseAllBtn" onclick="collapseAllNodes()"
-                        style="padding: 10px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
-                        ➖ Collapse All
-                    </button>
-                </div>
-                <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                    Double-click graphs/nodes/racks to collapse (shelves/trays always visible)
-                </div>
-            </div>
-
-            <div class="collapsible-header" onclick="toggleCollapsible('connectionRangeFilter')">
-                <h3 style="margin: 0; color: #333;">Connection Range Filter</h3>
-                <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>
-            </div>
-            <div class="collapsible-content collapsed" id="connectionRangeFilter">
-                <div class="range-filter-section">
-                    <div style="margin-bottom: 15px;">
-                        <label for="connectionRangeString"
-                            style="display: block; margin-bottom: 5px; font-weight: bold;">Connection Range:</label>
-                        <input type="text" id="connectionRangeString" placeholder="e.g., 1-3,5,7-10"
-                            style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; font-family: monospace;">
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                            Format: ranges (1-5), individual numbers (7), or combinations (1-3,5,7-10)
+                        <div class="file-input">
+                            <input type="file" id="csvFileTopology" accept=".textproto" />
                         </div>
-                    </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types:</div>
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                <input type="checkbox" id="showIntraNodeConnections" checked
-                                    style="margin-right: 8px; transform: scale(1.1);">
-                                <span style="font-size: 14px;">Intra-node connections (same node)</span>
-                            </label>
-                            <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                <input type="checkbox" id="showIntraRackConnections" checked
-                                    style="margin-right: 8px; transform: scale(1.1);">
-                                <span style="font-size: 14px;">Intra-rack connections (same rack)</span>
-                            </label>
-                            <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                <input type="checkbox" id="showInterRackConnections" checked
-                                    style="margin-right: 8px; transform: scale(1.1);">
-                                <span style="font-size: 14px;">Inter-rack connections (different racks)</span>
-                            </label>
+                        <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
+                            <strong>Accepts:</strong> Textproto cabling descriptor files
+                            <strong>Notes:</strong> Useful for visualizing hierarchical network topologies as nested
+                            graph instances.<br>
+                        </p>
+
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button class="upload-btn" id="uploadBtnTopology" onclick="uploadFileTopology()"
+                                style="flex: 1;">
+                                📊 Load Textproto
+                            </button>
+                            <button class="upload-btn" id="emptyVisualizationBtnTopology"
+                                onclick="createEmptyVisualizationTopology()" style="flex: 1; background: #28a745;">
+                                📋 Empty Canvas
+                            </button>
                         </div>
-                    </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <label for="nodeFilterSelect"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Filter by
-                            Node:</label>
-                        <select id="nodeFilterSelect"
-                            style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background-color: white; color: #333333;">
-                            <option value="">Show all nodes</option>
-                        </select>
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                            Select a specific node to show only its connections
+                        <div class="loading" id="loadingTopology">
+                            🔄 Processing textproto and generating visualization...
                         </div>
-                    </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <button id="applyRangeBtn" onclick="applyConnectionRange()"
-                            style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            Apply Range Filter
-                        </button>
-                    </div>
-
-                    <div style="margin-bottom: 15px;">
-                        <button id="clearRangeBtn" onclick="clearConnectionRange()"
-                            style="width: 100%; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            Show All Connections
-                        </button>
-                    </div>
-
-                    <div id="rangeStatus" style="font-size: 12px; color: #666; text-align: center; margin-top: 10px;">
-                        Showing all connections
+                        <div class="error" id="errorTopology"></div>
+                        <div class="success" id="successTopology"></div>
                     </div>
                 </div>
             </div>
+            <!-- End of Initialization Section -->
 
-            <div class="collapsible-header" onclick="toggleCollapsible('cablingEditor')">
-                <h3 style="margin: 0; color: #333;">Cabling Editor</h3>
-                <span class="collapsible-arrow collapsed" id="cablingEditor-arrow">▶</span>
-            </div>
-            <div class="collapsible-content collapsed" id="cablingEditor">
-                <div style="margin-bottom: 15px;">
-                    <button id="toggleEdgeHandlesBtn" onclick="toggleEdgeHandles()"
-                        style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                        🔗 Enable Cabling Editing
-                    </button>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Click ports to create connections (2-click process)<br>
-                        <span style="color: #cc0000;">⚠️ Each port can only have one connection</span>
-                    </div>
-                </div>
+            <!-- Control Sections (hidden initially, shown after initialization) -->
+            <div id="controlSections" style="display: none;">
 
-                <div id="deleteElementSection" style="margin-bottom: 15px; display: none;">
-                    <button id="deleteElementBtn" onclick="deleteSelectedElement()" disabled
-                        style="width: 100%; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; opacity: 0.5;">
-                        🗑️ Delete Selected Element
-                    </button>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete (or
-                        press Backspace/Delete).<br>
-                        Compound nodes will delete all children.
-                    </div>
-                </div>
-
-                <div id="addNodeSection"
-                    style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
-                    <h4 style="margin-bottom: 10px; color: #333;">Add New Node</h4>
-
-                    <div style="margin-bottom: 10px;">
-                        <label for="nodeTypeSelect"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Node
-                            Type:</label>
-                        <select id="nodeTypeSelect"
-                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
-                            <option value="N300_LB">N300_LB (4 trays, 2 ports each)</option>
-                            <option value="N300_QB">N300_QB (4 trays, 2 ports each)</option>
-                            <option value="WH_GALAXY">WH_GALAXY (4 trays, 6 ports each)</option>
-                            <option value="BH_GALAXY">BH_GALAXY (4 trays, 14 ports each)</option>
-                            <option value="P150_QB_GLOBAL">P150_QB_GLOBAL (4 trays, 4 ports each)</option>
-                            <option value="P150_QB_AMERICA">P150_QB_AMERICA (4 trays, 4 ports each)</option>
-                            <option value="P150_LB">P150_LB (8 trays, 4 ports each)</option>
-                        </select>
-                    </div>
-
-                    <div style="margin-bottom: 10px;">
-                        <label for="nodeHostnameInput"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Hostname:</label>
-                        <input type="text" id="nodeHostnameInput" placeholder="e.g., new-node-01"
-                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
-                    </div>
-
-                    <div style="margin-bottom: 10px; border-top: 1px solid #eee; padding-top: 10px;">
-                        <div style="font-weight: bold; color: #555; margin-bottom: 8px;">Location Information
-                            (Alternative to Hostname):</div>
-
-                        <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-                            <div style="flex: 1;">
-                                <label for="nodeHallInput"
-                                    style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Hall:</label>
-                                <input type="text" id="nodeHallInput" placeholder="e.g., Hall1"
-                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                <!-- Visualization Mode Indicator with Toggle -->
+                <div id="visualizationModeIndicator"
+                    style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <strong style="color: #1976D2; font-size: 14px;">📊 Visualization Mode</strong>
+                            <div id="currentMode" style="font-size: 13px; color: #333; margin-top: 4px;">
+                                Loading...
                             </div>
-                            <div style="flex: 1;">
-                                <label for="nodeAisleInput"
-                                    style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Aisle:</label>
-                                <input type="text" id="nodeAisleInput" placeholder="e.g., A"
-                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                        </div>
+                        <div>
+                            <button id="toggleModeButton" onclick="toggleVisualizationMode()"
+                                style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                                Switch Mode
+                            </button>
+                        </div>
+                    </div>
+                    <div id="modeDescription"
+                        style="font-size: 11px; color: #666; margin-top: 8px; padding-top: 8px; border-top: 1px solid #bbdefb;">
+                        Mode information will appear here
+                    </div>
+                </div>
+
+                <div id="connectionLegend"
+                    style="margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+                    <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Connection Types Legend</h4>
+                    <!-- CSV-based legend (default) -->
+                    <div id="csvLegend">
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #4CAF50; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Intra-node connections (same node)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #2196F3; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Inter-node connections (different nodes)</span>
+                        </div>
+                    </div>
+                    <!-- Descriptor-based legend (hidden by default) -->
+                    <div id="descriptorLegend" style="display: none;">
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #FF6B6B; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Cluster level (inter-superpod)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #4ECDC4; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Superpod level (intra-superpod)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #95E1D3; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Deeper hierarchy level 1</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin: 6px 0;">
+                            <div
+                                style="width: 20px; height: 3px; background-color: #FFA07A; margin-right: 10px; border-radius: 2px;">
+                            </div>
+                            <span style="font-size: 13px; color: #333;">Deeper hierarchy level 2</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <button id="resetLayoutBtn" onclick="resetLayout()"
+                        style="width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                        🔄 Reset Layout
+                    </button>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                        Recalculate all node positions with consistent spacing
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Compound Node Controls</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <button id="expandOneLevelBtn" onclick="expandOneLevel()"
+                            style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                            ➕ Expand One Level
+                        </button>
+                        <button id="collapseOneLevelBtn" onclick="collapseOneLevel()"
+                            style="padding: 10px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                            ➖ Collapse One Level
+                        </button>
+                    </div>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                        Step through hierarchy levels. Double-click nodes to collapse/expand individually.
+                    </div>
+                </div>
+
+                <div class="collapsible-header" onclick="toggleCollapsible('connectionRangeFilter')">
+                    <h3 style="margin: 0; color: #333;">Connection Range Filter</h3>
+                    <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>
+                </div>
+                <div class="collapsible-content collapsed" id="connectionRangeFilter">
+                    <div class="range-filter-section">
+                        <div style="margin-bottom: 15px;">
+                            <label for="connectionRangeString"
+                                style="display: block; margin-bottom: 5px; font-weight: bold;">Connection Range:</label>
+                            <input type="text" id="connectionRangeString" placeholder="e.g., 1-3,5,7-10"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; font-family: monospace;">
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Format: ranges (1-5), individual numbers (7), or combinations (1-3,5,7-10)
                             </div>
                         </div>
 
-                        <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-                            <div style="flex: 1;">
-                                <label for="nodeRackInput"
-                                    style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Rack:</label>
-                                <input type="number" id="nodeRackInput" placeholder="e.g., 1" min="1"
-                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
-                            </div>
-                            <div style="flex: 1;">
-                                <label for="nodeShelfUInput"
-                                    style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Shelf
-                                    U:</label>
-                                <input type="number" id="nodeShelfUInput" placeholder="e.g., 1" min="1"
-                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                        <div style="margin-bottom: 15px;">
+                            <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types:</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="showIntraNodeConnections" checked
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Intra-node connections (same node)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="showIntraRackConnections" checked
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Intra-rack connections (same rack)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="showInterRackConnections" checked
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Inter-rack connections (different racks)</span>
+                                </label>
                             </div>
                         </div>
 
-                        <div style="font-size: 11px; color: #666; margin-top: 5px;">
-                            <strong>Note:</strong> Either fill out Hostname OR all location fields (Hall, Aisle, Rack,
-                            Shelf U)
+                        <div style="margin-bottom: 15px;">
+                            <label for="nodeFilterSelect"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Filter by
+                                Node:</label>
+                            <select id="nodeFilterSelect"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background-color: white; color: #333333;">
+                                <option value="">Show all nodes</option>
+                            </select>
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Select a specific node to show only its connections
+                            </div>
                         </div>
-                    </div>
 
-                    <button id="addNodeBtn" onclick="addNewNode()" disabled
-                        style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
-                        ➕ Add Node
-                    </button>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Upload a visualization first to enable node creation
+                        <div style="margin-bottom: 15px;">
+                            <button id="applyRangeBtn" onclick="applyConnectionRange()"
+                                style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                Apply Range Filter
+                            </button>
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <button id="clearRangeBtn" onclick="clearConnectionRange()"
+                                style="width: 100%; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                Show All Connections
+                            </button>
+                        </div>
+
+                        <div id="rangeStatus"
+                            style="font-size: 12px; color: #666; text-align: center; margin-top: 10px;">
+                            Showing all connections
+                        </div>
                     </div>
                 </div>
 
-                <div id="addGraphSection"
-                    style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
-                    <h4 style="margin-bottom: 10px; color: #333;">Add Graph Template Instance</h4>
-
-                    <div style="margin-bottom: 10px;">
-                        <label for="graphTemplateSelect"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Select Graph
-                            Template:</label>
-                        <select id="graphTemplateSelect"
-                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
-                            <option value="" disabled>No templates available (load a textproto first)</option>
-                        </select>
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                            Templates are loaded from imported textproto files
-                        </div>
-                    </div>
-
-                    <div style="margin-bottom: 10px;">
-                        <label for="graphLabelInput"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Instance
-                            Label:</label>
-                        <input type="text" id="graphLabelInput" placeholder="e.g., superpod1, pod_a, cluster_west"
-                            style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                            This will be the display name for the graph instance
-                        </div>
-                    </div>
-
-                    <button id="addGraphBtn" onclick="addNewGraph()" disabled
-                        style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
-                        ➕ Add Graph Instance
-                    </button>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                        Load a textproto with graph templates to enable
-                    </div>
+                <div class="collapsible-header" onclick="toggleCollapsible('cablingEditor')">
+                    <h3 style="margin: 0; color: #333;">Cabling Editor</h3>
+                    <span class="collapsible-arrow collapsed" id="cablingEditor-arrow">▶</span>
                 </div>
-            </div>
-
-
-
-            <div class="collapsible-header" onclick="toggleCollapsible('exportOptions')">
-                <h3 style="margin: 0; color: #333;">Export Options</h3>
-                <span class="collapsible-arrow collapsed" id="exportOptions-arrow">▶</span>
-            </div>
-            <div class="collapsible-content collapsed" id="exportOptions">
-                <div class="export-section">
+                <div class="collapsible-content collapsed" id="cablingEditor">
                     <div style="margin-bottom: 15px;">
-                        <label for="exportFileNameInput"
-                            style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Export
-                            Prefix:</label>
-                        <input type="text" id="exportFileNameInput" placeholder="e.g., my_network_topology"
-                            style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; font-family: monospace; background-color: white; color: #333333;">
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                            Prefix applied to textproto filenames. Leave empty for default names
-                            (cabling_descriptor.textproto, deployment_descriptor.textproto)
-                        </div>
-                    </div>
-
-                    <div style="margin-bottom: 15px;">
-                        <button id="exportCablingBtn" onclick="exportCablingDescriptor()"
-                            style="width: 100%; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            📄 Export CablingDescriptor
-                        </button>
-                        <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                            Download textproto file with cabling topology
-                        </div>
-                    </div>
-
-                    <div style="margin-bottom: 15px;">
-                        <button id="exportDeploymentBtn" onclick="exportDeploymentDescriptor()"
+                        <button id="toggleEdgeHandlesBtn" onclick="toggleEdgeHandles()"
                             style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            🏗️ Export DeploymentDescriptor
+                            🔗 Enable Cabling Editing
                         </button>
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                            Download textproto file with node deployment info
+                            Click ports to create connections (2-click process)<br>
+                            <span style="color: #cc0000;">⚠️ Each port can only have one connection</span>
                         </div>
                     </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <button id="generateCablingGuideBtn" onclick="generateCablingGuide()"
-                            style="width: 100%; padding: 12px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            📊 Generate Cabling Guide
+                    <div id="deleteElementSection" style="margin-bottom: 15px; display: none;">
+                        <button id="deleteElementBtn" onclick="deleteSelectedElement()" disabled
+                            style="width: 100%; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; opacity: 0.5;">
+                            🗑️ Delete Selected Element
                         </button>
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                            Generate CablingGuide CSV file
+                            Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete
+                            (or
+                            press Backspace/Delete).<br>
+                            Compound nodes will delete all children.
                         </div>
                     </div>
 
-                    <div style="margin-bottom: 15px;">
-                        <button id="generateFSDBtn" onclick="generateFSD()"
-                            style="width: 100%; padding: 12px; background: #fd7e14; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                            🏭 Generate FSD
+                    <div id="addNodeSection"
+                        style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
+                        <h4 style="margin-bottom: 10px; color: #333;">Add New Node</h4>
+
+                        <div style="margin-bottom: 10px;">
+                            <label for="nodeTypeSelect"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Node
+                                Type:</label>
+                            <select id="nodeTypeSelect"
+                                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                                <option value="N300_LB">N300_LB (4 trays, 2 ports each)</option>
+                                <option value="N300_QB">N300_QB (4 trays, 2 ports each)</option>
+                                <option value="WH_GALAXY">WH_GALAXY (4 trays, 6 ports each)</option>
+                                <option value="BH_GALAXY">BH_GALAXY (4 trays, 14 ports each)</option>
+                                <option value="P150_QB_GLOBAL">P150_QB_GLOBAL (4 trays, 4 ports each)</option>
+                                <option value="P150_QB_AMERICA">P150_QB_AMERICA (4 trays, 4 ports each)</option>
+                                <option value="P150_LB">P150_LB (8 trays, 4 ports each)</option>
+                            </select>
+                        </div>
+
+                        <!-- Physical location fields (only shown in physical view) -->
+                        <div id="nodePhysicalFields" style="margin-bottom: 10px;">
+                            <div style="margin-bottom: 10px;">
+                                <label for="nodeHostnameInput"
+                                    style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Hostname:</label>
+                                <input type="text" id="nodeHostnameInput" placeholder="e.g., new-node-01"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                            </div>
+
+                            <div style="margin-bottom: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+                                <div style="font-weight: bold; color: #555; margin-bottom: 8px;">Location Information
+                                    (Alternative to Hostname):</div>
+
+                                <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                                    <div style="flex: 1;">
+                                        <label for="nodeHallInput"
+                                            style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Hall:</label>
+                                        <input type="text" id="nodeHallInput" placeholder="e.g., Hall1"
+                                            style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label for="nodeAisleInput"
+                                            style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Aisle:</label>
+                                        <input type="text" id="nodeAisleInput" placeholder="e.g., A"
+                                            style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                                    <div style="flex: 1;">
+                                        <label for="nodeRackInput"
+                                            style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Rack:</label>
+                                        <input type="number" id="nodeRackInput" placeholder="e.g., 1" min="1"
+                                            style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label for="nodeShelfUInput"
+                                            style="display: block; margin-bottom: 3px; font-size: 12px; color: #666;">Shelf
+                                            U:</label>
+                                        <input type="number" id="nodeShelfUInput" placeholder="e.g., 1" min="1"
+                                            style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box;">
+                                    </div>
+                                </div>
+
+                                <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                                    <strong>Note:</strong> Either fill out Hostname OR all location fields (Hall, Aisle,
+                                    Rack,
+                                    Shelf U)
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Logical view message (only shown in logical view) -->
+                        <div id="nodeLogicalMessage"
+                            style="display: none; margin-bottom: 10px; padding: 10px; background-color: #e7f3ff; border-radius: 4px; font-size: 13px; color: #0066cc;">
+                            <strong>Logical Topology Mode:</strong><br>
+                            Node will be auto-named (node_0, node_1, etc.) and added to:<br>
+                            • Selected graph container (if one is selected)<br>
+                            • Synthetic root (if no container is selected)<br>
+                            No physical location needed.
+                        </div>
+
+                        <button id="addNodeBtn" onclick="addNewNode()" disabled
+                            style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
+                            ➕ Add Node
                         </button>
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                            Generate Factory System Descriptor textproto file
+                            Upload a visualization first to enable node creation
                         </div>
                     </div>
 
-                    <div id="exportStatus"
-                        style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;">
+                    <div id="addGraphSection"
+                        style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
+                        <h4 style="margin-bottom: 10px; color: #333;">Add Graph Template Instance</h4>
+
+                        <div style="margin-bottom: 10px;">
+                            <label for="graphTemplateSelect"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Select Graph
+                                Template:</label>
+                            <select id="graphTemplateSelect"
+                                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                                <option value="" disabled selected>Select a template to instantiate...</option>
+                            </select>
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Templates are loaded from imported textproto files
+                            </div>
+                        </div>
+
+                        <!-- Instance names are now auto-generated as {template_name}_{index} -->
+                        <div style="margin-bottom: 10px; display: none;">
+                            <label for="graphLabelInput"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Instance
+                                Label:</label>
+                            <input type="text" id="graphLabelInput" placeholder="e.g., superpod1, pod_a, cluster_west"
+                                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                This will be the display name for the graph instance
+                            </div>
+                        </div>
+
+                        <div
+                            style="margin-bottom: 10px; padding: 10px; background-color: #e7f3ff; border-left: 3px solid #2196F3; border-radius: 4px;">
+                            <div style="font-size: 12px; color: #555;">
+                                <strong>Auto-naming:</strong> Instances are automatically named as
+                                <code>{template_name}_{index}</code>
+                                <br>
+                                <span style="font-size: 11px; color: #666;">Example: n300_lb_superpod_0,
+                                    n300_lb_superpod_1, etc.</span>
+                            </div>
+                        </div>
+
+                        <button id="addGraphBtn" onclick="addNewGraph()" disabled
+                            style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
+                            ➕ Add Graph Instance
+                        </button>
+                        <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                            Load a textproto with graph templates to enable
+                        </div>
+
+                        <!-- New Template Creation Section -->
+                        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
+                            <h5 style="margin-bottom: 10px; color: #333;">Create New Template</h5>
+
+                            <div style="margin-bottom: 10px;">
+                                <label for="newTemplateNameInput"
+                                    style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">New
+                                    Template Name:</label>
+                                <input type="text" id="newTemplateNameInput" placeholder="e.g., my_pod, custom_cluster"
+                                    style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                                <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                    Creates an empty template and adds an instance
+                                </div>
+                            </div>
+
+                            <button id="createTemplateBtn" onclick="createNewTemplate()"
+                                style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                ✨ Create Empty Template
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+
+
+                <div class="collapsible-header" onclick="toggleCollapsible('exportOptions')">
+                    <h3 style="margin: 0; color: #333;">Export Options</h3>
+                    <span class="collapsible-arrow collapsed" id="exportOptions-arrow">▶</span>
+                </div>
+                <div class="collapsible-content collapsed" id="exportOptions">
+                    <div class="export-section">
+                        <div style="margin-bottom: 15px;">
+                            <label for="exportFileNameInput"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Export
+                                Prefix:</label>
+                            <input type="text" id="exportFileNameInput" placeholder="e.g., my_network_topology"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; font-family: monospace; background-color: white; color: #333333;">
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Prefix applied to textproto filenames. Leave empty for default names
+                                (cabling_descriptor.textproto, deployment_descriptor.textproto)
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;" id="exportCablingDescriptorSection"
+                            class="hierarchy-mode-only">
+                            <button id="exportCablingBtn" onclick="exportCablingDescriptor()"
+                                style="width: 100%; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                📄 Export CablingDescriptor
+                            </button>
+                            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                                Download textproto file with cabling topology
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;" id="exportDeploymentDescriptorSection"
+                            class="location-mode-only">
+                            <button id="exportDeploymentBtn" onclick="exportDeploymentDescriptor()"
+                                style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                🏗️ Export DeploymentDescriptor
+                            </button>
+                            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                                Download textproto file with node deployment info
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;" id="generateCablingGuideSection" class="location-mode-only">
+                            <button id="generateCablingGuideBtn" onclick="generateCablingGuide()"
+                                style="width: 100%; padding: 12px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                📊 Generate Cabling Guide
+                            </button>
+                            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                                Generate CablingGuide CSV file
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;" id="generateFSDSection" class="location-mode-only">
+                            <button id="generateFSDBtn" onclick="generateFSD()"
+                                style="width: 100%; padding: 12px; background: #fd7e14; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                                🏭 Generate FSD
+                            </button>
+                            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                                Generate Factory System Descriptor textproto file
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-panel">
+                    <strong>Quick Start:</strong><br>
+                    • Choose a tab: <strong>Location/Deployment</strong> (CSV) for physical layout or
+                    <strong>Topology</strong> (textproto) for logical design<br>
+                    • Load existing file OR click "Empty Canvas" to build from scratch<br>
+                    • Pan: Click and drag | Zoom: Mouse wheel<br>
+                    • Double-click graphs/nodes/racks to collapse (device details always visible)<br>
+                    • Click elements to view details<br><br>
+
+                    <strong>Editing:</strong><br>
+                    • <u>Connections:</u> Enable edit mode → click two ports to connect | Click edge then delete
+                    button/Backspace/Delete<br>
+                    • <u>Shelf Nodes:</u> Double-click shelf to edit hostname, location (move to different rack)<br>
+                    • <u>Add Nodes:</u> Enable Connection Editing to access "Add New Node" section<br><br>
+
+                    <strong>Layout & Filtering:</strong><br>
+                    • <u>Reset Layout:</u> Recalculates all positions (racks by number, shelves by U)<br>
+                    • <u>Range Filter:</u> Show specific connections (e.g., "1-10", "5,8,12", "20-30,45")<br><br>
+
+                    <strong>Export:</strong><br>
+                    • Export topology as CablingDescriptor, DeploymentDescriptor, or Cabling Guide CSV<br>
+                </div>
+
             </div>
-
-            <div class="info-panel">
-                <strong>Quick Start:</strong><br>
-                • Upload CSV or textproto to load existing topology OR click "Empty Canvas" to build from scratch<br>
-                • Pan: Click and drag | Zoom: Mouse wheel<br>
-                • Double-click graphs/nodes/racks to collapse (device details always visible)<br>
-                • Click elements to view details<br><br>
-
-                <strong>Editing:</strong><br>
-                • <u>Connections:</u> Enable edit mode → click two ports to connect | Click edge then delete
-                button/Backspace/Delete<br>
-                • <u>Shelf Nodes:</u> Double-click shelf to edit hostname, location (move to different rack)<br>
-                • <u>Add Nodes:</u> Enable Connection Editing to access "Add New Node" section<br><br>
-
-                <strong>Layout & Filtering:</strong><br>
-                • <u>Reset Layout:</u> Recalculates all positions (racks by number, shelves by U)<br>
-                • <u>Range Filter:</u> Show specific connections (e.g., "1-10", "5,8,12", "20-30,45")<br><br>
-
-                <strong>Export:</strong><br>
-                • Export topology as CablingDescriptor, DeploymentDescriptor, or Cabling Guide CSV<br>
-            </div>
+            <!-- End of Control Sections -->
         </div>
 
         <div id="cy">
             <div class="loading-overlay" id="cyLoading">
                 <div>🚀 Ready to visualize your network cabling!</div>
-                <div style="font-size: 14px; color: #999; margin-top: 10px;">Upload a CSV or textproto file to get
-                    started</div>
+                <div style="font-size: 14px; color: #999; margin-top: 10px;">Select a tab and upload a file or create an
+                    empty canvas to get started</div>
             </div>
         </div>
 
         <div class="node-info" id="nodeInfo">
             <div id="nodeInfoContent"></div>
         </div>
+
+        <!-- Modal for connection placement level selection -->
+        <div class="modal-overlay" id="connectionPlacementModal">
+            <div class="modal-content">
+                <div class="modal-header">Choose Connection Placement Level</div>
+                <div class="modal-subheader">
+                    Select where to define this connection. Template-level connections are created in all instances of
+                    that template. Instance-specific connections create a single connection with full paths.
+                </div>
+                <div id="placementOptionsContainer">
+                    <!-- Placement options will be dynamically inserted here -->
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn modal-btn-secondary" onclick="cancelConnectionPlacement()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal for physical layout specification -->
+        <div class="modal-overlay" id="physicalLayoutModal">
+            <div class="modal-content">
+                <div class="modal-header">📍 Specify Physical Layout</div>
+                <div class="modal-subheader">
+                    Define the structure of your data center to automatically assign physical locations to all nodes.
+                </div>
+                <div class="physical-layout-form">
+                    <div class="form-group">
+                        <label for="hallNames">Hall Names:</label>
+                        <textarea id="hallNames" rows="2" class="form-input form-textarea"
+                            placeholder="e.g., Building-A, West-Wing, DataCenter-1">Building-A</textarea>
+                        <small>Comma-separated list or one per line (e.g., Building-A, West-Wing)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="aisleNames">Aisle Names:</label>
+                        <input type="text" id="aisleNames" class="form-input" value="A"
+                            placeholder="e.g., A, B, C or North, South, East, West">
+                        <small>Comma-separated list (e.g., A, B, C) or number (e.g., 5 for A-E)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="rackNumbers">Rack Numbers:</label>
+                        <input type="text" id="rackNumbers" class="form-input" value="1-10"
+                            placeholder="e.g., 1-10 or 1,2,5,10,15">
+                        <small>Range (e.g., 1-10) or comma-separated (e.g., 1, 2, 5, 10, 15)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="shelfUnitNumbers">Shelf U Numbers:</label>
+                        <input type="text" id="shelfUnitNumbers" class="form-input" value="1-42"
+                            placeholder="e.g., 1-42 or 1,2,3,5,10">
+                        <small>Range (e.g., 1-42) or comma-separated (e.g., 1, 2, 3, 5, 10)</small>
+                    </div>
+                    <div class="layout-info">
+                        <strong>Total Capacity:</strong> <span id="totalCapacity">42 nodes</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn modal-btn-secondary" onclick="cancelPhysicalLayoutModal()">Cancel</button>
+                    <button class="modal-btn modal-btn-primary" onclick="applyPhysicalLayout()">Apply Layout</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -843,6 +1391,224 @@
                 content.classList.remove('expanded');
                 content.classList.add('collapsed');
                 arrow.classList.remove('expanded');
+            }
+        }
+
+        // Tab switching functionality
+        function switchTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // Deactivate all tab buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // Show/hide flow descriptions based on selected tab
+            const flowDescLocation = document.getElementById('flowDescriptionLocation');
+            const flowDescTopology = document.getElementById('flowDescriptionTopology');
+
+            // Show selected tab content and activate button
+            if (tabName === 'location') {
+                document.getElementById('locationTabContent').classList.add('active');
+                document.getElementById('locationTab').classList.add('active');
+                if (flowDescLocation) flowDescLocation.style.display = 'block';
+                if (flowDescTopology) flowDescTopology.style.display = 'none';
+            } else if (tabName === 'topology') {
+                document.getElementById('topologyTabContent').classList.add('active');
+                document.getElementById('topologyTab').classList.add('active');
+                if (flowDescLocation) flowDescLocation.style.display = 'none';
+                if (flowDescTopology) flowDescTopology.style.display = 'block';
+            }
+        }
+
+        // Location/Deployment (CSV) upload function
+        async function uploadFileLocation() {
+            const fileInput = document.getElementById('csvFileLocation');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showErrorLocation('Please select a CSV file first.');
+                return;
+            }
+
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showErrorLocation('Please select a CSV file (must end with .csv).');
+                return;
+            }
+
+            // Call the generic upload function with location-specific elements
+            await uploadFileGeneric(file, 'location');
+        }
+
+        // Topology (Textproto) upload function
+        async function uploadFileTopology() {
+            const fileInput = document.getElementById('csvFileTopology');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showErrorTopology('Please select a textproto file first.');
+                return;
+            }
+
+            if (!file.name.toLowerCase().endsWith('.textproto')) {
+                showErrorTopology('Please select a textproto file (must end with .textproto).');
+                return;
+            }
+
+            // Call the generic upload function with topology-specific elements
+            await uploadFileGeneric(file, 'topology');
+        }
+
+        // Generic upload function used by both tabs
+        async function uploadFileGeneric(file, mode) {
+            const loadingId = mode === 'location' ? 'loadingLocation' : 'loadingTopology';
+            const uploadBtnId = mode === 'location' ? 'uploadBtnLocation' : 'uploadBtnTopology';
+            const errorId = mode === 'location' ? 'errorLocation' : 'errorTopology';
+            const successId = mode === 'location' ? 'successLocation' : 'successTopology';
+
+            const loading = document.getElementById(loadingId);
+            const uploadBtn = document.getElementById(uploadBtnId);
+
+            // Reset any global state
+            if (typeof currentData !== 'undefined') {
+                currentData = null;
+            }
+            if (typeof selectedConnection !== 'undefined') {
+                selectedConnection = null;
+            }
+            if (typeof isEdgeCreationMode !== 'undefined') {
+                isEdgeCreationMode = false;
+            }
+
+            // Show loading state
+            loading.style.display = 'block';
+            uploadBtn.disabled = true;
+            const originalText = uploadBtn.textContent;
+            uploadBtn.textContent = 'Processing...';
+            hideMessagesForMode(mode);
+
+            const formData = new FormData();
+            formData.append('csv_file', file);
+
+            try {
+                const response = await fetch('/upload_csv', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    if (typeof currentData !== 'undefined') {
+                        currentData = result.data;
+                    }
+
+                    // Check for unknown node types and show warning
+                    if (result.unknown_types && result.unknown_types.length > 0) {
+                        const unknownTypesStr = result.unknown_types.map(t => t.toUpperCase()).join(', ');
+                        showSuccessForMode(mode, `Successfully processed ${file.name}!<br><strong>⚠️ Warning:</strong> Unknown node types detected and auto-configured: ${unknownTypesStr}`);
+                    } else {
+                        showSuccessForMode(mode, `Successfully processed ${file.name}!`);
+                    }
+
+                    // Call the main initVisualization function from visualizer.js
+                    if (typeof initVisualization === 'function') {
+                        initVisualization(result.data);
+                    }
+
+                    // Update legend based on file type
+                    if (typeof updateConnectionLegend === 'function') {
+                        updateConnectionLegend(result.data);
+                    }
+
+                    // Hide initialization section and show control sections
+                    hideInitializationShowControls();
+                } else {
+                    showErrorForMode(mode, result.error || 'Failed to process file');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                showErrorForMode(mode, 'Network error: ' + error.message);
+            } finally {
+                loading.style.display = 'none';
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = originalText;
+            }
+        }
+
+        // Empty canvas for Location/Deployment mode (CSV-based)
+        function createEmptyVisualizationLocation() {
+            // Set mode to location (physical) before creating empty canvas
+            if (typeof setVisualizationMode === 'function') {
+                setVisualizationMode('location');
+            }
+            createEmptyVisualization();
+            hideInitializationShowControls();
+        }
+
+        // Empty canvas for Topology mode (Textproto-based)
+        function createEmptyVisualizationTopology() {
+            // Set mode to hierarchy (logical topology) before creating empty canvas
+            if (typeof setVisualizationMode === 'function') {
+                setVisualizationMode('hierarchy');
+            }
+            createEmptyVisualization();
+            hideInitializationShowControls();
+        }
+
+        // Helper functions for showing/hiding messages per mode
+        function showErrorLocation(message) {
+            const errorDiv = document.getElementById('errorLocation');
+            errorDiv.innerHTML = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => { errorDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showErrorTopology(message) {
+            const errorDiv = document.getElementById('errorTopology');
+            errorDiv.innerHTML = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => { errorDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showSuccessForMode(mode, message) {
+            const successId = mode === 'location' ? 'successLocation' : 'successTopology';
+            const successDiv = document.getElementById(successId);
+            successDiv.innerHTML = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => { successDiv.style.display = 'none'; }, 5000);
+        }
+
+        function showErrorForMode(mode, message) {
+            const errorId = mode === 'location' ? 'errorLocation' : 'errorTopology';
+            const errorDiv = document.getElementById(errorId);
+            errorDiv.innerHTML = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideMessagesForMode(mode) {
+            const errorId = mode === 'location' ? 'errorLocation' : 'errorTopology';
+            const successId = mode === 'location' ? 'successLocation' : 'successTopology';
+            document.getElementById(errorId).style.display = 'none';
+            document.getElementById(successId).style.display = 'none';
+        }
+
+        function hideInitializationShowControls() {
+            // Hide the entire initialization section
+            const initSection = document.getElementById('initializationSection');
+            if (initSection) {
+                initSection.style.display = 'none';
+            }
+
+            // Show the control sections
+            const controlSections = document.getElementById('controlSections');
+            if (controlSections) {
+                controlSections.style.display = 'block';
             }
         }
     </script>

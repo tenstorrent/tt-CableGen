@@ -173,7 +173,12 @@ def upload_csv():
 
 @app.route("/export_cabling_descriptor", methods=["POST"])
 def export_cabling_descriptor():
-    """Export ClusterDescriptor from cytoscape visualization data"""
+    """Export ClusterDescriptor from cytoscape visualization data
+    
+    IMPORTANT: Cabling descriptor export is based ONLY on hierarchy/topology information:
+    - hostname, node_type, logical_path, template_name, child_name, connections
+    - Physical location fields (hall, aisle, rack, shelf_u) are NEVER used
+    """
     if not EXPORT_AVAILABLE:
         return jsonify({"success": False, "error": "Export functionality not available. Missing dependencies."}), 500
 
@@ -183,7 +188,7 @@ def export_cabling_descriptor():
         if not cytoscape_data or "elements" not in cytoscape_data:
             return jsonify({"success": False, "error": "Invalid cytoscape data"}), 400
 
-        # Generate textproto content
+        # Generate textproto content (based on hierarchy information only)
         textproto_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
 
         # Return as plain text for download
@@ -218,6 +223,42 @@ def export_deployment_descriptor():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _validate_shelf_hostnames(cytoscape_data):
+    """Check if ALL shelf nodes have hostnames. Raises ValueError if any are missing."""
+    elements = cytoscape_data.get("elements", [])
+    
+    shelf_nodes = []
+    missing_hostname_nodes = []
+    
+    for element in elements:
+        # Skip edges
+        if "source" in element.get("data", {}):
+            continue
+        
+        node_data = element.get("data", {})
+        node_type = node_data.get("type")
+        
+        # Collect all shelf nodes
+        if node_type == "shelf":
+            shelf_nodes.append(node_data)
+            
+            # Check if hostname is missing or empty
+            hostname = node_data.get("label") or node_data.get("id") or ""
+            if not hostname.strip():
+                node_id = node_data.get("id", "unknown")
+                missing_hostname_nodes.append(node_id)
+    
+    if missing_hostname_nodes:
+        raise ValueError(
+            f"Cabling guide generation requires all shelf nodes to have hostnames. "
+            f"Missing hostnames for {len(missing_hostname_nodes)} node(s): {', '.join(missing_hostname_nodes[:5])}"
+            + (f" and {len(missing_hostname_nodes) - 5} more..." if len(missing_hostname_nodes) > 5 else "")
+        )
+    
+    if not shelf_nodes:
+        raise ValueError("No shelf nodes found in the graph")
 
 
 def _has_location_info(cytoscape_data):
@@ -265,7 +306,14 @@ def _has_location_info(cytoscape_data):
 
 @app.route("/generate_cabling_guide", methods=["POST"])
 def generate_cabling_guide():
-    """Generate CablingGuide CSV and/or FSD using the cabling generator"""
+    """Generate CablingGuide CSV and/or FSD using the cabling generator
+    
+    IMPORTANT: The cabling guide generation uses:
+    - CablingDescriptor: Based ONLY on hierarchy/topology information (hostname, node_type, connections)
+    - DeploymentDescriptor: Uses physical location information (hall, aisle, rack, shelf_u) when available
+    
+    The --simple flag is set based on whether location information exists in the DeploymentDescriptor.
+    """
     import subprocess
     import tempfile
     import os
@@ -281,18 +329,25 @@ def generate_cabling_guide():
         input_prefix = data["input_prefix"]
         generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
         
-        # Check if location information is present
+        # Validate that all shelf nodes have hostnames - will raise ValueError if not
+        _validate_shelf_hostnames(cytoscape_data)
+        
+        # Check if location information is present (for deployment descriptor)
+        # This only affects the output format of the cabling guide (detailed vs simple)
+        # It does NOT affect the cabling descriptor which is always based on hierarchy
         has_location = _has_location_info(cytoscape_data)
         use_simple_format = not has_location
 
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
+            # Cabling descriptor: Based ONLY on hierarchy/topology information
             cabling_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as deployment_file:
+            # Deployment descriptor: Uses physical location information when available
             deployment_content = export_deployment_descriptor_for_visualizer(cytoscape_data)
             deployment_file.write(deployment_content)
             deployment_path = deployment_file.name

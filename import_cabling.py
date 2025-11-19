@@ -131,10 +131,32 @@ class NetworkCablingCytoscapeVisualizer:
 
     @staticmethod
     def normalize_node_type(node_type, default="WH_GALAXY"):
-        """Normalize node type to lowercase and trim whitespace"""
+        """Normalize node type to uppercase standard format and trim whitespace
+        
+        Also maps alternative names to standard names:
+        - "blackhole" -> "BH_GALAXY"
+        
+        Returns uppercase format for JavaScript NODE_CONFIGS compatibility
+        """
         if not node_type:
-            return default.lower()
-        return node_type.strip().lower()
+            return default.upper()
+        
+        normalized = node_type.strip().lower()
+        
+        # Map alternative names to standard names (lowercase input -> uppercase output)
+        type_mappings = {
+            "blackhole": "BH_GALAXY",
+            "bh_galaxy": "BH_GALAXY",
+            "wh_galaxy": "WH_GALAXY",
+            "n300_lb": "N300_LB",
+            "n300_qb": "N300_QB",
+            "p150_lb": "P150_LB",
+            "p150_qb_global": "P150_QB_GLOBAL",
+            "p150_qb_america": "P150_QB_AMERICA",
+        }
+        
+        # Return mapped value or convert to uppercase
+        return type_mappings.get(normalized, normalized.upper())
 
     @staticmethod
     def create_connection_object(source_data, dest_data, cable_length="Unknown", cable_type="400G_AEC"):
@@ -160,9 +182,9 @@ class NetworkCablingCytoscapeVisualizer:
         self.graph_hierarchy = []  # Resolved hierarchy from descriptor
         self.descriptor_connections = []  # Connections from cabling descriptor with hierarchy info
 
-        # Define templates for different shelf unit types
+        # Define templates for different shelf unit types (uppercase keys for JS compatibility)
         self.shelf_unit_configs = {
-            "wh_galaxy": {
+            "WH_GALAXY": {
                 "tray_count": 4,
                 "port_count": 6,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
@@ -171,7 +193,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
             },
-            "n300_lb": {
+            "N300_LB": {
                 "tray_count": 4,
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
@@ -180,7 +202,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "n300_qb": {
+            "N300_QB": {
                 "tray_count": 4,
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
@@ -189,7 +211,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "p150_qb": {
+            "P150_QB": {
                 "tray_count": 4,
                 "port_count": 4,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (T1 at bottom, T4 at top)
@@ -198,7 +220,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "p150_qb_global": {
+            "P150_QB_GLOBAL": {
                 "tray_count": 4,
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
@@ -207,7 +229,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "p150_qb_america": {
+            "P150_QB_AMERICA": {
                 "tray_count": 4,
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
@@ -216,7 +238,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "p150_lb": {
+            "P150_LB": {
                 "tray_count": 8,
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T8 arranged horizontally (left to right)
@@ -225,7 +247,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "bh_galaxy": {
+            "BH_GALAXY": {
                 "tray_count": 4,
                 "port_count": 14,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
@@ -254,10 +276,10 @@ class NetworkCablingCytoscapeVisualizer:
 
     def set_shelf_unit_type(self, shelf_unit_type):
         """Set the shelf unit type and initialize templates"""
-        self.shelf_unit_type = shelf_unit_type.lower()
+        self.shelf_unit_type = self.normalize_node_type(shelf_unit_type)
 
         # Get current shelf unit configuration
-        self.current_config = self.shelf_unit_configs.get(self.shelf_unit_type, self.shelf_unit_configs["wh_galaxy"])
+        self.current_config = self.shelf_unit_configs.get(self.shelf_unit_type, self.shelf_unit_configs["WH_GALAXY"])
 
         # Calculate auto dimensions for trays based on port layout
         self.current_config = self.calculate_auto_dimensions(self.current_config)
@@ -266,6 +288,18 @@ class NetworkCablingCytoscapeVisualizer:
         if self.file_format == "hierarchical":
             # Full hierarchy with racks
             self.element_templates = {
+                "hall": {
+                    "dimensions": {"width": "auto", "height": "auto", "padding": 60},
+                    "position_type": "horizontal_sequence",  # Halls arranged left-to-right
+                    "child_type": "aisle",
+                    "style_class": "hall",
+                },
+                "aisle": {
+                    "dimensions": {"width": "auto", "height": "auto", "padding": 40},
+                    "position_type": "horizontal_sequence",  # Aisles arranged left-to-right
+                    "child_type": "rack",
+                    "style_class": "aisle",
+                },
                 "rack": {
                     "dimensions": {"width": 450, "height": 500, "spacing": 150},  # Generous spacing to prevent overlap
                     "position_type": "horizontal_sequence",  # Racks arranged left-to-right
@@ -395,20 +429,24 @@ class NetworkCablingCytoscapeVisualizer:
             if len(lines) < 2:
                 raise ValueError("CSV file must have at least 2 header lines")
 
-            # Parse headers to detect available fields
-            # Look for the line that contains actual column headers (not grouping headers)
-            header_line = None
-            for i in range(1, min(3, len(lines))):  # Check lines 1 and 2
-                line = lines[i].strip()
-                if line and not line.startswith("Source") and not line.startswith("Destination"):
-                    # This looks like actual column headers
-                    header_line = line
+            # Find the header marker line (contains "Source" and "Destination")
+            # The actual column headers are on the NEXT line after the marker
+            header_line_idx = None
+            
+            for i in range(len(lines)):
+                line = lines[i].strip().lower()
+                # Look for the line with "source" and "destination" markers
+                if "source" in line and "destination" in line:
+                    # The actual headers are on the next line
+                    header_line_idx = i + 1
                     break
             
-            if not header_line:
-                # Fallback to line 2 if no proper headers found
-                header_line = lines[1].strip()
+            # Fallback to old behavior if marker not found
+            if header_line_idx is None or header_line_idx >= len(lines):
+                print("Warning: Could not find Source/Destination marker line in format detection, using fallback")
+                header_line_idx = 1
             
+            header_line = lines[header_line_idx].strip()
             headers = [h.strip().lower() for h in header_line.split(",")]
             
             # Define field mappings for different CSV formats
@@ -582,17 +620,12 @@ class NetworkCablingCytoscapeVisualizer:
             self.cluster_descriptor = cluster_config_pb2.ClusterDescriptor()
             text_format.Parse(textproto_content, self.cluster_descriptor)
             
-            print(f"Successfully parsed cabling descriptor: {textproto_file}")
-            print(f"  Graph templates: {len(self.cluster_descriptor.graph_templates)}")
-            print(f"  Root instance template: {self.cluster_descriptor.root_instance.template_name}")
             
             # Resolve the hierarchy
             self.graph_hierarchy = self._resolve_graph_hierarchy()
-            print(f"  Resolved hierarchy: {len(self.graph_hierarchy)} leaf nodes")
             
             # Parse connections
             self.descriptor_connections = self._parse_descriptor_connections()
-            print(f"  Parsed connections: {len(self.descriptor_connections)} connections")
             
             return True
             
@@ -687,9 +720,8 @@ class NetworkCablingCytoscapeVisualizer:
         
         def _resolve_recursive(self, instance, template_name, path, hierarchy, depth):
             """Recursively resolve a Graph Instance"""
-            # Store the template name for this path
-            if path:  # Don't store root with empty path
-                self._path_to_template_map[tuple(path)] = template_name
+            # Store the template name for this path (including root path [])
+            self._path_to_template_map[tuple(path)] = template_name
             
             def node_callback(child_name, child_mapping, child_instance, path, depth):
                 node_descriptor_name = child_instance.node_ref.node_descriptor
@@ -1082,7 +1114,6 @@ class NetworkCablingCytoscapeVisualizer:
             return self._extract_config_from_node_descriptor(node_desc, node_descriptor_name)
         
         # If not found, create a dynamic config based on heuristics
-        print(f"Creating dynamic config for unknown node type: {node_descriptor_name}")
         
         # Normalize the node descriptor name
         node_type_lower = node_descriptor_name.lower()
@@ -1090,17 +1121,18 @@ class NetworkCablingCytoscapeVisualizer:
         # Use reasonable defaults based on naming patterns
         if 'wh' in node_type_lower or 'galaxy' in node_type_lower:
             # Galaxy-style devices typically have 4 trays with 6-14 ports
-            base_config = self.shelf_unit_configs['wh_galaxy'].copy()
+            base_config = self.shelf_unit_configs['WH_GALAXY'].copy()
         elif 'n300' in node_type_lower or 'p150' in node_type_lower or 'p300' in node_type_lower:
             # N300/P150 style devices typically have 4 trays with 2-4 ports
-            base_config = self.shelf_unit_configs['n300_lb'].copy()
+            base_config = self.shelf_unit_configs['N300_LB'].copy()
         else:
             # Default fallback
-            base_config = self.shelf_unit_configs['wh_galaxy'].copy()
+            base_config = self.shelf_unit_configs['WH_GALAXY'].copy()
         
-        # Store in dynamic configs
-        self.dynamic_configs[node_type_lower] = base_config
-        self.shelf_unit_configs[node_type_lower] = base_config
+        # Store in dynamic configs (use uppercase keys for consistency)
+        node_type_upper = node_descriptor_name.upper()
+        self.dynamic_configs[node_type_upper] = base_config
+        self.shelf_unit_configs[node_type_upper] = base_config
         
         return base_config
     
@@ -1153,8 +1185,6 @@ class NetworkCablingCytoscapeVisualizer:
             "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
         }
         
-        print(f"Extracted config from NodeDescriptor '{descriptor_name}': "
-              f"{tray_count} trays, {port_count} ports, {tray_layout} layout")
         
         return config
 
@@ -1166,7 +1196,6 @@ class NetworkCablingCytoscapeVisualizer:
             if not self.file_format:
                 return []
 
-            print(f"Detected file format: {self.file_format}")
 
             # Use the new unified parser
             return self.parse_unified_csv(csv_file)
@@ -1180,20 +1209,27 @@ class NetworkCablingCytoscapeVisualizer:
         try:
             lines = self.read_csv_lines(csv_file)
             
-            # Parse headers to get field mappings
-            # Look for the line that contains actual column headers (not grouping headers)
-            header_line = None
-            for i in range(1, min(3, len(lines))):  # Check lines 1 and 2
-                line = lines[i].strip()
-                if line and not line.startswith("Source") and not line.startswith("Destination"):
-                    # This looks like actual column headers
-                    header_line = line
+            # Find the header marker line (contains "Source" and "Destination")
+            # The actual column headers are on the NEXT line after the marker
+            header_line_idx = None
+            data_start_idx = None
+            
+            for i in range(len(lines)):
+                line = lines[i].strip().lower()
+                # Look for the line with "source" and "destination" markers
+                if "source" in line and "destination" in line:
+                    # The actual headers are on the next line
+                    header_line_idx = i + 1
+                    data_start_idx = i + 2
                     break
             
-            if not header_line:
-                # Fallback to line 2 if no proper headers found
-                header_line = lines[1].strip()
+            # Fallback to old behavior if marker not found
+            if header_line_idx is None or header_line_idx >= len(lines):
+                print("Warning: Could not find Source/Destination marker line, using fallback detection")
+                header_line_idx = 1
+                data_start_idx = 2
             
+            header_line = lines[header_line_idx].strip()
             headers = [h.strip() for h in header_line.split(",")]
             
             # Define field mappings
@@ -1319,9 +1355,9 @@ class NetworkCablingCytoscapeVisualizer:
             
             node_types_seen = set()
             
-            # Process data lines - start from line 3 (index 2) or after headers
-            data_start_line = 2  # Default to line 3 (index 2)
-            for i, line in enumerate(lines[2:], start=2):
+            # Process data lines - start from the line after headers (determined earlier)
+            data_start_line = data_start_idx  # Use the detected data start position
+            for i, line in enumerate(lines[data_start_line:], start=data_start_line):
                 line = line.strip()
                 if not line:
                     continue
@@ -1408,7 +1444,7 @@ class NetworkCablingCytoscapeVisualizer:
             if not self.shelf_unit_type and node_types_seen:
                 self.shelf_unit_type = list(node_types_seen)[0]
             elif not self.shelf_unit_type:
-                self.shelf_unit_type = "wh_galaxy"
+                self.shelf_unit_type = "WH_GALAXY"
             
             # Initialize templates
             self.set_shelf_unit_type(self.shelf_unit_type)
@@ -1449,7 +1485,7 @@ class NetworkCablingCytoscapeVisualizer:
             data["label"] = row_values[field_positions["label"]] if field_positions["label"] < len(row_values) else ""
         
         if "node_type" in field_positions:
-            data["node_type"] = self.normalize_node_type(row_values[field_positions["node_type"]]) if field_positions["node_type"] < len(row_values) else "wh_galaxy"
+            data["node_type"] = self.normalize_node_type(row_values[field_positions["node_type"]]) if field_positions["node_type"] < len(row_values) else "WH_GALAXY"
         
         # Generate label if not provided
         if not data.get("label"):
@@ -1464,33 +1500,43 @@ class NetworkCablingCytoscapeVisualizer:
 
     def _track_hierarchical_location(self, source_data, dest_data):
         """Track location information for hierarchical format"""
-        # Track rack units for layout
+        # Track rack units for layout using composite key (hall, aisle, rack_num)
         if "rack_num" in source_data and "shelf_u" in source_data:
-            self.rack_units.setdefault(source_data["rack_num"], set()).add(source_data["shelf_u"])
+            hall = source_data.get("hall", "")
+            aisle = source_data.get("aisle", "")
+            rack_key = (hall, aisle, source_data["rack_num"])
+            self.rack_units.setdefault(rack_key, set()).add(source_data["shelf_u"])
         if "rack_num" in dest_data and "shelf_u" in dest_data:
-            self.rack_units.setdefault(dest_data["rack_num"], set()).add(dest_data["shelf_u"])
+            hall = dest_data.get("hall", "")
+            aisle = dest_data.get("aisle", "")
+            rack_key = (hall, aisle, dest_data["rack_num"])
+            self.rack_units.setdefault(rack_key, set()).add(dest_data["shelf_u"])
         
-        # Track node types for each shelf unit
+        # Track node types for each shelf unit using composite key (hall, aisle, rack, shelf_u)
         if "rack_num" in source_data and "shelf_u" in source_data:
-            shelf_key = f"{source_data['rack_num']}_{source_data['shelf_u']}"
-            node_type = source_data.get("node_type", "wh_galaxy")
+            hall = source_data.get("hall", "")
+            aisle = source_data.get("aisle", "")
+            shelf_key = f"{hall}_{aisle}_{source_data['rack_num']}_{source_data['shelf_u']}"
+            node_type = source_data.get("node_type", "WH_GALAXY")
             self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
             self.node_locations[shelf_key] = {
                 "hostname": source_data.get("hostname", ""),
-                "hall": source_data.get("hall", ""),
-                "aisle": source_data.get("aisle", ""),
+                "hall": hall,
+                "aisle": aisle,
                 "rack_num": source_data["rack_num"],
                 "shelf_u": source_data["shelf_u"],
             }
         
         if "rack_num" in dest_data and "shelf_u" in dest_data:
-            shelf_key = f"{dest_data['rack_num']}_{dest_data['shelf_u']}"
-            node_type = dest_data.get("node_type", "wh_galaxy")
+            hall = dest_data.get("hall", "")
+            aisle = dest_data.get("aisle", "")
+            shelf_key = f"{hall}_{aisle}_{dest_data['rack_num']}_{dest_data['shelf_u']}"
+            node_type = dest_data.get("node_type", "WH_GALAXY")
             self.mixed_node_types[shelf_key] = self.normalize_node_type(node_type)
             self.node_locations[shelf_key] = {
                 "hostname": dest_data.get("hostname", ""),
-                "hall": dest_data.get("hall", ""),
-                "aisle": dest_data.get("aisle", ""),
+                "hall": hall,
+                "aisle": aisle,
                 "rack_num": dest_data["rack_num"],
                 "shelf_u": dest_data["shelf_u"],
             }
@@ -1498,10 +1544,10 @@ class NetworkCablingCytoscapeVisualizer:
     def _track_hostname_location(self, source_data, dest_data):
         """Track location information for hostname-based format"""
         if "hostname" in source_data and source_data.get("hostname"):
-            node_type = source_data.get("node_type", "wh_galaxy")
+            node_type = source_data.get("node_type", "WH_GALAXY")
             self.shelf_units[source_data["hostname"]] = self.normalize_node_type(node_type)
         if "hostname" in dest_data and dest_data.get("hostname"):
-            node_type = dest_data.get("node_type", "wh_galaxy")
+            node_type = dest_data.get("node_type", "WH_GALAXY")
             self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
 
     def generate_node_id(self, node_type, *args):
@@ -1548,6 +1594,10 @@ class NetworkCablingCytoscapeVisualizer:
     
     def calculate_position_in_sequence(self, element_type, index, parent_x=0, parent_y=0, depth=None):
         """Calculate position for an element in a sequence based on its template
+        
+        DEPRECATED: Position calculation is now handled client-side in JavaScript.
+        This function is kept for backward compatibility but its results are not used.
+        See calculateHierarchicalLayout() and applyLocationBasedLayout() in visualizer.js.
         
         Args:
             element_type: Type of element (graph, node_instance, shelf, etc.)
@@ -1628,7 +1678,11 @@ class NetworkCablingCytoscapeVisualizer:
         return x, y
 
     def get_child_positions_for_parent(self, parent_type, child_indices, parent_x, parent_y):
-        """Get all child positions for a parent element using templates"""
+        """Get all child positions for a parent element using templates
+        
+        DEPRECATED: Position calculation is now handled client-side in JavaScript.
+        This function is kept for backward compatibility but its results are not used.
+        """
         template = self.element_templates[parent_type]
         child_type = template["child_type"]
 
@@ -1656,7 +1710,17 @@ class NetworkCablingCytoscapeVisualizer:
         return child_positions
 
     def create_node_from_template(self, node_type, node_id, parent_id, label, x, y, **extra_data):
-        """Create a cytoscape node using element template"""
+        """Create a cytoscape node using element template
+        
+        NOTE: Position calculation is now handled client-side in JavaScript.
+        The x, y parameters are kept for API compatibility but positions are no longer set here.
+        JavaScript will calculate all positions using hierarchy_calculateLayout() or location_calculateLayout().
+        
+        STRUCTURE CONSISTENCY: All shelf nodes (and other node types) have consistent structure across
+        modes - they include data fields (type, label, parent, custom fields) and CSS classes from
+        the template. The only difference between modes is which data fields are populated (e.g.,
+        hall/aisle/rack vs logical_path).
+        """
         template = self.element_templates[node_type]
 
         node_data = {"id": node_id, "label": label, "type": node_type, **extra_data}
@@ -1664,30 +1728,16 @@ class NetworkCablingCytoscapeVisualizer:
         # Add parent relationship if specified
         if parent_id:
             node_data["parent"] = parent_id
-
-        # Handle "auto" dimensions for compound nodes
-        width = template["dimensions"]["width"]
-        height = template["dimensions"]["height"]
         
-        # Build node structure
+        # Build node structure WITHOUT position
+        # JavaScript will calculate positions client-side for consistent layout
         node = {
             "data": node_data,
             "classes": template["style_class"],
         }
         
-        # Only add position if x and y are provided (not None)
-        # This allows Cytoscape to auto-layout certain compound nodes
-        if x is not None and y is not None:
-            # For auto-sized nodes, use position as-is (Cytoscape will auto-size)
-            # For fixed-size nodes, center the position
-            if width == "auto" or height == "auto":
-                pos_x = x
-                pos_y = y
-            else:
-                pos_x = x + width / 2
-                pos_y = y + height / 2
-            
-            node["position"] = {"x": pos_x, "y": pos_y}
+        # NOTE: Position calculation removed - now handled in JavaScript
+        # This ensures single source of truth for layout and consistent appearance across modes
 
         return node
 
@@ -1715,37 +1765,167 @@ class NetworkCablingCytoscapeVisualizer:
         - Graph Instance elements for logical groupings (superpods, pods, etc.)
         - Host Device elements for individual physical servers
         - Shelf/tray/port elements for physical connectivity structure
+        
+        Uses a top-down traversal starting from root_instance to ensure parents
+        are always created before their children.
         """
         if not self.graph_hierarchy:
             self._log_warning("No graph hierarchy to visualize")
             return
         
-        # NOTE: Future optimization opportunity - could group devices by depth to optimize
-        # layout calculations by processing level-by-level
+        if not self.cluster_descriptor or not self.cluster_descriptor.root_instance:
+            self._log_warning("No root_instance found in cluster descriptor")
+            return
         
-        # Track all graph instance paths that need compound visual elements
-        # NOTE: Root cluster is implicit (not visualized), only child graphs are shown
-        graph_paths = set()
+        # Collect all graph paths by traversing from root_instance
+        # This ensures proper parent-child ordering
+        graph_paths = []
+        self._collect_graph_paths_from_root(
+            self.cluster_descriptor.root_instance,
+            [],
+            graph_paths
+        )
         
-        for device_info in self.graph_hierarchy:
-            path = device_info['path']
-            # Add all parent paths (excluding the leaf device itself)
-            for i in range(len(path) - 1):
-                graph_paths.add(tuple(path[:i+1]))
+        # Enumerate instances: Convert instance names to {template_name}_{index} format
+        # Track instances by template at each parent level for proper enumeration
+        self._instance_name_map = {}  # Maps (parent_path, original_name) -> enumerated_name
+        self._normalize_instance_names([tuple(p) for p in graph_paths])
         
-        # Sort graph instance paths by depth (shorter first), then alphabetically
-        # This ensures consistent ordering (e.g., superpod1, superpod2, superpod3, superpod4)
-        sorted_graph_paths = sorted(graph_paths, key=lambda p: (len(p), p))
+        # Enumerate nodes: Convert node names to node_0, node_1, etc. per parent
+        self._node_name_map = {}  # Maps (parent_path, original_child_name) -> normalized_name
+        self._normalize_node_names()
         
         # Create Graph Instance compound visual elements
+        # Process in the order collected (parent before children)
         graph_node_map = {}  # path tuple -> Cytoscape visual element ID
-        for graph_path_tuple in sorted_graph_paths:
-            graph_path = list(graph_path_tuple)
+        
+        print(f"Creating {len(graph_paths)} graph nodes in parent-first order")
+        for i, graph_path in enumerate(graph_paths):
+            path_str = '/'.join(graph_path) if graph_path else '<root>'
+            print(f"  [{i}] Creating graph node: {path_str} (depth {len(graph_path)})")
             self._create_graph_compound_node(graph_path, graph_node_map)
         
         # Create Host Device visual elements (leaf devices with host_ids)
         for device_info in self.graph_hierarchy:
             self._create_node_instance(device_info, graph_node_map)
+    
+    def _collect_graph_paths_from_root(self, instance, current_path, collected_paths):
+        """Recursively collect graph paths by traversing from root_instance
+        
+        This ensures paths are collected in parent-first order, guaranteeing
+        that when we create nodes, parents always exist before children.
+        
+        Args:
+            instance: Current GraphInstance from the descriptor
+            current_path: List representing the path to this instance
+            collected_paths: List to accumulate all paths in order
+        """
+        # Add current path (root is empty list)
+        collected_paths.append(list(current_path))
+        
+        # Recursively process children
+        # child_mappings is a map/dict where key is child_name and value is the mapping
+        if hasattr(instance, 'child_mappings'):
+            for child_name, child_mapping in instance.child_mappings.items():
+                # Check if this is a sub-graph (not a leaf node)
+                if child_mapping.HasField('sub_instance'):
+                    child_instance = child_mapping.sub_instance
+                    
+                    # Build child path
+                    child_path = current_path + [child_name]
+                    
+                    # Recursively collect from this child
+                    self._collect_graph_paths_from_root(
+                        child_instance,
+                        child_path,
+                        collected_paths
+                    )
+    
+    def _normalize_instance_names(self, sorted_graph_paths):
+        """Normalize instance names to {template_name}_{index} format
+        
+        Converts arbitrary instance names from the descriptor to enumerated format.
+        For example: "superpod1", "superpod2" -> "n300_lb_superpod_0", "n300_lb_superpod_1"
+        
+        Args:
+            sorted_graph_paths: List of graph path tuples, sorted by depth
+        """
+        # Group instances by (parent_path, template_name) to enumerate them
+        instances_by_parent_and_template = {}
+        
+        for graph_path_tuple in sorted_graph_paths:
+            if len(graph_path_tuple) == 0:
+                # Root node - no enumeration needed
+                continue
+            
+            # Get template for this path
+            template_name = None
+            if self._hierarchy_resolver:
+                template_name = self._hierarchy_resolver.get_template_for_path(list(graph_path_tuple))
+            
+            if not template_name:
+                continue
+            
+            # Determine parent path
+            parent_path_tuple = graph_path_tuple[:-1] if len(graph_path_tuple) > 1 else ()
+            original_name = graph_path_tuple[-1]
+            
+            # Group by (parent, template)
+            key = (parent_path_tuple, template_name)
+            if key not in instances_by_parent_and_template:
+                instances_by_parent_and_template[key] = []
+            instances_by_parent_and_template[key].append((graph_path_tuple, original_name))
+        
+        # Enumerate instances within each group
+        for (parent_path, template_name), instances in instances_by_parent_and_template.items():
+            for index, (graph_path_tuple, original_name) in enumerate(instances):
+                enumerated_name = f"{template_name}_{index}"
+                self._instance_name_map[(parent_path, original_name)] = enumerated_name
+    
+    def _normalize_node_names(self):
+        """Normalize node names to node_0, node_1, etc. per parent
+        
+        Groups nodes by their parent path and enumerates them sequentially.
+        For example: "node1", "node2", "node3" -> "node_0", "node_1", "node_2"
+        """
+        # Group nodes by parent path
+        nodes_by_parent = {}
+        for device_info in self.graph_hierarchy:
+            path = device_info['path']
+            parent_path = tuple(path[:-1])  # All but the last element
+            original_child_name = device_info['child_name']
+            
+            if parent_path not in nodes_by_parent:
+                nodes_by_parent[parent_path] = []
+            nodes_by_parent[parent_path].append((device_info, original_child_name))
+        
+        # Enumerate nodes within each parent
+        for parent_path, nodes in nodes_by_parent.items():
+            # Sort for consistent ordering
+            nodes.sort(key=lambda x: x[1])  # Sort by original child name
+            
+            for index, (device_info, original_child_name) in enumerate(nodes):
+                normalized_name = f"node_{index}"
+                self._node_name_map[(parent_path, original_child_name)] = normalized_name
+                # Update the device_info in place
+                device_info['child_name'] = normalized_name
+    
+    def _get_enumerated_name(self, graph_path):
+        """Get the enumerated name for a graph path
+        
+        Args:
+            graph_path: List of path elements
+            
+        Returns:
+            Enumerated name if found, otherwise original name
+        """
+        if len(graph_path) == 0:
+            return None  # Root has no enumerated name
+        
+        parent_path = tuple(graph_path[:-1])
+        original_name = graph_path[-1]
+        
+        return self._instance_name_map.get((parent_path, original_name), original_name)
     
     def _create_graph_compound_node(self, graph_path, graph_node_map):
         """Create a visual compound element for a Graph Instance (e.g., superpod, pod)
@@ -1764,15 +1944,40 @@ class NetworkCablingCytoscapeVisualizer:
         if graph_path_tuple in graph_node_map:
             return
         
-        # Generate node ID and label
-        graph_id = "graph_" + "_".join(graph_path)
-        graph_label = graph_path[-1]  # Use last element as label
+        # Generate node ID and label using enumerated names
+        # Handle root cluster (empty path)
+        if len(graph_path) == 0:
+            # Root instance - derive ID and label from root_instance.template_name
+            root_template_name = None
+            if self.cluster_descriptor and self.cluster_descriptor.root_instance:
+                root_template_name = self.cluster_descriptor.root_instance.template_name
+            
+            # Use consistent ID format: graph_ prefix for all graph nodes
+            graph_id = "graph_root"
+            graph_label = root_template_name if root_template_name else 'cluster'
+            
+            # Store template name for export
+            template_name = root_template_name
+            child_name = None  # Root has no child_name
+        else:
+            # Use enumerated name for label
+            enumerated_name = self._get_enumerated_name(graph_path)
+            graph_id = "graph_" + "_".join(graph_path)  # Keep original path for ID
+            graph_label = enumerated_name  # Use enumerated name for label
         
-        # Determine parent (root cluster is implicit, so depth-1 nodes have no parent)
+        # Determine parent (depth-0 is root with no parent, depth-1 are children of root)
         parent_id = None
-        if len(graph_path) > 1:
-            parent_path_tuple = tuple(graph_path[:-1])
-            parent_id = graph_node_map.get(parent_path_tuple)
+        if len(graph_path) > 0:
+            if len(graph_path) == 1:
+                # Top-level nodes (superpods) are children of root
+                parent_path_tuple = ()
+                parent_id = graph_node_map.get(parent_path_tuple)
+                print(f"    Looking for parent at path {parent_path_tuple}: found={parent_id}")
+            else:
+                # Nested nodes have their parent in the hierarchy
+                parent_path_tuple = tuple(graph_path[:-1])
+                parent_id = graph_node_map.get(parent_path_tuple)
+                print(f"    Looking for parent at path {parent_path_tuple}: found={parent_id}")
         
         # Calculate position using alternating layout based on depth
         # Position type alternates at each depth level
@@ -1786,25 +1991,30 @@ class NetworkCablingCytoscapeVisualizer:
             parent_found = False
             for node in self.nodes:
                 if node['data']['id'] == parent_id:
+                    parent_found = True
+                    # Extract position if it exists
                     if 'position' in node:
                         parent_x = node['position']['x']
                         parent_y = node['position']['y']
-                        parent_found = True
                     break
             if not parent_found and parent_id:
                 self._log_warning(f"Parent {parent_id} not found for graph {graph_path}, using (0,0)")
+                self._log_warning(f"  Current nodes in self.nodes: {[n['data']['id'] for n in self.nodes if n['data'].get('type') == 'graph']}")
         
         # Count siblings at same depth with same parent
         # Siblings are nodes at the same depth with the same parent path
-        if len(graph_path) > 1:
-            # For nested graphs, siblings share the same parent path
-            parent_path_tuple = tuple(graph_path[:-1])  # Convert to tuple for comparison
-            siblings = [p for p in graph_node_map.keys() 
-                       if len(p) == len(graph_path) and p[:-1] == parent_path_tuple]
+        if len(graph_path) == 0:
+            # Root node has no siblings
+            index = 0
+        elif len(graph_path) == 1:
+            # Top-level graphs (superpods) are children of root, count them
+            siblings = [p for p in graph_node_map.keys() if len(p) == 1]
             index = len(siblings)
         else:
-            # For top-level graphs (depth 1), count all graphs at depth 1
-            siblings = [p for p in graph_node_map.keys() if len(p) == 1]
+            # For nested graphs, siblings share the same parent path
+            parent_path_tuple = tuple(graph_path[:-1])
+            siblings = [p for p in graph_node_map.keys() 
+                       if len(p) == len(graph_path) and p[:-1] == parent_path_tuple]
             index = len(siblings)
         
         # Use calculate_position_in_sequence with parent position for relative positioning
@@ -1817,6 +2027,10 @@ class NetworkCablingCytoscapeVisualizer:
             template_name = self._hierarchy_resolver.get_template_for_path(graph_path)
         
         # Create graph compound node with calculated position to prevent overlaps
+        # For non-root graphs, use the enumerated name as child_name
+        child_name = self._get_enumerated_name(graph_path) if len(graph_path) > 0 else None
+        
+        
         graph_node = self.create_node_from_template(
             "graph",
             graph_id,
@@ -1826,11 +2040,16 @@ class NetworkCablingCytoscapeVisualizer:
             y,  # Use calculated position
             graph_path=graph_path,
             depth=depth,
-            template_name=template_name  # Add template name to node data
+            template_name=template_name,  # Add template name to node data
+            child_name=child_name  # Add enumerated child_name for export consistency
         )
         
+        # Add to nodes list and map BEFORE processing any children
         self.nodes.append(graph_node)
         graph_node_map[graph_path_tuple] = graph_id
+        
+        print(f"    Added to graph_node_map: {graph_path_tuple} -> {graph_id}")
+        print(f"    Total nodes in self.nodes: {len(self.nodes)}")
     
     def _create_node_instance(self, node_info, graph_node_map):
         """Create a shelf (host device) directly under its parent graph
@@ -1890,9 +2109,23 @@ class NetworkCablingCytoscapeVisualizer:
         # This prevents all graphs from auto-centering at the same spot
         x, y = self.calculate_position_in_sequence("shelf", sibling_index, parent_x=parent_x, parent_y=parent_y)
         
+        # Build logical_path using enumerated instance names (e.g., ["n300_lb_cluster_0", "n300_lb_superpod_0"])
+        # This uses the existing {template_name}_{index} format from _normalize_instance_names()
+        logical_path = []
+        for i in range(len(path) - 1):  # Exclude the leaf node itself
+            parent_graph_path = path[:i+1]
+            enumerated_name = self._get_enumerated_name(parent_graph_path)
+            if enumerated_name:
+                logical_path.append(enumerated_name)
+        
         # Create shelf directly under graph (shelf = host device)
         shelf_id = f"shelf_{host_id}_{child_name}"
         shelf_label = f"{child_name} (host_{host_id})"
+        
+        # Create unique hostname using host_id for deployment descriptor export
+        # This ensures uniqueness across multiple instances of same template
+        # Format: "host_0", "host_1", "host_2", etc.
+        unique_hostname = f"host_{host_id}"
         
         shelf_node = self.create_node_from_template(
             "shelf",
@@ -1901,11 +2134,15 @@ class NetworkCablingCytoscapeVisualizer:
             shelf_label,
             x,
             y,
-            host_id=host_id,
+            host_index=host_id,  # Globally unique numeric index
             shelf_node_type=node_type,  # Store as shelf_node_type (standard field)
             node_descriptor_type=node_type,  # Keep for compatibility
             child_name=child_name,
-            hostname=child_name  # Also store as hostname
+            hostname=unique_hostname,  # Use unique hostname for deployment descriptor
+            # Logical topology fields for descriptor imports
+            logical_path=logical_path,  # Array of enumerated instance names
+            logical_child_name=child_name,  # Normalized child name (e.g., "node_0")
+            is_synthetic_root_child=False  # These nodes have proper logical topology
         )
         
         self.nodes.append(shelf_node)
@@ -1919,77 +2156,159 @@ class NetworkCablingCytoscapeVisualizer:
             None,  # rack_num
             None,  # shelf_u
             node_type,  # shelf_node_type
-            child_name,  # hostname
+            unique_hostname,  # hostname (unique identifier for deployment descriptor)
             host_id,  # host_id
             child_name  # node_name
         )
     
     def _create_rack_hierarchy(self):
-        """Create full hierarchy nodes (racks -> shelves -> trays -> ports)"""
-        # Get sorted rack numbers for consistent ordering (right to left)
-        rack_numbers = sorted(self.rack_units.keys(), reverse=True)
-
-        # Calculate rack positions using template
-        rack_positions = []
-        for rack_idx, rack_num in enumerate(rack_numbers):
-            rack_x, rack_y = self.calculate_position_in_sequence("rack", rack_idx)
-            rack_positions.append((rack_num, rack_x, rack_y))
-
-        # Create all nodes using template-based approach
-        for rack_num, rack_x, rack_y in rack_positions:
-            # Get shelf units for this rack to extract hall/aisle info
-            # Sort in descending order so higher U numbers are at top
-            shelf_units = sorted(self.rack_units[rack_num], reverse=True)
-
-            # Get hall and aisle info from the first shelf in this rack (if available)
-            hall = ""
-            aisle = ""
-            if shelf_units:
-                first_shelf_key = f"{rack_num}_{shelf_units[0]}"
-                first_shelf_info = self.node_locations.get(first_shelf_key, {})
-                hall = first_shelf_info.get("hall", "")
-                aisle = first_shelf_info.get("aisle", "")
-
-            # Create rack node with location info
-            rack_id = self.generate_node_id("rack", rack_num)
-            rack_node = self.create_node_from_template(
-                "rack", rack_id, None, f"Rack {rack_num}", rack_x, rack_y, rack_num=rack_num, hall=hall, aisle=aisle
-            )
-            self.nodes.append(rack_node)
-
-            # Calculate shelf positions
-            shelf_positions = self.get_child_positions_for_parent("rack", shelf_units, rack_x, rack_y)
-
-            for shelf_u, shelf_x, shelf_y in shelf_positions:
-                # Get the node type and location info for this specific shelf
-                shelf_key = f"{rack_num}_{shelf_u}"
-                shelf_node_type = self.mixed_node_types.get(shelf_key, self.shelf_unit_type)
-                shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
-                location_info = self.node_locations.get(shelf_key, {})
-                hostname = location_info.get("hostname", "")
-
-                # Create shelf node with hostname as ID (hostname is primary identifier)
-                # Use hostname for shelf_id, not rack_shelf format
-                shelf_id = self.generate_node_id("shelf", hostname) if hostname else self.generate_node_id("shelf", rack_num, shelf_u)
-                shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
-                shelf_node = self.create_node_from_template(
-                    "shelf",
-                    shelf_id,
-                    rack_id,
-                    shelf_label,
-                    shelf_x,
-                    shelf_y,
-                    rack_num=rack_num,
-                    shelf_u=shelf_u,
-                    shelf_node_type=shelf_node_type,
-                    hostname=hostname,
-                    hall=location_info.get("hall", ""),
-                    aisle=location_info.get("aisle", ""),
+        """Create conditional hierarchy nodes (halls -> aisles -> racks -> shelves -> trays -> ports)
+        
+        Only creates hierarchy levels when there are multiple instances:
+        - Hall level: Only shown if multiple halls exist
+        - Aisle level: Only shown if multiple aisles exist (across all halls)
+        - Rack level: Always shown
+        """
+        # Track global host index for all shelves
+        host_index_counter = 0
+        
+        # Organize racks by hall and aisle
+        # rack_units keys are now tuples: (hall, aisle, rack_num)
+        hall_aisle_racks = {}  # {hall: {aisle: [rack_nums]}}
+        
+        for rack_key in self.rack_units.keys():
+            hall, aisle, rack_num = rack_key
+            
+            if hall not in hall_aisle_racks:
+                hall_aisle_racks[hall] = {}
+            if aisle not in hall_aisle_racks[hall]:
+                hall_aisle_racks[hall][aisle] = []
+            hall_aisle_racks[hall][aisle].append(rack_num)
+        
+        # Sort halls and aisles for consistent ordering
+        sorted_halls = sorted(hall_aisle_racks.keys())
+        
+        # Determine which hierarchy levels to show
+        num_halls = len(sorted_halls)
+        # Count total unique aisles across all halls
+        all_aisles = set()
+        for hall in hall_aisle_racks:
+            all_aisles.update(hall_aisle_racks[hall].keys())
+        num_aisles = len(all_aisles)
+        
+        show_hall_level = num_halls > 1
+        show_aisle_level = num_aisles > 1
+        
+        # Process all halls
+        for hall_idx, hall in enumerate(sorted_halls):
+            # Conditionally create hall compound node
+            hall_id = None
+            if show_hall_level:
+                hall_x, hall_y = self.calculate_position_in_sequence("hall", hall_idx)
+                hall_id = self.generate_node_id("hall", hall)
+                hall_node = self.create_node_from_template(
+                    "hall", hall_id, None, f"Hall {hall}", hall_x, hall_y, hall=hall
                 )
-                self.nodes.append(shelf_node)
+                self.nodes.append(hall_node)
+                base_x, base_y = hall_x, hall_y
+            else:
+                # No hall level - aisles/racks will be top-level
+                base_x, base_y = 0, 0
+            
+            # Get sorted aisles for this hall
+            sorted_aisles = sorted(hall_aisle_racks[hall].keys())
+            
+            # Process all aisles in this hall
+            for aisle_idx, aisle in enumerate(sorted_aisles):
+                # Conditionally create aisle compound node
+                aisle_id = None
+                if show_aisle_level:
+                    aisle_x, aisle_y = self.calculate_position_in_sequence("aisle", aisle_idx)
+                    aisle_x += base_x
+                    aisle_y += base_y
+                    aisle_id = self.generate_node_id("aisle", hall, aisle)
+                    aisle_parent = hall_id if show_hall_level else None
+                    aisle_node = self.create_node_from_template(
+                        "aisle", aisle_id, aisle_parent, f"Aisle {aisle}", aisle_x, aisle_y, hall=hall, aisle=aisle
+                    )
+                    self.nodes.append(aisle_node)
+                    rack_base_x, rack_base_y = aisle_x, aisle_y
+                else:
+                    # No aisle level - racks will be children of hall (or top-level if no hall)
+                    rack_base_x, rack_base_y = base_x, base_y
+                
+                # Get sorted racks for this aisle (right to left ordering)
+                rack_numbers = sorted(hall_aisle_racks[hall][aisle], reverse=True)
+                
+                # Create rack nodes
+                for rack_idx, rack_num in enumerate(rack_numbers):
+                    rack_x, rack_y = self.calculate_position_in_sequence("rack", rack_idx)
+                    rack_x += rack_base_x
+                    rack_y += rack_base_y
+                    
+                    # Get shelf units for this rack using composite key
+                    rack_key = (hall, aisle, rack_num)
+                    shelf_units = sorted(self.rack_units[rack_key], reverse=True)
+                    
+                    # Determine rack parent based on what levels are shown
+                    if show_aisle_level:
+                        rack_parent = aisle_id
+                    elif show_hall_level:
+                        rack_parent = hall_id
+                    else:
+                        rack_parent = None
+                    
+                    # Create rack node with location info
+                    # Use composite ID to ensure uniqueness across aisles: rack_hall_aisle_racknum
+                    rack_id = self.generate_node_id("rack", hall, aisle, rack_num)
+                    rack_node = self.create_node_from_template(
+                        "rack", rack_id, rack_parent, f"Rack {rack_num}", rack_x, rack_y, rack_num=rack_num, hall=hall, aisle=aisle
+                    )
+                    self.nodes.append(rack_node)
+                    
+                    # Calculate shelf positions
+                    shelf_positions = self.get_child_positions_for_parent("rack", shelf_units, rack_x, rack_y)
 
-                # Create trays and ports
-                self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname)
+                    for shelf_u, shelf_x, shelf_y in shelf_positions:
+                        # Get the node type and location info for this specific shelf using composite key
+                        shelf_key = f"{hall}_{aisle}_{rack_num}_{shelf_u}"
+                        shelf_node_type = self.mixed_node_types.get(shelf_key, self.shelf_unit_type)
+                        shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
+                        location_info = self.node_locations.get(shelf_key, {})
+                        hostname = location_info.get("hostname", "")
+
+                        # Create shelf node with hostname as ID (hostname is primary identifier)
+                        # Use hostname for shelf_id, or composite format for uniqueness
+                        if hostname:
+                            shelf_id = self.generate_node_id("shelf", hostname)
+                        else:
+                            # Use composite ID format: hall_aisle_rack_U_shelf to ensure uniqueness
+                            shelf_id = f"{hall}_{aisle}_{rack_num}_U{shelf_u}"
+                        shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
+                        shelf_node = self.create_node_from_template(
+                            "shelf",
+                            shelf_id,
+                            rack_id,
+                            shelf_label,
+                            shelf_x,
+                            shelf_y,
+                            rack_num=rack_num,
+                            shelf_u=shelf_u,
+                            shelf_node_type=shelf_node_type,
+                            hostname=hostname,
+                            host_index=host_index_counter,  # Assign sequential global index
+                            hall=location_info.get("hall", ""),
+                            aisle=location_info.get("aisle", ""),
+                            # Logical topology fields for CSV imports (no logical topology)
+                            logical_path=[],  # Empty - no logical topology from CSV
+                            logical_child_name=None,  # No normalized child name
+                            is_synthetic_root_child=True  # CSV imports have no logical topology
+                        )
+                        self.nodes.append(shelf_node)
+
+                        # Create trays and ports
+                        self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter)
+                        host_index_counter += 1
 
     def _create_shelf_hierarchy(self):
         """Create shelf-only hierarchy nodes (shelves -> trays -> ports)"""
@@ -2003,7 +2322,7 @@ class NetworkCablingCytoscapeVisualizer:
             shelf_positions.append((hostname, shelf_x, shelf_y))
 
         # Create all nodes using template-based approach (no racks)
-        for hostname, shelf_x, shelf_y in shelf_positions:
+        for shelf_idx, (hostname, shelf_x, shelf_y) in enumerate(shelf_positions):
             # Get the node type for this specific shelf
             shelf_node_type = self.shelf_units.get(hostname, self.shelf_unit_type)
             shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
@@ -2018,12 +2337,17 @@ class NetworkCablingCytoscapeVisualizer:
                 shelf_x,
                 shelf_y,
                 hostname=hostname,
+                host_index=shelf_idx,  # Assign sequential index for CSV imports
                 shelf_node_type=shelf_node_type,
+                # Logical topology fields for CSV imports (no logical topology)
+                logical_path=[],  # Empty - no logical topology from CSV
+                logical_child_name=None,  # No normalized child name
+                is_synthetic_root_child=True  # CSV imports have no logical topology
             )
             self.nodes.append(shelf_node)
 
             # Create trays and ports
-            self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname)
+            self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname, host_id=shelf_idx)
 
     def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, 
                                shelf_node_type, hostname, host_id=None, node_name=None):
@@ -2061,7 +2385,7 @@ class NetworkCablingCytoscapeVisualizer:
                 tray_data["hostname"] = hostname
             # Add descriptor format data if provided
             if host_id is not None:
-                tray_data["host_id"] = host_id
+                tray_data["host_index"] = host_id  # Globally unique index
             if node_name is not None:
                 tray_data["node_name"] = node_name
             
@@ -2099,7 +2423,7 @@ class NetworkCablingCytoscapeVisualizer:
                     port_data["hostname"] = hostname
                 # Add descriptor format data if provided
                 if host_id is not None:
-                    port_data["host_id"] = host_id
+                    port_data["host_index"] = host_id  # Globally unique index
                 if node_name is not None:
                     port_data["node_name"] = node_name
                 
@@ -2223,20 +2547,53 @@ class NetworkCablingCytoscapeVisualizer:
 
     def _generate_port_ids(self, connection):
         """Generate source and destination port IDs based on CSV format"""
-        # ALWAYS use hostname for node IDs, regardless of format
-        # The rack/shelf columns are only for location metadata
-        src_hostname = connection["source"].get("hostname", "unknown")
-        dst_hostname = connection["destination"].get("hostname", "unknown")
-        src_port_id = self.generate_node_id("port", src_hostname, connection["source"]["tray"], connection["source"]["port"])
-        dst_port_id = self.generate_node_id("port", dst_hostname, connection["destination"]["tray"], connection["destination"]["port"])
+        # Use hostname if available, otherwise use rack/shelf format
+        # This must match the logic in _create_rack_hierarchy for shelf_id generation
+        src_hostname = connection["source"].get("hostname", "")
+        dst_hostname = connection["destination"].get("hostname", "")
+        
+        # Generate shelf IDs using same logic as node creation
+        if src_hostname:
+            src_shelf_id = self.generate_node_id("shelf", src_hostname)
+        else:
+            # Use composite format when hostname is not available (hall_aisle_rack_U_shelf)
+            src_hall = connection["source"].get("hall", "")
+            src_aisle = connection["source"].get("aisle", "")
+            src_rack_num = connection["source"].get("rack_num", "")
+            src_shelf_u = connection["source"].get("shelf_u", "")
+            src_shelf_id = f"{src_hall}_{src_aisle}_{src_rack_num}_U{src_shelf_u}"
+        
+        if dst_hostname:
+            dst_shelf_id = self.generate_node_id("shelf", dst_hostname)
+        else:
+            # Use composite format when hostname is not available (hall_aisle_rack_U_shelf)
+            dst_hall = connection["destination"].get("hall", "")
+            dst_aisle = connection["destination"].get("aisle", "")
+            dst_rack_num = connection["destination"].get("rack_num", "")
+            dst_shelf_u = connection["destination"].get("shelf_u", "")
+            dst_shelf_id = f"{dst_hall}_{dst_aisle}_{dst_rack_num}_U{dst_shelf_u}"
+        
+        src_port_id = self.generate_node_id("port", src_shelf_id, connection["source"]["tray"], connection["source"]["port"])
+        dst_port_id = self.generate_node_id("port", dst_shelf_id, connection["destination"]["tray"], connection["destination"]["port"])
         
         return src_port_id, dst_port_id
 
     def _get_connection_color(self, connection):
         """Determine connection color based on whether ports are on the same node"""
-        # Always use hostname to determine same-node connections
-        source_node_id = connection["source"].get("hostname", "unknown")
-        dest_node_id = connection["destination"].get("hostname", "unknown")
+        # Use hostname if available, otherwise use rack/shelf format
+        src_hostname = connection["source"].get("hostname", "")
+        dst_hostname = connection["destination"].get("hostname", "")
+        
+        # Generate node identifiers for comparison
+        if src_hostname:
+            source_node_id = src_hostname
+        else:
+            source_node_id = f"{connection['source'].get('rack_num', '')}_{connection['source'].get('shelf_u', '')}"
+        
+        if dst_hostname:
+            dest_node_id = dst_hostname
+        else:
+            dest_node_id = f"{connection['destination'].get('rack_num', '')}_{connection['destination'].get('shelf_u', '')}"
 
         return self.intra_node_color if source_node_id == dest_node_id else self.inter_node_color
 
@@ -2286,43 +2643,134 @@ class NetworkCablingCytoscapeVisualizer:
         
         # If this is a descriptor file, include the graph templates for the UI
         if self.file_format == "descriptor" and self.cluster_descriptor:
+            # Track the initial root for export optimization
+            # The root node was created with id="graph_root"
+            root_template_name = self.cluster_descriptor.root_instance.template_name
+            metadata["initialRootId"] = "graph_root"
+            metadata["initialRootTemplate"] = root_template_name
             # Extract template names and their full structure from the cluster descriptor
             template_data = {}
             for template_name, template_proto in self.cluster_descriptor.graph_templates.items():
                 # Store the template structure for instantiation in the UI
                 template_info = {
                     "name": template_name,
+                    "graph_type": "graph",  # All graph templates use type="graph" regardless of hierarchy level
                     "children": []
                 }
                 
-                # Extract children (nodes or graph references)
+                # Build mappings for normalized names (recursively for nested paths)
+                # This needs to handle arbitrary depth hierarchies
+                path_mapping = {}  # Maps tuple(original_path) -> normalized_name at each level
+                
+                # Helper function to recursively build path mappings through all nested templates
+                def build_path_mappings_recursive(parent_path_tuple, template_name, depth=0):
+                    """
+                    Recursively build mappings for all paths through nested templates.
+                    
+                    Args:
+                        parent_path_tuple: Tuple of original names leading to this template
+                        template_name: Name of the current template to process
+                        depth: Current depth in the hierarchy
+                    """
+                    if template_name not in self.cluster_descriptor.graph_templates:
+                        return
+                    
+                    template = self.cluster_descriptor.graph_templates[template_name]
+                    
+                    # Group graph children by template type for enumeration
+                    graph_children_by_template = {}
+                    node_index = 0
+                    
+                    for child in template.children:
+                        if child.HasField("graph_ref"):
+                            child_template = child.graph_ref.graph_template
+                            if child_template not in graph_children_by_template:
+                                graph_children_by_template[child_template] = []
+                            graph_children_by_template[child_template].append(child)
+                    
+                    # Enumerate graph children
+                    for child_template, children in graph_children_by_template.items():
+                        for idx, child in enumerate(children):
+                            normalized_name = f"{child_template}_{idx}"
+                            child_path = parent_path_tuple + (child.name,)
+                            path_mapping[child_path] = normalized_name
+                            
+                            # Recurse into this child template
+                            build_path_mappings_recursive(child_path, child_template, depth + 1)
+                    
+                    # Enumerate node children
+                    for child in template.children:
+                        if child.HasField("node_ref"):
+                            normalized_name = f"node_{node_index}"
+                            child_path = parent_path_tuple + (child.name,)
+                            path_mapping[child_path] = normalized_name
+                            node_index += 1
+                
+                # Build the complete path mapping starting from this template
+                build_path_mappings_recursive((), template_name, 0)
+                
+                # Extract children (nodes or graph references) with normalized names
                 for child in template_proto.children:
-                    child_info = {
-                        "name": child.name
-                    }
+                    child_info = {}
+                    
+                    # Look up normalized name from path_mapping
+                    child_path_tuple = (child.name,)
+                    normalized_name = path_mapping.get(child_path_tuple, child.name)
                     
                     if child.HasField("node_ref"):
+                        child_info["name"] = normalized_name
+                        child_info["original_name"] = child.name  # Keep original for reference
                         child_info["type"] = "node"
                         child_info["node_descriptor"] = child.node_ref.node_descriptor
                     elif child.HasField("graph_ref"):
+                        child_info["name"] = normalized_name
+                        child_info["original_name"] = child.name  # Keep original for reference
                         child_info["type"] = "graph"
                         child_info["graph_template"] = child.graph_ref.graph_template
                     
                     template_info["children"].append(child_info)
                 
-                # Extract internal connections
+                # Extract internal connections and update paths with normalized names
                 template_info["connections"] = []
                 for cable_type, conn_list in template_proto.internal_connections.items():
                     for conn in conn_list.connections:
+                        # Normalize paths: replace original names with enumerated names
+                        # Paths can be arbitrary depth: ["node1"], ["superpod1", "node1"], ["superpod1", "pod1", "node1"], etc.
+                        port_a_path = list(conn.port_a.path)
+                        port_b_path = list(conn.port_b.path)
+                        
+                        # Normalize paths using the recursive path_mapping
+                        def normalize_path(original_path):
+                            """
+                            Normalize a path of arbitrary depth.
+                            Works by building up the path incrementally and looking up each segment.
+                            """
+                            normalized = []
+                            for i in range(len(original_path)):
+                                # Build the path tuple up to this point
+                                path_tuple = tuple(original_path[:i+1])
+                                
+                                # Look up the normalized name for this position
+                                if path_tuple in path_mapping:
+                                    normalized.append(path_mapping[path_tuple])
+                                else:
+                                    # Fallback: keep original if not found
+                                    normalized.append(original_path[i])
+                            
+                            return normalized
+                        
+                        port_a_path = normalize_path(port_a_path)
+                        port_b_path = normalize_path(port_b_path)
+                        
                         template_info["connections"].append({
                             "cable_type": cable_type,
                             "port_a": {
-                                "path": list(conn.port_a.path),
+                                "path": port_a_path,
                                 "tray_id": conn.port_a.tray_id,
                                 "port_id": conn.port_a.port_id
                             },
                             "port_b": {
-                                "path": list(conn.port_b.path),
+                                "path": port_b_path,
                                 "tray_id": conn.port_b.tray_id,
                                 "port_id": conn.port_b.port_id
                             }
@@ -2331,7 +2779,46 @@ class NetworkCablingCytoscapeVisualizer:
                 template_data[template_name] = template_info
             
             metadata["graph_templates"] = template_data
-            print(f"Added {len(template_data)} graph templates to metadata: {list(template_data.keys())}")
+            
+            # Track logical topology instances for view switching
+            # This represents the actual instance hierarchy that was imported
+            logical_topology_instances = {
+                "root_template": root_template_name,
+                "instance_map": {}  # Maps instance IDs to their template and parent info
+            }
+            
+            # Build instance map from the imported graph nodes
+            for node in cytoscape_data["elements"]:
+                node_data = node.get("data", {})
+                if node_data.get("type") == "graph":
+                    # This is a graph instance node
+                    instance_id = node_data.get("id")
+                    template_name = node_data.get("template_name")
+                    parent_id = node_data.get("parent")
+                    depth = node_data.get("depth")
+                    
+                    if instance_id and template_name:
+                        logical_topology_instances["instance_map"][instance_id] = {
+                            "template_name": template_name,
+                            "parent_id": parent_id,
+                            "depth": depth,
+                            "label": node_data.get("label", "")
+                        }
+            
+            metadata["logical_topology_instances"] = logical_topology_instances
+        else:
+            # For CSV imports (no logical topology), create a minimal synthetic root structure
+            metadata["logical_topology_instances"] = {
+                "root_template": "synthetic_root",
+                "instance_map": {
+                    "synthetic_root": {
+                        "template_name": "synthetic_root",
+                        "parent_id": None,
+                        "depth": 0,
+                        "label": "Unassigned Nodes"
+                    }
+                }
+            }
         
         return {
             "nodes": cytoscape_data["elements"],
@@ -2380,7 +2867,6 @@ def main():
 
     if is_textproto:
         # Parse cabling descriptor
-        print(f"Parsing cabling descriptor: {input_file}")
         visualizer.file_format = "descriptor"  # Set format before parsing
         
         if not visualizer.parse_cabling_descriptor(input_file):
@@ -2391,17 +2877,16 @@ def main():
         if visualizer.graph_hierarchy:
             # Extract unique node types
             node_types = set(node['node_type'] for node in visualizer.graph_hierarchy)
-            print(f"Node types found: {node_types}")
             
             # Set shelf unit type from first node (or default)
             if node_types:
                 first_node_type = list(node_types)[0]
                 config = visualizer._node_descriptor_to_config(first_node_type)
-                visualizer.shelf_unit_type = first_node_type.lower()
+                visualizer.shelf_unit_type = visualizer.normalize_node_type(first_node_type)
                 visualizer.current_config = config
             else:
-                visualizer.shelf_unit_type = "wh_galaxy"
-                visualizer.current_config = visualizer.shelf_unit_configs["wh_galaxy"]
+                visualizer.shelf_unit_type = "WH_GALAXY"
+                visualizer.current_config = visualizer.shelf_unit_configs["WH_GALAXY"]
             
             # Initialize templates for descriptor format
             visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
