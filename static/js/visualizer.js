@@ -843,10 +843,12 @@ function updateModeIndicator() {
  * @param {Object} data - The visualization data
  */
 function extractGraphTemplates(data) {
+    state.data.availableGraphTemplates = {};
     availableGraphTemplates = {};
 
     // Check if metadata contains graph_templates
     if (data.metadata && data.metadata.graph_templates) {
+        state.data.availableGraphTemplates = data.metadata.graph_templates;
         availableGraphTemplates = data.metadata.graph_templates;
     } else {
     }
@@ -2234,6 +2236,7 @@ function handlePortClickEditMode(node, evt) {
         // Clear source port selection if any
         if (sourcePort) {
             sourcePort.removeClass('source-selected');
+            state.editing.selectedFirstPort = null;
             sourcePort = null;
         }
 
@@ -2241,6 +2244,7 @@ function handlePortClickEditMode(node, evt) {
         if (selectedConnection) {
             selectedConnection.removeClass('selected-connection');
         }
+        state.editing.selectedConnection = edge;
         selectedConnection = edge;
         edge.addClass('selected-connection');
 
@@ -2253,6 +2257,7 @@ function handlePortClickEditMode(node, evt) {
     // Port is unconnected - handle connection creation
     if (!sourcePort) {
         // First click - select source port
+        state.editing.selectedFirstPort = node;
         sourcePort = node;
         sourcePort.addClass('source-selected');
     } else {
@@ -2262,6 +2267,7 @@ function handlePortClickEditMode(node, evt) {
         // Can't connect port to itself
         if (sourcePort.id() === targetPort.id()) {
             sourcePort.removeClass('source-selected');
+            state.editing.selectedFirstPort = null;
             sourcePort = null;
             return;
         }
@@ -2290,6 +2296,7 @@ function handlePortClickViewMode(node, evt) {
             selectedConnection.removeClass('selected-connection');
         }
 
+        state.editing.selectedConnection = edge;
         selectedConnection = edge;
         edge.addClass('selected-connection');
         showNodeInfo(node, evt.renderedPosition || evt.position);
@@ -2297,7 +2304,8 @@ function handlePortClickViewMode(node, evt) {
         // Port has no connection - just show info
         if (selectedConnection) {
             selectedConnection.removeClass('selected-connection');
-            selectedConnection = null;
+            state.editing.selectedConnection = null;
+        selectedConnection = null;
             updateDeleteButtonState();
         }
         showNodeInfo(node, evt.renderedPosition || evt.position);
@@ -2329,12 +2337,14 @@ function clearAllSelections() {
 
     if (selectedConnection) {
         selectedConnection.removeClass('selected-connection');
+        state.editing.selectedConnection = null;
         selectedConnection = null;
         updateDeleteButtonState();
     }
 
     if (selectedNode) {
         selectedNode.removeClass('selected-node');
+        state.editing.selectedNode = null;
         selectedNode = null;
         updateDeleteNodeButtonState();
     }
@@ -2394,6 +2404,7 @@ function deleteSelectedConnection() {
     // Check if edge still exists and is valid
     if (!edge || !edge.cy() || edge.removed()) {
         alert('Selected connection is no longer valid.');
+        state.editing.selectedConnection = null;
         selectedConnection = null;
         updateDeleteButtonState();
         return;
@@ -2435,6 +2446,7 @@ function deleteSelectedConnection() {
             edge.remove();
         }
 
+        state.editing.selectedConnection = null;
         selectedConnection = null;
         updateDeleteButtonState();
         updatePortConnectionStatus();
@@ -2642,7 +2654,8 @@ function recalculateHostIndicesForTemplates() {
     });
 
     // Update globalHostCounter to the next available index
-    globalHostCounter = nextHostIndex;
+    state.data.globalHostCounter = nextHostIndex;
+    globalHostCounter = state.data.globalHostCounter;
     console.log(`Recalculation complete. Next available host_index: ${globalHostCounter}`);
 }
 
@@ -3352,6 +3365,7 @@ function deleteSelectedNode() {
             }
         }
 
+        state.editing.selectedNode = null;
         selectedNode = null;
         updateDeleteNodeButtonState();
         updatePortConnectionStatus();
@@ -4392,7 +4406,7 @@ function createEmptyVisualization() {
     }
 
     // Create empty data structure that matches what initVisualization expects
-    currentData = {
+    state.data.currentData = {
         nodes: [],
         edges: [],
         elements: [],  // Empty elements array for Cytoscape
@@ -4817,7 +4831,8 @@ function addNewNode() {
 
             // Generate global host_index
             const hostIndex = globalHostCounter;
-            globalHostCounter++;
+            state.data.globalHostCounter++;
+            globalHostCounter = state.data.globalHostCounter;
 
             // Create shelf node ID using descriptor format (numeric host_index)
             const shelfId = String(hostIndex);
@@ -4867,7 +4882,8 @@ function addNewNode() {
 
                 // Generate global host_index (will be recalculated later)
                 const hostIndex = globalHostCounter;
-                globalHostCounter++;
+                state.data.globalHostCounter++;
+            globalHostCounter = state.data.globalHostCounter;
 
                 // Create shelf node ID using descriptor format (numeric host_index)
                 const shelfId = String(hostIndex);
@@ -5105,7 +5121,8 @@ function addNewNode() {
 
     // Create shelf node using descriptor format
     // Shelf ID is the host_index (numeric), but label shows hostname or location
-    const hostIndex = globalHostCounter++;
+    const hostIndex = state.data.globalHostCounter++;
+    globalHostCounter = state.data.globalHostCounter;
     const shelfId = String(hostIndex);  // Descriptor format: numeric ID as string
     let nodeLabel, nodeData;
 
@@ -5746,7 +5763,8 @@ function createNewTemplate() {
 
         // Initialize availableGraphTemplates if it doesn't exist
         if (!availableGraphTemplates) {
-            availableGraphTemplates = {};
+            state.data.availableGraphTemplates = {};
+    availableGraphTemplates = {};
         }
 
         // Add the new template to availableGraphTemplates
@@ -6125,7 +6143,8 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
 
                 // Generate globally unique host index
                 const hostIndex = globalHostCounter;
-                globalHostCounter++;  // Increment for next node
+                state.data.globalHostCounter++;
+            globalHostCounter = state.data.globalHostCounter;  // Increment for next node
 
                 // child.name from template is already enumerated (node_0, node_1, etc.)
                 // Format label as "node_X (host_Y)"
@@ -6270,6 +6289,7 @@ function toggleEdgeHandles() {
 
     if (btn.textContent.includes('Enable')) {
         // Enable connection creation mode
+        state.enableEditMode();
         isEdgeCreationMode = true;
         btn.textContent = '🔗 Disable Connection Editing';
         btn.style.backgroundColor = '#dc3545';
@@ -6291,6 +6311,7 @@ function toggleEdgeHandles() {
 
     } else {
         // Disable connection creation mode
+        state.disableEditMode();
         isEdgeCreationMode = false;
 
         // Clear source port selection and remove styling
@@ -6315,12 +6336,14 @@ function toggleEdgeHandles() {
         if (selectedConnection) {
             selectedConnection.removeClass('selected-connection');
         }
+        state.editing.selectedConnection = null;
         selectedConnection = null;
 
         // Clear any selected node and remove its styling
         if (selectedNode) {
             selectedNode.removeClass('selected-node');
         }
+        state.editing.selectedNode = null;
         selectedNode = null;
 
         // Update delete button state
@@ -6472,6 +6495,7 @@ async function uploadFile() {
     }
 
     // Reset any global state
+    state.data.currentData = null;
     currentData = null;
     selectedConnection = null;
     isEdgeCreationMode = false;
@@ -7504,7 +7528,8 @@ function addCytoscapeEventHandlers() {
             // Clear connection selection when clicking on any non-port node
             if (selectedConnection) {
                 selectedConnection.removeClass('selected-connection');
-                selectedConnection = null;
+                state.editing.selectedConnection = null;
+        selectedConnection = null;
                 updateDeleteButtonState();
             }
 
@@ -7523,7 +7548,8 @@ function addCytoscapeEventHandlers() {
                 // Clear node selection if not in editing mode or not deletable
                 if (selectedNode) {
                     selectedNode.removeClass('selected-node');
-                    selectedNode = null;
+                    state.editing.selectedNode = null;
+        selectedNode = null;
                     updateDeleteNodeButtonState();
                 }
             }
@@ -7592,13 +7618,15 @@ function addCytoscapeEventHandlers() {
         // Clear source port selection if clicking on an edge (editing mode only)
         if (isEdgeCreationMode && sourcePort) {
             sourcePort.removeClass('source-selected');
+            state.editing.selectedFirstPort = null;
             sourcePort = null;
         }
 
         // Clear node selection when clicking on an edge
         if (selectedNode) {
             selectedNode.removeClass('selected-node');
-            selectedNode = null;
+            state.editing.selectedNode = null;
+        selectedNode = null;
             updateDeleteNodeButtonState();
         }
 
@@ -7608,6 +7636,7 @@ function addCytoscapeEventHandlers() {
         }
 
         // Select this connection (works in both editing and normal mode)
+        state.editing.selectedConnection = edge;
         selectedConnection = edge;
         edge.addClass('selected-connection');
 
@@ -8851,7 +8880,8 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
             return;
         }
 
-        const hostIndex = globalHostCounter++;
+        const hostIndex = state.data.globalHostCounter++;
+    globalHostCounter = state.data.globalHostCounter;
         // Use same ID pattern as template instantiation: ${graphId}_${child.name}
         const shelfId = `${targetInstance.id()}_${childName}`;
         const shelfLabel = `${childName} (host_${hostIndex})`;
