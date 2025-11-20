@@ -986,7 +986,7 @@ function location_switchMode() {
     // Save current state before modifying (for switching back)
     hierarchyModeState = {
         elements: cy.elements().jsons(),
-        metadata: currentData?.metadata ? JSON.parse(JSON.stringify(currentData.metadata)) : {}
+        metadata: (currentData && currentData.metadata) ? JSON.parse(JSON.stringify(currentData.metadata)) : {}
     };
 
     // Extract shelf nodes with their physical location and connection data
@@ -4056,8 +4056,10 @@ function createSingleConnection(sourceNode, targetNode, template_name, depth) {
     }
 
     const edgeId = `edge_${sourceId}_${targetId}_${Date.now()}`;
-    const sourceHostname = sourceNode.data('hostname') || getParentAtLevel(sourceNode, 2)?.data('hostname') || '';
-    const targetHostname = targetNode.data('hostname') || getParentAtLevel(targetNode, 2)?.data('hostname') || '';
+    const sourceParent = getParentAtLevel(sourceNode, 2);
+    const sourceHostname = sourceNode.data('hostname') || (sourceParent ? sourceParent.data('hostname') : '') || '';
+    const targetParent = getParentAtLevel(targetNode, 2);
+    const targetHostname = targetNode.data('hostname') || (targetParent ? targetParent.data('hostname') : '') || '';
 
     const connectionNumber = getNextConnectionNumber();
     const newEdge = {
@@ -6541,7 +6543,7 @@ function initVisualization(data) {
     console.log('Elements count:', data.elements ? data.elements.length : 'undefined');
 
     // Debug: Check if positions exist in data
-    const graphNodesInData = data.elements?.filter(e => e.data?.type === 'graph') || [];
+    const graphNodesInData = (data.elements && Array.isArray(data.elements)) ? data.elements.filter(e => e.data && e.data.type === 'graph') : [];
     console.log('Graph nodes in data:', graphNodesInData.length);
     graphNodesInData.forEach(g => {
     });
@@ -9116,13 +9118,13 @@ async function exportCablingDescriptor() {
         const cytoscapeData = {
             elements: cy.elements().jsons(),
             metadata: {
-                ...currentData?.metadata,  // Include original metadata (graph_templates, etc.)
+                ...(currentData && currentData.metadata ? currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
                 visualization_mode: getVisualizationMode()  // Override/add current mode
             }
         };
 
         // Debug logging
-        if (cytoscapeData.metadata?.graph_templates) {
+        if (cytoscapeData.metadata && cytoscapeData.metadata.graph_templates) {
         } else {
         }
 
