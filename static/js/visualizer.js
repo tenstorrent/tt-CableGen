@@ -18,6 +18,7 @@ import { ConnectionFactory } from './factories/connection-factory.js';
 import { CommonModule } from './modules/common.js';
 import { LocationModule } from './modules/location.js';
 import { HierarchyModule } from './modules/hierarchy.js';
+import { ApiClient } from './api/api-client.js';
 
 // ===== Configuration Constants =====
 const LAYOUT_CONSTANTS = {
@@ -637,6 +638,9 @@ const commonModule = new CommonModule(state, nodeFactory);
 // Initialize mode-specific modules
 const locationModule = new LocationModule(state, commonModule);
 const hierarchyModule = new HierarchyModule(state, commonModule);
+
+// Initialize API client
+const apiClient = new ApiClient();
 
 // Legacy global references for backward compatibility during migration
 // These will be removed in later phases
@@ -6308,21 +6312,14 @@ async function uploadFile() {
     }
     hideMessages();
 
-    const formData = new FormData();
-    formData.append('csv_file', file);
-
     try {
-        const response = await fetch('/upload_csv', {
-            method: 'POST',
-            body: formData
-        });
+        // Use API client for the actual request
+        const result = await apiClient.uploadFile(file);
 
-        const result = await response.json();
-
-        if (response.ok && result.success) {
+        if (result.success) {
             state.data.currentData = result.data;
             currentData = result.data;
-            window.currentData = result.data; // Expose to global scope
+            window.currentData = result.data; // Expose to global scope (backward compatibility)
 
             // Hide initialization section and show visualization controls
             const initSection = document.getElementById('initializationSection');
@@ -9129,22 +9126,8 @@ async function exportCablingDescriptor() {
         } else {
         }
 
-        // Send to server for processing
-        const response = await fetch('/export_cabling_descriptor', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(cytoscapeData)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Export failed');
-        }
-
-        // Get the textproto content
-        const textprotoContent = await response.text();
+        // Use API client for the actual request
+        const textprotoContent = await apiClient.exportCablingDescriptor(cytoscapeData);
 
         // Create and download file
         const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -9257,22 +9240,8 @@ async function exportDeploymentDescriptor() {
             console.log(`Serialized data: All ${serializedShelves.length} shelves have host_index in JSON`);
         }
 
-        // Send to server for processing
-        const response = await fetch('/export_deployment_descriptor', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(cytoscapeData)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Export failed');
-        }
-
-        // Get the textproto content
-        const textprotoContent = await response.text();
+        // Use API client for the actual request
+        const textprotoContent = await apiClient.exportDeploymentDescriptor(cytoscapeData);
 
         // Create and download file
         const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -9327,25 +9296,8 @@ async function generateCablingGuide() {
         const customFileName = document.getElementById('exportFileNameInput').value.trim();
         const inputPrefix = customFileName || 'network_topology';
 
-        // Send to server for processing
-        const response = await fetch('/generate_cabling_guide', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                cytoscape_data: cytoscapeData,
-                input_prefix: inputPrefix,
-                generate_type: 'cabling_guide'
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(formatErrorMessage(errorData));
-        }
-
-        const result = await response.json();
+        // Use API client for the actual request
+        const result = await apiClient.generateCablingGuide(cytoscapeData, inputPrefix, 'cabling_guide');
 
         if (result.success) {
             // Download the generated CSV file
@@ -9405,25 +9357,8 @@ async function generateFSD() {
         const customFileName = document.getElementById('exportFileNameInput').value.trim();
         const inputPrefix = customFileName || 'network_topology';
 
-        // Send to server for processing
-        const response = await fetch('/generate_cabling_guide', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                cytoscape_data: cytoscapeData,
-                input_prefix: inputPrefix,
-                generate_type: 'fsd'
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(formatErrorMessage(errorData));
-        }
-
-        const result = await response.json();
+        // Use API client for the actual request
+        const result = await apiClient.generateFSD(cytoscapeData, inputPrefix);
 
         if (result.success) {
             // Download the generated textproto file
