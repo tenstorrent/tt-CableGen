@@ -783,13 +783,13 @@
                         </div>
 
                         <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
-                            <strong>Accepts:</strong> CSV files with cabling/deployment data
-                            <strong>Notes:</strong> Good for visualizng rack-elevation of cabling.<br>
+                            <strong>Accepts:</strong> CSV files with cabling/deployment data<br>
+                            <strong>Purpose:</strong> Load complete physical topology from CSV (good for rack-elevation
+                            visualization)
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnLocation" onclick="uploadFileLocation()"
-                                style="flex: 1;">
+                            <button class="upload-btn" id="uploadBtnLocation" onclick="uploadFile()" style="flex: 1;">
                                 📊 Load CSV
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnLocation"
@@ -799,7 +799,7 @@
                         </div>
 
                         <div class="loading" id="loadingLocation">
-                            🔄 Processing CSV and generating visualization...
+                            🔄 Processing file...
                         </div>
 
                         <div class="error" id="errorLocation"></div>
@@ -1035,12 +1035,13 @@
                     <div id="deleteElementSection" style="margin-bottom: 15px; display: none;">
                         <button id="deleteElementBtn" onclick="deleteSelectedElement()" disabled
                             style="width: 100%; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; opacity: 0.5;">
-                            🗑️ Delete Selected Element
+                            🗑️ Delete Selected Element(s)
                         </button>
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                            Select a connection, port, or node (shelf, rack, or graph) to delete, then click to delete
+                            Select connections or nodes (shelf, rack, or graph) to delete, then click to delete
                             (or
                             press Backspace/Delete).<br>
+                            Use Ctrl+Click (Cmd+Click on Mac) to select multiple items.<br>
                             Compound nodes will delete all children.
                         </div>
                     </div>
@@ -1332,40 +1333,81 @@
             <div class="modal-content">
                 <div class="modal-header">📍 Specify Physical Layout</div>
                 <div class="modal-subheader">
-                    Define the structure of your data center to automatically assign physical locations to all nodes.
+                    Choose how to assign physical locations to all nodes: upload a deployment descriptor or define
+                    ranges manually.
                 </div>
-                <div class="physical-layout-form">
-                    <div class="form-group">
-                        <label for="hallNames">Hall Names:</label>
-                        <textarea id="hallNames" rows="2" class="form-input form-textarea"
-                            placeholder="e.g., Building-A, West-Wing, DataCenter-1">Building-A</textarea>
-                        <small>Comma-separated list or one per line (e.g., Building-A, West-Wing)</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="aisleNames">Aisle Names:</label>
-                        <input type="text" id="aisleNames" class="form-input" value="A"
-                            placeholder="e.g., A, B, C or North, South, East, West">
-                        <small>Comma-separated list (e.g., A, B, C) or number (e.g., 5 for A-E)</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="rackNumbers">Rack Numbers:</label>
-                        <input type="text" id="rackNumbers" class="form-input" value="1-10"
-                            placeholder="e.g., 1-10 or 1,2,5,10,15">
-                        <small>Range (e.g., 1-10) or comma-separated (e.g., 1, 2, 5, 10, 15)</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="shelfUnitNumbers">Shelf U Numbers:</label>
-                        <input type="text" id="shelfUnitNumbers" class="form-input" value="1-42"
-                            placeholder="e.g., 1-42 or 1,2,3,5,10">
-                        <small>Range (e.g., 1-42) or comma-separated (e.g., 1, 2, 3, 5, 10)</small>
-                    </div>
-                    <div class="layout-info">
-                        <strong>Total Capacity:</strong> <span id="totalCapacity">42 nodes</span>
+
+                <!-- Tab selection for manual vs upload -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd;">
+                    <button class="layout-tab-btn active" id="manualLayoutTab" onclick="switchLayoutTab('manual')"
+                        style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid #007bff; cursor: pointer; font-weight: bold;">
+                        📝 Manual Entry
+                    </button>
+                    <button class="layout-tab-btn" id="uploadLayoutTab" onclick="switchLayoutTab('upload')"
+                        style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer;">
+                        📁 Upload Deployment Descriptor
+                    </button>
+                </div>
+
+                <!-- Manual entry form -->
+                <div id="manualLayoutContent" class="layout-tab-content">
+                    <div class="physical-layout-form">
+                        <div class="form-group">
+                            <label for="hallNames">Hall Names (optional):</label>
+                            <textarea id="hallNames" rows="2" class="form-input form-textarea"
+                                placeholder="e.g., Building-A, West-Wing (leave empty to omit)"></textarea>
+                            <small>Comma-separated list or one per line. Leave empty to omit hall level.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="aisleNames">Aisle Names (optional):</label>
+                            <input type="text" id="aisleNames" class="form-input" value=""
+                                placeholder="e.g., A, B, C or North, South (leave empty to omit)">
+                            <small>Comma-separated list or number (e.g., 5 for A-E). Leave empty to omit aisle
+                                level.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="rackNumbers">Rack Numbers:</label>
+                            <input type="text" id="rackNumbers" class="form-input" value="1-10"
+                                placeholder="e.g., 1-10 or 1,2,5,10,15">
+                            <small>Range (e.g., 1-10) or comma-separated (e.g., 1, 2, 5, 10, 15)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="shelfUnitNumbers">Shelf U Numbers:</label>
+                            <input type="text" id="shelfUnitNumbers" class="form-input" value="1-42"
+                                placeholder="e.g., 1-42 or 1,2,3,5,10">
+                            <small>Range (e.g., 1-42) or comma-separated (e.g., 1, 2, 3, 5, 10)</small>
+                        </div>
+                        <div class="layout-info">
+                            <strong>Total Capacity:</strong> <span id="totalCapacity">42 nodes</span>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Deployment descriptor upload form -->
+                <div id="uploadLayoutContent" class="layout-tab-content" style="display: none;">
+                    <div class="physical-layout-form">
+                        <div class="form-group">
+                            <label for="deploymentDescriptorFile">Deployment Descriptor File:</label>
+                            <input type="file" id="deploymentDescriptorFile" class="form-input" accept=".textproto">
+                            <small>Upload a deployment descriptor (.textproto) that matches the host_id indices from
+                                your cabling descriptor</small>
+                        </div>
+                        <div class="layout-info"
+                            style="background: #fff3cd; border-color: #ffc107; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                            <strong>⚠️ Important:</strong> The deployment descriptor must match your cabling descriptor
+                            by index.<br>
+                            <strong>Example:</strong> If cabling descriptor has host_id=0 for "node_alpha", then
+                            deployment descriptor's hosts[0] should contain "node_alpha" with its physical location.
+                        </div>
+                    </div>
+                </div>
+
                 <div class="modal-footer">
                     <button class="modal-btn modal-btn-secondary" onclick="cancelPhysicalLayoutModal()">Cancel</button>
-                    <button class="modal-btn modal-btn-primary" onclick="applyPhysicalLayout()">Apply Layout</button>
+                    <button class="modal-btn modal-btn-primary" id="applyLayoutBtn"
+                        onclick="applyPhysicalLayout()">Apply Layout</button>
+                    <button class="modal-btn modal-btn-primary" id="applyUploadBtn"
+                        onclick="applyDeploymentDescriptorFromModal()" style="display: none;">Upload & Apply</button>
                 </div>
             </div>
         </div>
@@ -1377,7 +1419,7 @@
         // This ensures JavaScript always uses the same configs as Python
         window.SERVER_NODE_CONFIGS = {{ node_configs | tojson }};
     </script>
-    <script src="{{ url_for('static', filename='js/visualizer.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/visualizer.js') }}"></script>
     <script>
         function toggleCollapsible(sectionId) {
             const content = document.getElementById(sectionId);
@@ -1426,23 +1468,232 @@
             }
         }
 
-        // Location/Deployment (CSV) upload function
+        // Location/Deployment (CSV or Deployment Descriptor) upload function
         async function uploadFileLocation() {
             const fileInput = document.getElementById('csvFileLocation');
             const file = fileInput.files[0];
 
             if (!file) {
-                showErrorLocation('Please select a CSV file first.');
+                showErrorLocation('Please select a file first.');
                 return;
             }
 
-            if (!file.name.toLowerCase().endsWith('.csv')) {
-                showErrorLocation('Please select a CSV file (must end with .csv).');
+            const fileName = file.name.toLowerCase();
+
+            if (fileName.endsWith('.csv')) {
+                // CSV upload - create new visualization
+                await uploadFileGeneric(file, 'location');
+            } else if (fileName.endsWith('.textproto')) {
+                // Deployment descriptor upload - apply to existing visualization
+                await applyDeploymentDescriptor(file);
+            } else {
+                showErrorLocation('Please select a CSV or textproto file.');
+                return;
+            }
+        }
+
+        // Apply deployment descriptor to existing visualization
+        async function applyDeploymentDescriptor(file) {
+            const loading = document.getElementById('loadingLocation');
+            const uploadBtn = document.getElementById('uploadBtnLocation');
+
+            // Check if there's an existing visualization
+            if (!currentData || !currentData.elements) {
+                showErrorLocation('Please load a cabling descriptor in the Topology tab first, then apply the deployment descriptor here.');
                 return;
             }
 
-            // Call the generic upload function with location-specific elements
-            await uploadFileGeneric(file, 'location');
+            // Show loading state
+            loading.style.display = 'block';
+            uploadBtn.disabled = true;
+            const originalText = uploadBtn.textContent;
+            uploadBtn.textContent = 'Processing...';
+            hideMessagesForMode('location');
+
+            const formData = new FormData();
+            formData.append('deployment_file', file);
+            formData.append('cytoscape_data', JSON.stringify(currentData));
+
+            try {
+                const response = await fetch('/apply_deployment_descriptor', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Update the current visualization with new location data
+                    currentData = result.data;
+
+                    // Re-initialize the visualization
+                    initVisualization(result.data);
+
+                    // Use the detailed message from backend (includes validation warnings)
+                    let message = result.message || `Successfully applied deployment descriptor to ${result.updated_count} hosts`;
+                    showSuccessLocation(message);
+                } else {
+                    showErrorLocation(`Error: ${result.error || 'Unknown error occurred'}`);
+                }
+            } catch (err) {
+                showErrorLocation(`Upload failed: ${err.message}`);
+                console.error('Upload error:', err);
+            } finally {
+                // Reset UI state
+                loading.style.display = 'none';
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = originalText;
+            }
+        }
+
+        // Switch tabs in physical layout modal
+        function switchLayoutTab(tabName) {
+            const manualTab = document.getElementById('manualLayoutTab');
+            const uploadTab = document.getElementById('uploadLayoutTab');
+            const manualContent = document.getElementById('manualLayoutContent');
+            const uploadContent = document.getElementById('uploadLayoutContent');
+            const applyLayoutBtn = document.getElementById('applyLayoutBtn');
+            const applyUploadBtn = document.getElementById('applyUploadBtn');
+
+            if (tabName === 'manual') {
+                // Show manual tab
+                manualTab.classList.add('active');
+                uploadTab.classList.remove('active');
+                manualTab.style.borderBottom = '3px solid #007bff';
+                uploadTab.style.borderBottom = '3px solid transparent';
+                manualTab.style.fontWeight = 'bold';
+                uploadTab.style.fontWeight = 'normal';
+
+                manualContent.style.display = 'block';
+                uploadContent.style.display = 'none';
+
+                applyLayoutBtn.style.display = 'inline-block';
+                applyUploadBtn.style.display = 'none';
+            } else {
+                // Show upload tab
+                uploadTab.classList.add('active');
+                manualTab.classList.remove('active');
+                uploadTab.style.borderBottom = '3px solid #007bff';
+                manualTab.style.borderBottom = '3px solid transparent';
+                uploadTab.style.fontWeight = 'bold';
+                manualTab.style.fontWeight = 'normal';
+
+                uploadContent.style.display = 'block';
+                manualContent.style.display = 'none';
+
+                applyUploadBtn.style.display = 'inline-block';
+                applyLayoutBtn.style.display = 'none';
+            }
+        }
+
+        // Apply deployment descriptor from modal (when switching to physical mode)
+        async function applyDeploymentDescriptorFromModal() {
+            const fileInput = document.getElementById('deploymentDescriptorFile');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a deployment descriptor file first.');
+                return;
+            }
+
+            if (!currentData || !currentData.elements) {
+                alert('No visualization loaded. This should not happen.');
+                return;
+            }
+
+            // Show loading (can use the existing modal or add a spinner)
+            const applyBtn = document.getElementById('applyUploadBtn');
+            const originalText = applyBtn.textContent;
+            applyBtn.disabled = true;
+            applyBtn.textContent = 'Processing...';
+
+            const formData = new FormData();
+            formData.append('deployment_file', file);
+            formData.append('cytoscape_data', JSON.stringify(currentData));
+
+            try {
+                const response = await fetch('/apply_deployment_descriptor', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Update the current visualization with new location data
+                    currentData = result.data;
+
+                    // DEBUG: Check if host_index is preserved in the returned data
+                    console.log('=== DEPLOYMENT DESCRIPTOR APPLIED ===');
+                    const shelfElements = currentData.elements.filter(el => el.data && el.data.type === 'shelf');
+                    console.log(`Total shelf elements in result: ${shelfElements.length}`);
+
+                    // Sample first 3 shelves
+                    const samples = shelfElements.slice(0, 3).map(el => ({
+                        id: el.data.id,
+                        label: el.data.label,
+                        host_index: el.data.host_index,
+                        host_id: el.data.host_id,
+                        hostname: el.data.hostname,
+                        hall: el.data.hall,
+                        rack_num: el.data.rack_num,
+                        available_fields: Object.keys(el.data)
+                    }));
+                    console.log('Sample shelves after deployment descriptor apply:', samples);
+
+                    // Check if any shelves are missing host_index
+                    const missingHostIndex = shelfElements.filter(el => {
+                        return el.data.host_index === undefined && el.data.host_id === undefined;
+                    });
+                    if (missingHostIndex.length > 0) {
+                        console.error(`⚠️ WARNING: ${missingHostIndex.length} shelves missing host_index/host_id after deployment descriptor apply`);
+                        console.error('First missing shelf:', missingHostIndex[0]);
+                        window.DEBUG_MISSING_HOST_INDEX = missingHostIndex;
+                    } else {
+                        console.log('✓ All shelves have host_index or host_id');
+                    }
+
+                    // IMPORTANT: Re-initialize the cytoscape graph with updated data first
+                    // This ensures shelf nodes have the physical location data before switching modes
+                    initVisualization(result.data);
+
+                    // Close modal
+                    const modal = document.getElementById('physicalLayoutModal');
+                    if (modal) {
+                        modal.classList.remove('active');
+                    }
+
+                    // Mark that physical layout has been assigned
+                    sessionStorage.setItem('physicalLayoutAssigned', 'true');
+
+                    // Now switch to location mode (this will create rack hierarchy from shelf location data)
+                    setVisualizationMode('location');
+
+                    // Update the connection legend
+                    if (initialVisualizationData) {
+                        updateConnectionLegend(initialVisualizationData);
+                    }
+
+                    // Proceed with the location mode switch - this creates the rack hierarchy
+                    location_switchMode();
+
+                    // Update mode indicator
+                    updateModeIndicator();
+
+                    // Show success message
+                    let message = result.message || `Successfully applied deployment descriptor to ${result.updated_count} hosts`;
+                    showExportStatus(message, 'success');
+                } else {
+                    alert(`Error: ${result.error || 'Unknown error occurred'}`);
+                }
+            } catch (err) {
+                alert(`Upload failed: ${err.message}`);
+                console.error('Upload error:', err);
+            } finally {
+                // Reset button state
+                applyBtn.disabled = false;
+                applyBtn.textContent = originalText;
+            }
         }
 
         // Topology (Textproto) upload function
