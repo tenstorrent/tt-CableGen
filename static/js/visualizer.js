@@ -4415,6 +4415,7 @@ function createEmptyVisualization() {
             total_nodes: 0
         }
     };
+    currentData = state.data.currentData;
 
     // Initialize Cytoscape with empty data
     initVisualization(currentData);
@@ -5734,8 +5735,8 @@ function createNewTemplate() {
 
     try {
         // Initialize currentData if it doesn't exist (for empty canvas scenario)
-        if (!currentData) {
-            currentData = {
+        if (!state.data.currentData) {
+            state.data.currentData = {
                 nodes: [],
                 edges: [],
                 elements: [],
@@ -5745,6 +5746,7 @@ function createNewTemplate() {
                     graph_templates: {}
                 }
             };
+            currentData = state.data.currentData;
         }
 
         // Initialize metadata.graph_templates if it doesn't exist
@@ -6520,6 +6522,7 @@ async function uploadFile() {
         const result = await response.json();
 
         if (response.ok && result.success) {
+            state.data.currentData = result.data;
             currentData = result.data;
 
             // Hide initialization section and show visualization controls
