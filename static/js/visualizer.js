@@ -15,6 +15,7 @@ import { VisualizerState } from './state/visualizer-state.js';
 import { StateObserver } from './state/state-observer.js';
 import { NodeFactory } from './factories/node-factory.js';
 import { ConnectionFactory } from './factories/connection-factory.js';
+import { CommonModule } from './modules/common.js';
 
 // ===== Configuration Constants =====
 const LAYOUT_CONSTANTS = {
@@ -129,18 +130,9 @@ function verifyCytoscapeExtensions() {
     }
 }
 
+// Delegate to common module
 function getTemplateColor(templateName) {
-    // Check if we already have a color for this template
-    if (TEMPLATE_COLORS[templateName]) {
-        return TEMPLATE_COLORS[templateName];
-    }
-
-    // Assign next color from palette
-    const color = TEMPLATE_COLOR_PALETTE[nextColorIndex % TEMPLATE_COLOR_PALETTE.length];
-    TEMPLATE_COLORS[templateName] = color;
-    nextColorIndex++;
-
-    return color;
+    return commonModule.getTemplateColor(templateName);
 }
 
 const DEFAULT_CABLE_CONFIG = {
@@ -152,91 +144,9 @@ const DEFAULT_CABLE_CONFIG = {
  * COMMON: Arrange trays and ports within a shelf node based on node type configuration
  * This is mode-independent - works for both location and hierarchy modes
  */
+// Delegate to common module
 function common_arrangeTraysAndPorts(shelfNode) {
-    if (!shelfNode || !cy) return;
-
-    const shelfPos = shelfNode.position();
-    let nodeType = shelfNode.data('shelf_node_type') || 'WH_GALAXY';
-
-    // Normalize node type: strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
-    nodeType = nodeType.replace(/_DEFAULT$/, '');
-
-    const config = NODE_CONFIGS[nodeType];
-
-    if (!config) {
-        console.warn(`No config found for node type: ${nodeType} (after normalization)`);
-        return;
-    }
-
-    const trays = shelfNode.children('[type="tray"]');
-    if (trays.length === 0) return;
-
-    // Layout constants based on node configuration
-    const trayHeight = 60;
-    const traySpacing = 10;
-    const portWidth = 45;
-    const portSpacing = 5;
-
-    // Sort trays by number
-    const sortedTrays = trays.sort((a, b) => {
-        return (a.data('tray') || 0) - (b.data('tray') || 0);
-    });
-
-    sortedTrays.forEach((tray, index) => {
-        const trayNum = index + 1;
-
-        // Calculate tray position based on layout
-        let trayX, trayY;
-        if (config.tray_layout === 'vertical') {
-            // Vertical arrangement: T1 at top, T2, T3, T4 going down
-            trayX = shelfPos.x;
-            trayY = shelfPos.y - 150 + (trayNum - 1) * (trayHeight + traySpacing);
-        } else {
-            // Horizontal arrangement: T1, T2, T3, T4 arranged left-to-right
-            trayX = shelfPos.x - 150 + (trayNum - 1) * (trayHeight + traySpacing);
-            trayY = shelfPos.y;
-        }
-
-        tray.position({ x: trayX, y: trayY });
-
-        // Arrange ports within this tray
-        const ports = tray.children('[type="port"]');
-        const sortedPorts = ports.sort((a, b) => {
-            const aLabel = a.data('label') || '';
-            const bLabel = b.data('label') || '';
-            const aNum = parseInt(aLabel.replace('P', '')) || 0;
-            const bNum = parseInt(bLabel.replace('P', '')) || 0;
-            return aNum - bNum;
-        });
-
-        sortedPorts.forEach((port, portIndex) => {
-            const portNum = portIndex + 1;
-
-            // Calculate port position (orthogonal to tray arrangement)
-            let portX, portY;
-            if (config.tray_layout === 'vertical') {
-                // Vertical trays → horizontal ports (wider than tall)
-                portX = trayX - 120 + (portNum - 1) * (portWidth + portSpacing);
-                portY = trayY;
-                // Style ports as horizontal rectangles
-                port.style({
-                    'width': '35px',
-                    'height': '25px'
-                });
-            } else {
-                // Horizontal trays → vertical ports (taller than wide)
-                portX = trayX;
-                portY = trayY - 100 + (portNum - 1) * (portWidth + portSpacing);
-                // Style ports as vertical rectangles
-                port.style({
-                    'width': '25px',
-                    'height': '35px'
-                });
-            }
-
-            port.position({ x: portX, y: portY });
-        });
-    });
+    commonModule.arrangeTraysAndPorts(shelfNode);
 }
 
 /**
@@ -719,6 +629,9 @@ state.ui = stateObserver.createProxy(state.ui, 'ui');
 const nodeFactory = new NodeFactory(state);
 const connectionFactory = new ConnectionFactory(state);
 
+// Initialize common module
+const commonModule = new CommonModule(state, nodeFactory);
+
 // Legacy global references for backward compatibility during migration
 // These will be removed in later phases
 let cy; // Will be replaced with state.cy
@@ -763,17 +676,9 @@ stateObserver.subscribe('data.globalHostCounter', (newVal) => { globalHostCounte
  * Apply drag restrictions: tray and port nodes should not be draggable.
  * All other nodes (graph containers, racks, shelves, halls, aisles, etc.) remain draggable.
  */
+// Delegate to common module
 function applyDragRestrictions() {
-    if (!cy) return;
-
-    cy.nodes().forEach(node => {
-        const nodeType = node.data('type');
-        if (nodeType === 'tray' || nodeType === 'port') {
-            node.ungrabify();
-        } else {
-            node.grabify();
-        }
-    });
+    commonModule.applyDragRestrictions();
 }
 
 // Visualization Mode Management
@@ -3571,30 +3476,9 @@ function deleteSelectedElement() {
     }
 }
 
+// Delegate to common module
 function updatePortConnectionStatus() {
-    if (!cy) return;
-
-    // Reset all ports to default state
-    cy.nodes('.port').removeClass('connected-port');
-
-    // Mark ports that have connections
-    cy.edges().forEach(function (edge) {
-        // Skip if edge has been removed or is invalid
-        if (!edge || !edge.cy() || edge.removed()) return;
-
-        const sourceId = edge.data('source');
-        const targetId = edge.data('target');
-        const sourceNode = cy.getElementById(sourceId);
-        const targetNode = cy.getElementById(targetId);
-
-        // Only add class if nodes exist and are valid
-        if (sourceNode.length && !sourceNode.removed()) {
-            sourceNode.addClass('connected-port');
-        }
-        if (targetNode.length && !targetNode.removed()) {
-            targetNode.addClass('connected-port');
-        }
-    });
+    commonModule.updatePortConnectionStatus();
 }
 
 function createConnection(sourceId, targetId) {
