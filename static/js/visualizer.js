@@ -13,6 +13,8 @@ import {
 import { API_ENDPOINTS, API_DEFAULTS, buildApiUrl, getStatusMessage } from './config/api.js';
 import { VisualizerState } from './state/visualizer-state.js';
 import { StateObserver } from './state/state-observer.js';
+import { NodeFactory } from './factories/node-factory.js';
+import { ConnectionFactory } from './factories/connection-factory.js';
 
 // ===== Configuration Constants =====
 const LAYOUT_CONSTANTS = {
@@ -712,6 +714,10 @@ const stateObserver = new StateObserver(state);
 state.editing = stateObserver.createProxy(state.editing, 'editing');
 state.data = stateObserver.createProxy(state.data, 'data');
 state.ui = stateObserver.createProxy(state.ui, 'ui');
+
+// Initialize factories
+const nodeFactory = new NodeFactory(state);
+const connectionFactory = new ConnectionFactory(state);
 
 // Legacy global references for backward compatibility during migration
 // These will be removed in later phases
@@ -5176,75 +5182,20 @@ function addNewNode() {
 
     const nodesToAdd = [shelfNode];
 
-    // Create trays and ports based on node configuration
-    // Positions will be calculated by common_arrangeTraysAndPorts after adding to cytoscape
-    // Use descriptor format for IDs: {host_index}:t{tray}:p{port}
-    for (let trayNum = 1; trayNum <= config.tray_count; trayNum++) {
-        const trayId = `${hostIndex}:t${trayNum}`;
-
-        const trayData = {
-            id: trayId,
-            parent: shelfId,
-            label: `T${trayNum}`,
-            type: 'tray',
-            tray: trayNum,
-            shelf_node_type: nodeType,
-            host_index: hostIndex
-        };
-
-        // Add location data if available
-        if (hasLocation) {
-            trayData.rack_num = rack;
-            trayData.shelf_u = shelfU;
-            trayData.hall = hall;
-            trayData.aisle = aisle;
-        }
-        if (hasHostname) {
-            trayData.hostname = hostname;
-        }
-
-        const trayNode = {
-            data: trayData,
-            position: { x: 0, y: 0 }, // Placeholder - will be set by common_arrangeTraysAndPorts
-            classes: 'tray'
-        };
-        nodesToAdd.push(trayNode);
-
-        // Create ports based on node configuration
-        const portsPerTray = config.ports_per_tray;
-        for (let portNum = 1; portNum <= portsPerTray; portNum++) {
-            const portId = `${hostIndex}:t${trayNum}:p${portNum}`;
-
-            const portData = {
-                id: portId,
-                parent: trayId,
-                label: `P${portNum}`,
-                type: 'port',
-                tray: trayNum,
-                port: portNum,
-                shelf_node_type: nodeType,
-                host_index: hostIndex
-            };
-
-            // Add location data if available
-            if (hasLocation) {
-                portData.rack_num = rack;
-                portData.shelf_u = shelfU;
-                portData.hall = hall;
-                portData.aisle = aisle;
-            }
-            if (hasHostname) {
-                portData.hostname = hostname;
-            }
-
-            const portNode = {
-                data: portData,
-                position: { x: 0, y: 0 }, // Placeholder - will be set by common_arrangeTraysAndPorts
-                classes: 'port'
-            };
-            nodesToAdd.push(portNode);
-        }
+    // Create trays and ports using factory
+    const location = {};
+    if (hasLocation) {
+        location.hall = hall;
+        location.aisle = aisle;
+        location.rack_num = rack;
+        location.shelf_u = shelfU;
     }
+    if (hasHostname) {
+        location.hostname = hostname;
+    }
+    
+    const trayPortNodes = nodeFactory.createTraysAndPorts(shelfId, hostIndex, nodeType, location);
+    nodesToAdd.push(...trayPortNodes);
 
     try {
         // Add all nodes to cytoscape
@@ -6236,49 +6187,22 @@ function createTraysAndPorts(shelfId, hostname, hostIndex, nodeType, config, bas
      * Positions will be calculated by common_arrangeTraysAndPorts after nodes are added to cytoscape
      * This ensures consistent positioning logic across all modes
      * Uses descriptor format for IDs: {host_index}:t{tray}:p{port}
+     * 
+     * Now uses NodeFactory to eliminate duplicate code
      */
-    for (let trayNum = 1; trayNum <= config.tray_count; trayNum++) {
-        const trayId = `${hostIndex}:t${trayNum}`;
-
-        const trayNode = {
-            data: {
-                id: trayId,
-                parent: shelfId,
-                label: `T${trayNum}`,
-                type: 'tray',
-                tray: trayNum,
-                hostname: hostname,
-                host_index: hostIndex,
-                shelf_node_type: nodeType
-            },
-            position: { x: 0, y: 0 }, // Placeholder - will be set by common_arrangeTraysAndPorts
-            classes: 'tray'
-        };
-        nodesToAdd.push(trayNode);
-
-        // Create ports
-        const portsPerTray = config.ports_per_tray;
-        for (let portNum = 1; portNum <= portsPerTray; portNum++) {
-            const portId = `${hostIndex}:t${trayNum}:p${portNum}`;
-
-            const portNode = {
-                data: {
-                    id: portId,
-                    parent: trayId,
-                    label: `P${portNum}`,
-                    type: 'port',
-                    tray: trayNum,
-                    port: portNum,
-                    hostname: hostname,
-                    host_index: hostIndex,
-                    shelf_node_type: nodeType
-                },
-                position: { x: 0, y: 0 }, // Placeholder - will be set by common_arrangeTraysAndPorts
-                classes: 'port'
-            };
-            nodesToAdd.push(portNode);
-        }
+    const location = hostname ? { hostname } : {};
+    const trayPortNodes = nodeFactory.createTraysAndPorts(shelfId, hostIndex, nodeType, location);
+    
+    // Add hostname to each node if provided
+    if (hostname) {
+        trayPortNodes.forEach(node => {
+            if (node.data.type === 'tray' || node.data.type === 'port') {
+                node.data.hostname = hostname;
+            }
+        });
     }
+    
+    nodesToAdd.push(...trayPortNodes);
 }
 
 function toggleEdgeHandles() {
