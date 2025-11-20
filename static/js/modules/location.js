@@ -88,7 +88,7 @@ export class LocationModule {
      * @private
      */
     _formatRackNum(rackNum) {
-        return String(rackNum).padStart(2, '0');
+        return rackNum !== undefined && rackNum !== null ? rackNum.toString().padStart(2, '0') : '';
     }
     
     /**
@@ -96,7 +96,7 @@ export class LocationModule {
      * @private
      */
     _formatShelfU(shelfU) {
-        return String(shelfU).padStart(2, '0');
+        return shelfU !== undefined && shelfU !== null ? shelfU.toString().padStart(2, '0') : '';
     }
 }
 
