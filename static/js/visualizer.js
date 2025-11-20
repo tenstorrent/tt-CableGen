@@ -1995,12 +1995,13 @@ function updateDeleteNodeButtonState() {
 /**
  * Format rack and shelf_u numbers with zero-padding
  */
+// Delegate to location module
 function formatRackNum(rackNum) {
-    return rackNum !== undefined && rackNum !== null ? rackNum.toString().padStart(2, '0') : '';
+    return locationModule.formatRackNum(rackNum);
 }
 
 function formatShelfU(shelfU) {
-    return shelfU !== undefined && shelfU !== null ? shelfU.toString().padStart(2, '0') : '';
+    return locationModule.formatShelfU(shelfU);
 }
 
 /**
