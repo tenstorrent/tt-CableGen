@@ -1,4 +1,44 @@
-// Network Cabling Visualizer - Client-side JavaScript
+/**
+ * Network Cabling Visualizer - Client-side JavaScript
+ * 
+ * This is the main visualization module for the CableGen application.
+ * It has been refactored from a monolithic file into a modular architecture.
+ * 
+ * Architecture Overview:
+ * ======================
+ * - Configuration: Extracted to ./config/ (constants, node-types, API)
+ * - State Management: Centralized in ./state/ (VisualizerState, StateObserver)
+ * - Factories: Node/connection creation in ./factories/
+ * - Modules: Common, Location, Hierarchy modules in ./modules/
+ * - API Client: Backend communication in ./api/
+ * - UI Managers: Notification, Modal, Status managers in ./ui/
+ * 
+ * Refactoring Status:
+ * ===================
+ * Phase 1-6: ✅ Complete
+ *   - Configuration extracted
+ *   - State management implemented
+ *   - Factories created
+ *   - Modules separated (common, location, hierarchy)
+ *   - API client extracted
+ *   - UI managers extracted
+ * 
+ * Phase 7: ✅ Complete (Cleanup)
+ *   - Removed unused template color constants (moved to CommonModule)
+ *   - Improved documentation
+ * 
+ * Phase 8: ⏳ Pending (Backward Compatibility Cleanup)
+ *   - Remove legacy global variables (cy, currentData, etc.)
+ *   - Remove syncLegacyGlobals() function
+ *   - Replace inline onclick handlers with event listeners
+ *   - Remove functionsToExpose workaround
+ * 
+ * Current State:
+ * ==============
+ * - Legacy globals are kept in sync with state via observers (backward compatibility)
+ * - Functions are exposed to window object for HTML onclick handlers (temporary workaround)
+ * - All new code should use state.* and module APIs directly
+ */
 
 // ===== Module Imports =====
 import { LAYOUT, ANIMATION, Z_INDEX, LIMITS, CYTOSCAPE_CONFIG, VISUAL } from './config/constants.js';
@@ -59,34 +99,6 @@ const CONNECTION_COLORS = {
     INTER_NODE: '#2196F3'   // Blue for different nodes
 };
 
-// Color palette for template assignment
-// Each template gets a unique color from this palette
-const TEMPLATE_COLOR_PALETTE = [
-    "#E74C3C",  // Red
-    "#E67E22",  // Orange
-    "#F1C40F",  // Yellow
-    "#27AE60",  // Green
-    "#3498DB",  // Blue
-    "#9B59B6",  // Purple
-    "#E91E63",  // Pink
-    "#00BCD4",  // Cyan
-    "#FF5722",  // Deep Orange
-    "#8BC34A",  // Light Green
-    "#00BCD4",  // Teal
-    "#FF9800"   // Amber
-];
-
-// Template-to-color mapping (dynamically assigned)
-// Populated as templates are discovered
-const TEMPLATE_COLORS = {};
-
-// Track next color index to assign
-let nextColorIndex = 0;
-
-/**
- * Get or assign a color for a template
- * Pure template-based coloring - no depth consideration
- */
 /**
  * Verify that all required cytoscape extensions are loaded and available
  * Logs warnings for any missing extensions
@@ -650,25 +662,31 @@ const notificationManager = new NotificationManager();
 const modalManager = new ModalManager();
 const statusManager = new StatusManager();
 
-// Legacy global references for backward compatibility during migration
-// These will be removed in later phases
-let cy; // Will be replaced with state.cy
-let currentData; // Will be replaced with state.data.currentData
-let initialVisualizationData; // Will be replaced with state.data.initialVisualizationData
+// ===== Legacy Global Variables (Backward Compatibility) =====
+// TODO: Phase 8 - Remove these legacy globals and migrate all code to use state.* directly
+// These are kept in sync with state via observers to maintain backward compatibility
+// during the migration period. All new code should use state.* instead.
 
-// Initialize window globals for HTML access
+let cy; // Use state.cy instead
+let currentData; // Use state.data.currentData instead
+let initialVisualizationData; // Use state.data.initialVisualizationData instead
+let hierarchyModeState; // Use state.data.hierarchyModeState instead
+let selectedConnection; // Use state.editing.selectedConnection instead
+let selectedNode; // Use state.editing.selectedNode instead
+let isEdgeCreationMode; // Use state.editing.isEdgeCreationMode instead
+let sourcePort; // Use state.editing.selectedFirstPort instead
+let availableGraphTemplates; // Use state.data.availableGraphTemplates instead
+let globalHostCounter; // Use state.data.globalHostCounter instead
+
+// Initialize window globals for HTML access (required for inline onclick handlers)
 window.currentData = null;
 window.cy = null;
 window.initialVisualizationData = null;
-let hierarchyModeState; // Will be replaced with state.data.hierarchyModeState
-let selectedConnection; // Will be replaced with state.editing.selectedConnection
-let selectedNode; // Will be replaced with state.editing.selectedNode
-let isEdgeCreationMode; // Will be replaced with state.editing.isEdgeCreationMode
-let sourcePort; // Will be replaced with state.editing.selectedFirstPort
-let availableGraphTemplates; // Will be replaced with state.data.availableGraphTemplates
-let globalHostCounter; // Will be replaced with state.data.globalHostCounter
 
-// Sync legacy globals with state (temporary during migration)
+/**
+ * Sync legacy globals with state (temporary during migration)
+ * TODO: Phase 8 - Remove this function and all references to legacy globals
+ */
 function syncLegacyGlobals() {
     cy = state.cy;
     currentData = state.data.currentData;
@@ -683,6 +701,7 @@ function syncLegacyGlobals() {
 }
 
 // Subscribe to state changes to keep legacy globals in sync
+// TODO: Phase 8 - Remove these observers when legacy globals are removed
 stateObserver.subscribe('cy', (newVal) => {
     cy = newVal;
     window.cy = newVal; // Expose to global scope for HTML access
@@ -10149,36 +10168,7 @@ const functionsToExpose = {
 };
 
 // Expose all functions to window object
+// TODO: Phase 8 - Replace inline onclick handlers with event listeners to eliminate this workaround
 Object.keys(functionsToExpose).forEach(key => {
     window[key] = functionsToExpose[key];
 });
-window.createEmptyVisualization = createEmptyVisualization;
-window.createEmptyVisualizationLocation = createEmptyVisualizationLocation;
-window.createEmptyVisualizationTopology = createEmptyVisualizationTopology;
-window.uploadFile = uploadFile;
-window.uploadFileTopology = uploadFileTopology;
-window.toggleVisualizationMode = toggleVisualizationMode;
-window.resetLayout = resetLayout;
-window.addNewNode = addNewNode;
-window.addNewGraph = addNewGraph;
-window.createNewTemplate = createNewTemplate;
-window.deleteSelectedElement = deleteSelectedElement;
-window.toggleEdgeHandles = toggleEdgeHandles;
-window.exportCablingDescriptor = exportCablingDescriptor;
-window.exportDeploymentDescriptor = exportDeploymentDescriptor;
-window.generateCablingGuide = generateCablingGuide;
-window.generateFSD = generateFSD;
-window.expandOneLevel = expandOneLevel;
-window.collapseOneLevel = collapseOneLevel;
-window.applyConnectionRange = applyConnectionRange;
-window.clearConnectionRange = clearConnectionRange;
-window.cancelConnectionPlacement = cancelConnectionPlacement;
-window.cancelPhysicalLayoutModal = cancelPhysicalLayoutModal;
-window.applyPhysicalLayout = applyPhysicalLayout;
-window.setVisualizationMode = setVisualizationMode;
-window.updateConnectionLegend = updateConnectionLegend;
-window.hideNotificationBanner = hideNotificationBanner;
-window.location_switchMode = location_switchMode;
-window.hierarchy_switchMode = hierarchy_switchMode;
-window.updateModeIndicator = updateModeIndicator;
-window.showExportStatus = showExportStatus;
