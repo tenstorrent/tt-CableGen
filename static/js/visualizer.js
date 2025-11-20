@@ -16,6 +16,8 @@ import { StateObserver } from './state/state-observer.js';
 import { NodeFactory } from './factories/node-factory.js';
 import { ConnectionFactory } from './factories/connection-factory.js';
 import { CommonModule } from './modules/common.js';
+import { LocationModule } from './modules/location.js';
+import { HierarchyModule } from './modules/hierarchy.js';
 
 // ===== Configuration Constants =====
 const LAYOUT_CONSTANTS = {
@@ -632,11 +634,20 @@ const connectionFactory = new ConnectionFactory(state);
 // Initialize common module
 const commonModule = new CommonModule(state, nodeFactory);
 
+// Initialize mode-specific modules
+const locationModule = new LocationModule(state, commonModule);
+const hierarchyModule = new HierarchyModule(state, commonModule);
+
 // Legacy global references for backward compatibility during migration
 // These will be removed in later phases
 let cy; // Will be replaced with state.cy
 let currentData; // Will be replaced with state.data.currentData
 let initialVisualizationData; // Will be replaced with state.data.initialVisualizationData
+
+// Initialize window globals for HTML access
+window.currentData = null;
+window.cy = null;
+window.initialVisualizationData = null;
 let hierarchyModeState; // Will be replaced with state.data.hierarchyModeState
 let selectedConnection; // Will be replaced with state.editing.selectedConnection
 let selectedNode; // Will be replaced with state.editing.selectedNode
@@ -660,9 +671,18 @@ function syncLegacyGlobals() {
 }
 
 // Subscribe to state changes to keep legacy globals in sync
-stateObserver.subscribe('cy', (newVal) => { cy = newVal; });
-stateObserver.subscribe('data.currentData', (newVal) => { currentData = newVal; });
-stateObserver.subscribe('data.initialVisualizationData', (newVal) => { initialVisualizationData = newVal; });
+stateObserver.subscribe('cy', (newVal) => { 
+    cy = newVal; 
+    window.cy = newVal; // Expose to global scope for HTML access
+});
+stateObserver.subscribe('data.currentData', (newVal) => { 
+    currentData = newVal; 
+    window.currentData = newVal; // Expose to global scope for HTML access
+});
+stateObserver.subscribe('data.initialVisualizationData', (newVal) => { 
+    initialVisualizationData = newVal; 
+    window.initialVisualizationData = newVal; // Expose to global scope for HTML access
+});
 stateObserver.subscribe('data.hierarchyModeState', (newVal) => { hierarchyModeState = newVal; });
 stateObserver.subscribe('editing.selectedConnection', (newVal) => { selectedConnection = newVal; });
 stateObserver.subscribe('editing.selectedNode', (newVal) => { selectedNode = newVal; });
@@ -1991,20 +2011,9 @@ function formatShelfU(shelfU) {
  * @param {number|string} shelfU - Shelf U position (optional)
  * @returns {string} Formatted location label (e.g., "H1A205" or "H1A205U12")
  */
+// Delegate to location module
 function location_buildLabel(hall, aisle, rackNum, shelfU = null) {
-    if (!hall || !aisle || rackNum === undefined || rackNum === null) {
-        return '';
-    }
-
-    const rackPadded = formatRackNum(rackNum);
-    const label = `${hall}${aisle}${rackPadded}`;
-
-    if (shelfU !== null && shelfU !== undefined && shelfU !== '') {
-        const shelfUPadded = formatShelfU(shelfU);
-        return `${label}U${shelfUPadded}`;
-    }
-
-    return label;
+    return locationModule.buildLabel(hall, aisle, rackNum, shelfU);
 }
 
 /**
@@ -2098,37 +2107,9 @@ function getNodeDisplayLabel(nodeData) {
  * @param {Object} node - Cytoscape node
  * @returns {string} Hierarchical path (e.g., "superpod1 > node2 > shelf")
  */
+// Delegate to hierarchy module
 function hierarchy_getPath(node) {
-    const path = [];
-    let currentNode = node;
-
-    // Traverse up the parent hierarchy
-    while (currentNode && currentNode.length > 0) {
-        const data = currentNode.data();
-        const nodeType = data.type;
-
-        // Only include graph nodes and shelf nodes in the path
-        // Skip tray and port levels for cleaner display
-        if (nodeType === 'graph' || nodeType === 'shelf') {
-            // For shelf nodes, use a more descriptive label
-            if (nodeType === 'shelf') {
-                const label = data.label || data.id;
-                // Extract just the meaningful part (e.g., "node1 (host_0)" or hostname)
-                path.unshift(label);
-            } else if (nodeType === 'graph') {
-                // For graph nodes, use just the label (e.g., "superpod1", "node1")
-                const label = data.label || data.id;
-                // Remove "graph_" prefix if present for cleaner display
-                const cleanLabel = label.replace(/^graph_/, '');
-                path.unshift(cleanLabel);
-            }
-        }
-
-        // Move to parent
-        currentNode = currentNode.parent();
-    }
-
-    return path.join(' > ');
+    return hierarchyModule.getPath(node);
 }
 
 // ===== Event Handler Helpers =====
@@ -2864,7 +2845,12 @@ function extractPortPattern(portNode, placementLevel = null) {
  * Find the common ancestor graph node for two nodes
  * Returns the lowest common ancestor that is a graph node, or null
  */
+// Delegate to hierarchy module
 function findCommonAncestorGraph(node1, node2) {
+    return hierarchyModule.findCommonAncestor(node1, node2);
+}
+
+function findCommonAncestorGraph_old(node1, node2) {
     // Get all graph ancestors for node1
     const ancestors1 = [];
     let current = node1.parent();
@@ -3703,7 +3689,8 @@ function cancelPhysicalLayoutModal() {
     }
 
     // Make sure we stay in hierarchy mode
-    if (visualizationMode !== 'hierarchy') {
+    const currentMode = getVisualizationMode();
+    if (currentMode !== 'hierarchy') {
         setVisualizationMode('hierarchy');
         updateModeIndicator();
     }
@@ -4306,6 +4293,7 @@ function createEmptyVisualization() {
         }
     };
     currentData = state.data.currentData;
+    window.currentData = state.data.currentData; // Expose to global scope
 
     // Initialize Cytoscape with empty data
     initVisualization(currentData);
@@ -6307,6 +6295,7 @@ async function uploadFile() {
     // Reset any global state
     state.data.currentData = null;
     currentData = null;
+    window.currentData = null; // Expose to global scope
     selectedConnection = null;
     isEdgeCreationMode = false;
 
@@ -6332,6 +6321,7 @@ async function uploadFile() {
         if (response.ok && result.success) {
             state.data.currentData = result.data;
             currentData = result.data;
+            window.currentData = result.data; // Expose to global scope
 
             // Hide initialization section and show visualization controls
             const initSection = document.getElementById('initializationSection');
@@ -6479,7 +6469,8 @@ function updateConnectionLegend(data) {
 
     // Use visualization mode to determine which legend to show
     // Hierarchy mode uses depth-based coloring, physical mode uses intra/inter-node coloring
-    const isHierarchyMode = visualizationMode === 'hierarchy';
+    const currentMode = getVisualizationMode();
+    const isHierarchyMode = currentMode === 'hierarchy';
 
     if (isHierarchyMode) {
         // Show descriptor/hierarchy legend, hide CSV/physical legend
@@ -6561,6 +6552,7 @@ function initVisualization(data) {
     const initialDataCopy = JSON.parse(JSON.stringify(data));
     state.data.initialVisualizationData = initialDataCopy;
     initialVisualizationData = initialDataCopy;
+    window.initialVisualizationData = initialDataCopy; // Expose to global scope
     console.log('Stored initial visualization data for reset');
 
     // Initialize hierarchy mode state (allows mode switching even without going to location first)
@@ -6574,6 +6566,7 @@ function initVisualization(data) {
         // First time loading - set currentData
         state.data.currentData = data;
         currentData = data;
+        window.currentData = data; // Expose to global scope
         console.log('Initialized currentData');
     } else if (data.metadata && data.metadata.graph_templates &&
         (!state.data.currentData.metadata || !state.data.currentData.metadata.graph_templates)) {
@@ -6638,7 +6631,8 @@ function initVisualization(data) {
             console.log('Detected location mode (CSV import)');
         }
     } else {
-        console.log(`Empty canvas - preserving current mode: ${visualizationMode}`);
+        const currentMode = getVisualizationMode();
+        console.log(`Empty canvas - preserving current mode: ${currentMode}`);
     }
 
     // Ensure container has proper dimensions
@@ -6710,8 +6704,11 @@ function initVisualization(data) {
                 autolock: false
             });
 
+            // Sync legacy global variable immediately
+            cy = state.cy;
+
             // Set template-based colors for all imported graph nodes
-            cy.nodes('[type="graph"]').forEach(node => {
+            state.cy.nodes('[type="graph"]').forEach(node => {
                 const templateName = node.data('template_name');
                 if (templateName) {
                     const templateColor = getTemplateColor(templateName);
@@ -6825,9 +6822,18 @@ function initVisualization(data) {
             addCytoscapeEventHandlers();
         }
 
+        // Ensure cy is synced before using it
+        if (!cy && state.cy) {
+            cy = state.cy;
+        }
+        
         console.log('Cytoscape instance ready:', cy);
-        console.log('Nodes count:', cy.nodes().length);
-        console.log('Edges count:', cy.edges().length);
+        if (cy) {
+            console.log('Nodes count:', cy.nodes().length);
+            console.log('Edges count:', cy.edges().length);
+        } else {
+            console.error('Cytoscape instance is null!');
+        }
 
         // Verify all cytoscape extensions are loaded and available
         verifyCytoscapeExtensions();
@@ -6928,14 +6934,9 @@ function checkSameShelf(sourceId, targetId) {
     return sourceShelf && targetShelf && sourceShelf.id() === targetShelf.id();
 }
 
+// Delegate to hierarchy module
 function getParentAtLevel(node, level) {
-    let currentNode = node;
-    for (let i = 0; i < level; i++) {
-        const parent = currentNode.parent();
-        if (!parent.length) return null;
-        currentNode = parent;
-    }
-    return currentNode;
+    return hierarchyModule.getParentAtLevel(node, level);
 }
 
 function getCytoscapeStyles() {
@@ -7791,7 +7792,8 @@ function showNodeInfo(node, position) {
     // Show location information based on available data
     else if (data.type === 'shelf' || data.type === 'node') {
         // Determine if we're in logical topology mode (hierarchy) or physical location mode
-        const isLogicalMode = visualizationMode === 'hierarchy';
+        const currentMode = getVisualizationMode();
+        const isLogicalMode = currentMode === 'hierarchy';
 
         // In physical mode, show physical location info
         if (!isLogicalMode) {
@@ -7831,7 +7833,8 @@ function showNodeInfo(node, position) {
     } else {
         // For other node types (tray, port), show hierarchical location with individual fields
         const locationData = location_getNodeData(node);
-        const isLogicalMode = visualizationMode === 'hierarchy';
+        const currentMode = getVisualizationMode();
+        const isLogicalMode = currentMode === 'hierarchy';
 
         html += `<br><strong>Location:</strong><br>`;
         // Only show hostname in physical mode
@@ -9910,3 +9913,129 @@ document.getElementById('graphTemplateSelect').addEventListener('change', functi
 });
 
 // Label input event listener removed - instance names are now auto-generated as {template_name}_{index}
+
+// ===== Expose Functions to Global Scope =====
+// Since visualizer.js is loaded as a module, functions need to be explicitly exposed
+// to the window object to be accessible from inline onclick handlers in HTML
+//
+// TODO: REFACTORING - Module Scoping Issues
+// ==========================================
+// PROBLEM: When visualizer.js was converted to a module (type="module"), all functions
+// became module-scoped and are no longer accessible from inline onclick handlers in HTML.
+// This has caused multiple scoping errors:
+//   - uploadFile is not defined
+//   - currentData is not defined
+//   - initialVisualizationData is not defined
+//   - location_switchMode is not defined
+//   - updateModeIndicator is not defined
+//   - showExportStatus is not defined
+//   - etc.
+//
+// CURRENT WORKAROUND: Expose all functions to window object manually. This works but:
+//   - Requires maintaining a list of functions to expose
+//   - Pollutes global namespace
+//   - Easy to miss functions when adding new ones
+//   - HTML must use window.functionName() or typeof checks
+//
+// LONG-TERM SOLUTION (Phase 6.4 in refactoring plan):
+//   1. Replace all inline onclick handlers with event listeners
+//   2. Create EventManager class to centralize event handling
+//   3. Initialize all event listeners in a single function
+//   4. This eliminates the need to expose functions globally
+//
+// Example refactoring:
+//   OLD: <button onclick="uploadFile()">
+//   NEW: document.getElementById('uploadBtn').addEventListener('click', uploadFile);
+//
+// Benefits:
+//   - No global namespace pollution
+//   - Better code organization
+//   - Easier to test
+//   - Type safety (no runtime "is not defined" errors)
+//
+// For now, we expose all functions that might be called from HTML:
+const functionsToExpose = {
+    // Core visualization functions
+    initVisualization,
+    createEmptyVisualization,
+    createEmptyVisualizationLocation,
+    createEmptyVisualizationTopology,
+    
+    // File upload functions
+    uploadFile,
+    uploadFileTopology,
+    
+    // Mode and layout functions
+    toggleVisualizationMode,
+    resetLayout,
+    setVisualizationMode,
+    location_switchMode,
+    hierarchy_switchMode,
+    updateModeIndicator,
+    
+    // Node and graph editing
+    addNewNode,
+    addNewGraph,
+    createNewTemplate,
+    deleteSelectedElement,
+    toggleEdgeHandles,
+    
+    // Connection management
+    applyConnectionRange,
+    clearConnectionRange,
+    cancelConnectionPlacement,
+    
+    // Export functions
+    exportCablingDescriptor,
+    exportDeploymentDescriptor,
+    generateCablingGuide,
+    generateFSD,
+    
+    // Expand/collapse
+    expandOneLevel,
+    collapseOneLevel,
+    
+    // Physical layout modal
+    cancelPhysicalLayoutModal,
+    applyPhysicalLayout,
+    
+    // UI helpers
+    updateConnectionLegend,
+    hideNotificationBanner,
+    showExportStatus,
+};
+
+// Expose all functions to window object
+Object.keys(functionsToExpose).forEach(key => {
+    window[key] = functionsToExpose[key];
+});
+window.createEmptyVisualization = createEmptyVisualization;
+window.createEmptyVisualizationLocation = createEmptyVisualizationLocation;
+window.createEmptyVisualizationTopology = createEmptyVisualizationTopology;
+window.uploadFile = uploadFile;
+window.uploadFileTopology = uploadFileTopology;
+window.toggleVisualizationMode = toggleVisualizationMode;
+window.resetLayout = resetLayout;
+window.addNewNode = addNewNode;
+window.addNewGraph = addNewGraph;
+window.createNewTemplate = createNewTemplate;
+window.deleteSelectedElement = deleteSelectedElement;
+window.toggleEdgeHandles = toggleEdgeHandles;
+window.exportCablingDescriptor = exportCablingDescriptor;
+window.exportDeploymentDescriptor = exportDeploymentDescriptor;
+window.generateCablingGuide = generateCablingGuide;
+window.generateFSD = generateFSD;
+window.expandOneLevel = expandOneLevel;
+window.collapseOneLevel = collapseOneLevel;
+window.applyConnectionRange = applyConnectionRange;
+window.clearConnectionRange = clearConnectionRange;
+window.cancelConnectionPlacement = cancelConnectionPlacement;
+window.cancelPhysicalLayoutModal = cancelPhysicalLayoutModal;
+window.applyPhysicalLayout = applyPhysicalLayout;
+window.setVisualizationMode = setVisualizationMode;
+window.updateConnectionLegend = updateConnectionLegend;
+window.hideNotificationBanner = hideNotificationBanner;
+window.location_switchMode = location_switchMode;
+window.hierarchy_switchMode = hierarchy_switchMode;
+window.updateModeIndicator = updateModeIndicator;
+window.showExportStatus = showExportStatus;
