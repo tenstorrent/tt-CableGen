@@ -11,6 +11,8 @@ import {
     getNodeColor
 } from './config/node-types.js';
 import { API_ENDPOINTS, API_DEFAULTS, buildApiUrl, getStatusMessage } from './config/api.js';
+import { VisualizerState } from './state/visualizer-state.js';
+import { StateObserver } from './state/state-observer.js';
 
 // ===== Configuration Constants =====
 const LAYOUT_CONSTANTS = {
@@ -701,17 +703,54 @@ function positionShelfChildren(shelfNode) {
     common_arrangeTraysAndPorts(shelfNode);
 }
 
-// ===== Global Variables =====
-let cy;
-let currentData = null;
-let initialVisualizationData = null;  // Store initial data for reset functionality
-let hierarchyModeState = null;  // Store current hierarchy state when switching to location mode
-let selectedConnection = null;
-let selectedNode = null;  // Track selected node for deletion
-let isEdgeCreationMode = false;
-let sourcePort = null;
-let availableGraphTemplates = {};  // Store graph templates from loaded textproto
-let globalHostCounter = 0;  // Global counter for unique host IDs across all instances
+// ===== State Management =====
+// Initialize state and observer
+const state = new VisualizerState();
+const stateObserver = new StateObserver(state);
+
+// Make state observable (auto-notify on changes)
+state.editing = stateObserver.createProxy(state.editing, 'editing');
+state.data = stateObserver.createProxy(state.data, 'data');
+state.ui = stateObserver.createProxy(state.ui, 'ui');
+
+// Legacy global references for backward compatibility during migration
+// These will be removed in later phases
+let cy; // Will be replaced with state.cy
+let currentData; // Will be replaced with state.data.currentData
+let initialVisualizationData; // Will be replaced with state.data.initialVisualizationData
+let hierarchyModeState; // Will be replaced with state.data.hierarchyModeState
+let selectedConnection; // Will be replaced with state.editing.selectedConnection
+let selectedNode; // Will be replaced with state.editing.selectedNode
+let isEdgeCreationMode; // Will be replaced with state.editing.isEdgeCreationMode
+let sourcePort; // Will be replaced with state.editing.selectedFirstPort
+let availableGraphTemplates; // Will be replaced with state.data.availableGraphTemplates
+let globalHostCounter; // Will be replaced with state.data.globalHostCounter
+
+// Sync legacy globals with state (temporary during migration)
+function syncLegacyGlobals() {
+    cy = state.cy;
+    currentData = state.data.currentData;
+    initialVisualizationData = state.data.initialVisualizationData;
+    hierarchyModeState = state.data.hierarchyModeState;
+    selectedConnection = state.editing.selectedConnection;
+    selectedNode = state.editing.selectedNode;
+    isEdgeCreationMode = state.editing.isEdgeCreationMode;
+    sourcePort = state.editing.selectedFirstPort;
+    availableGraphTemplates = state.data.availableGraphTemplates;
+    globalHostCounter = state.data.globalHostCounter;
+}
+
+// Subscribe to state changes to keep legacy globals in sync
+stateObserver.subscribe('cy', (newVal) => { cy = newVal; });
+stateObserver.subscribe('data.currentData', (newVal) => { currentData = newVal; });
+stateObserver.subscribe('data.initialVisualizationData', (newVal) => { initialVisualizationData = newVal; });
+stateObserver.subscribe('data.hierarchyModeState', (newVal) => { hierarchyModeState = newVal; });
+stateObserver.subscribe('editing.selectedConnection', (newVal) => { selectedConnection = newVal; });
+stateObserver.subscribe('editing.selectedNode', (newVal) => { selectedNode = newVal; });
+stateObserver.subscribe('editing.isEdgeCreationMode', (newVal) => { isEdgeCreationMode = newVal; });
+stateObserver.subscribe('editing.selectedFirstPort', (newVal) => { sourcePort = newVal; });
+stateObserver.subscribe('data.availableGraphTemplates', (newVal) => { availableGraphTemplates = newVal; });
+stateObserver.subscribe('data.globalHostCounter', (newVal) => { globalHostCounter = newVal; });
 
 // ===== Node Drag Control =====
 /**
@@ -732,14 +771,15 @@ function applyDragRestrictions() {
 }
 
 // Visualization Mode Management
-let visualizationMode = 'location'; // 'location' or 'hierarchy'
+// visualizationMode is now managed by state.mode
 
 /**
  * Set the visualization mode and update UI accordingly
  * @param {string} mode - 'location' or 'hierarchy'
  */
 function setVisualizationMode(mode) {
-    visualizationMode = mode;
+    state.setMode(mode);
+    syncLegacyGlobals();
 
     // Update body class for mode-specific CSS visibility
     document.body.classList.remove('mode-location', 'mode-hierarchy');
@@ -757,7 +797,7 @@ function setVisualizationMode(mode) {
  * @returns {string} Current mode ('location' or 'hierarchy')
  */
 function getVisualizationMode() {
-    return visualizationMode;
+    return state.mode;
 }
 
 /**
@@ -777,7 +817,7 @@ function updateModeIndicator() {
     // Show the indicator
     indicator.style.display = 'block';
 
-    if (visualizationMode === 'hierarchy') {
+    if (state.mode === 'hierarchy') {
         indicator.style.background = '#fff3cd';
         indicator.style.borderColor = '#ffc107';
         currentModeDiv.innerHTML = '<strong>🌳 Logical Topology View</strong>';
@@ -873,7 +913,7 @@ function toggleVisualizationMode() {
     }
 
     // Toggle the mode
-    const newMode = visualizationMode === 'hierarchy' ? 'location' : 'hierarchy';
+    const newMode = state.mode === 'hierarchy' ? 'location' : 'hierarchy';
 
     // Restructure the visualization based on the new mode
     if (newMode === 'location') {
@@ -3217,7 +3257,7 @@ function deleteSelectedNode() {
     }
 
     // Check if this is a child of a template instance (hierarchy mode)
-    const visualizationMode = getVisualizationMode();
+    const visualizationMode = state.mode;
     const hasParent = node.parent().length > 0;
     const parentNode = hasParent ? node.parent() : null;
     const childName = node.data('child_name') || nodeLabel;
@@ -3286,7 +3326,7 @@ function deleteSelectedNode() {
             }
 
             // Recalculate host_indices after template-level deletion
-            if (visualizationMode === 'hierarchy') {
+            if (state.mode === 'hierarchy') {
                 recalculateHostIndicesForTemplates();
             }
         } else {
@@ -3366,7 +3406,7 @@ function deleteMultipleSelected() {
         return;
     }
     
-    const visualizationMode = getVisualizationMode();
+    const visualizationMode = state.mode;
     
     // Delete connections first
     if (edgeCount > 0) {
@@ -3463,7 +3503,7 @@ function deleteMultipleSelected() {
         console.log(`Deleted ${nodeCount} node(s)`);
         
         // Recalculate host_indices after deletion in hierarchy mode
-        if (visualizationMode === 'hierarchy') {
+        if (state.mode === 'hierarchy') {
             recalculateHostIndicesForTemplates();
         }
     }
@@ -4101,7 +4141,7 @@ function createSingleConnection(sourceNode, targetNode, template_name, depth) {
     const targetId = targetNode.id();
 
     // Determine connection color based on visualization mode
-    const visualizationMode = getVisualizationMode();
+    const visualizationMode = state.mode;
     let connectionColor;
 
     if (visualizationMode === 'hierarchy' && template_name) {
@@ -4704,7 +4744,7 @@ function addNewNode() {
     }
 
     // Handle logical topology mode differently
-    if (visualizationMode === 'hierarchy') {
+    if (state.mode === 'hierarchy') {
         // Logical mode: add to selected parent graph node, or as top-level node
         const config = NODE_CONFIGS[nodeType];
         if (!config) {
@@ -5610,7 +5650,7 @@ function addNewGraph() {
             cy.add(edgesToAdd);
 
             // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
-            if (visualizationMode === 'hierarchy') {
+            if (state.mode === 'hierarchy') {
                 recalculateHostIndicesForTemplates();
             }
 
@@ -6683,25 +6723,31 @@ function initVisualization(data) {
     });
 
     // Store initial visualization data for reset functionality
-    initialVisualizationData = JSON.parse(JSON.stringify(data));
+    const initialDataCopy = JSON.parse(JSON.stringify(data));
+    state.data.initialVisualizationData = initialDataCopy;
+    initialVisualizationData = initialDataCopy;
     console.log('Stored initial visualization data for reset');
 
     // Initialize hierarchy mode state (allows mode switching even without going to location first)
-    hierarchyModeState = JSON.parse(JSON.stringify(data));
+    const hierarchyStateCopy = JSON.parse(JSON.stringify(data));
+    state.data.hierarchyModeState = hierarchyStateCopy;
+    hierarchyModeState = hierarchyStateCopy;
     console.log('Initialized hierarchy mode state');
 
     // Ensure currentData has metadata for exports (without breaking position references)
-    if (!currentData) {
+    if (!state.data.currentData) {
         // First time loading - set currentData
+        state.data.currentData = data;
         currentData = data;
         console.log('Initialized currentData');
     } else if (data.metadata && data.metadata.graph_templates &&
-        (!currentData.metadata || !currentData.metadata.graph_templates)) {
+        (!state.data.currentData.metadata || !state.data.currentData.metadata.graph_templates)) {
         // Data has graph_templates but currentData doesn't - merge metadata only
-        if (!currentData.metadata) {
-            currentData.metadata = {};
+        if (!state.data.currentData.metadata) {
+            state.data.currentData.metadata = {};
         }
-        currentData.metadata.graph_templates = data.metadata.graph_templates;
+        state.data.currentData.metadata.graph_templates = data.metadata.graph_templates;
+        currentData = state.data.currentData;
     }
 
     // Track initial root template for efficient export decisions
@@ -6733,7 +6779,8 @@ function initVisualization(data) {
 
     // Initialize global host counter based on existing shelf nodes
     const existingShelves = data.elements.filter(el => el.data && el.data.type === 'shelf');
-    globalHostCounter = existingShelves.length;
+    state.data.globalHostCounter = existingShelves.length;
+    globalHostCounter = state.data.globalHostCounter;
     console.log(`Initialized global host counter: ${globalHostCounter} existing hosts`);
 
     // Extract available graph templates from metadata (for textproto imports)
@@ -6767,7 +6814,8 @@ function initVisualization(data) {
     }
 
     try {
-        if (typeof cy !== 'undefined' && cy) {
+        if (state.cy) {
+            cy = state.cy;
             // Clear existing elements and add new ones
             console.log('Clearing existing elements and adding new ones');
             cy.elements().remove();
@@ -6780,7 +6828,7 @@ function initVisualization(data) {
 
             // Only recalculate host_indices if they're missing or incomplete
             // Don't recalculate for descriptor imports where host_index is already correctly assigned
-            if (visualizationMode === 'hierarchy') {
+            if (state.mode === 'hierarchy') {
                 const allShelves = cy.nodes('[type="shelf"]');
                 const needsRecalculation = allShelves.length > 0 && allShelves.some(node => {
                     const hostIndex = node.data('host_index');
@@ -6809,7 +6857,7 @@ function initVisualization(data) {
             // CRITICAL: Cytoscape auto-centers compound nodes based on children
             // Strategy: Add ALL elements first, THEN calculate positions in JavaScript
 
-            cy = cytoscape({
+            state.cy = cytoscape({
                 container: cyContainer,
                 elements: data.elements,  // Add everything at once
                 style: getCytoscapeStyles(),
