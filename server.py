@@ -73,30 +73,69 @@ def upload_csv():
         if file.filename == "":
             return jsonify({"success": False, "error": "No file selected"})
 
-        if not file.filename.lower().endswith(".csv"):
-            return jsonify({"success": False, "error": "File must be a CSV file"})
+        # Accept both CSV and textproto files
+        if not (file.filename.lower().endswith(".csv") or file.filename.lower().endswith(".textproto")):
+            return jsonify({"success": False, "error": "File must be a CSV or textproto file"})
 
+        is_textproto = file.filename.lower().endswith(".textproto")
+        
         # Save uploaded file to temporary location with unique prefix
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
-        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".csv", delete=False, prefix=prefix) as tmp_file:
+        suffix = ".textproto" if is_textproto else ".csv"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=suffix, delete=False, prefix=prefix) as tmp_file:
             file.save(tmp_file.name)
-            tmp_csv_path = tmp_file.name
+            tmp_file_path = tmp_file.name
 
         try:
-            # Create visualizer instance and process the CSV (auto-detects format and node types)
+            # Create visualizer instance
             visualizer = NetworkCablingCytoscapeVisualizer()
 
-            # Parse CSV file (this will auto-detect format and node types)
-            connections = visualizer.parse_csv(tmp_csv_path)
+            if is_textproto:
+                # Parse cabling descriptor textproto
+                visualizer.file_format = "descriptor"  # Set format before parsing
+                
+                if not visualizer.parse_cabling_descriptor(tmp_file_path):
+                    return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
+                
+                # Get node types from hierarchy and initialize configs
+                if visualizer.graph_hierarchy:
+                    # Extract unique node types
+                    node_types = set(node['node_type'] for node in visualizer.graph_hierarchy)
+                    
+                    # Set shelf unit type from first node (or default)
+                    if node_types:
+                        first_node_type = list(node_types)[0]
+                        config = visualizer._node_descriptor_to_config(first_node_type)
+                        # Use the mapping from _node_descriptor_to_shelf_type to get correct shelf unit type
+                        # E.g., "N300_LB_DEFAULT" → "n300_lb"
+                        visualizer.shelf_unit_type = visualizer._node_descriptor_to_shelf_type(first_node_type)
+                        visualizer.current_config = config
+                    else:
+                        visualizer.shelf_unit_type = "wh_galaxy"
+                        visualizer.current_config = visualizer.shelf_unit_configs["wh_galaxy"]
+                    
+                    # Initialize templates for descriptor format
+                    visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
+                    
+                    # Count connections from descriptor
+                    connection_count = len(visualizer.descriptor_connections) if visualizer.descriptor_connections else 0
+                else:
+                    connection_count = 0
+                    
+            else:
+                # Parse CSV file (auto-detects format and node types)
+                connections = visualizer.parse_csv(tmp_file_path)
 
-            if not connections:
-                return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+                if not connections:
+                    return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+                
+                connection_count = len(connections)
 
             # Generate the complete visualization data structure
             visualization_data = visualizer.generate_visualization_data()
 
             # Add metadata
-            visualization_data["metadata"]["connection_count"] = len(connections)
+            visualization_data["metadata"]["connection_count"] = connection_count
 
             # Check for unknown node types and add to metadata
             unknown_types = visualizer.get_unknown_node_types()
@@ -105,31 +144,41 @@ def upload_csv():
 
             # Create response data
             response_data = visualization_data
+            
+            file_type = "cabling descriptor" if is_textproto else "CSV"
+            message = f"Successfully processed {file.filename} ({file_type}) with {connection_count} {'nodes' if is_textproto else 'connections'}"
 
             return jsonify(
                 {
                     "success": True,
                     "data": response_data,
-                    "message": f"Successfully processed {file.filename} with {len(connections)} connections",
+                    "message": message,
                     "unknown_types": unknown_types,
+                    "file_type": "textproto" if is_textproto else "csv",
                 }
             )
 
         finally:
             # Clean up temporary file
             try:
-                os.unlink(tmp_csv_path)
+                os.unlink(tmp_file_path)
             except OSError:
                 pass  # Ignore cleanup errors
 
     except Exception as e:
-        error_msg = f"Error processing CSV: {str(e)}"
+        error_msg = f"Error processing file: {str(e)}"
+        traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"success": False, "error": error_msg})
 
 
 @app.route("/export_cabling_descriptor", methods=["POST"])
 def export_cabling_descriptor():
-    """Export ClusterDescriptor from cytoscape visualization data"""
+    """Export ClusterDescriptor from cytoscape visualization data
+    
+    IMPORTANT: Cabling descriptor export is based ONLY on hierarchy/topology information:
+    - hostname, node_type, logical_path, template_name, child_name, connections
+    - Physical location fields (hall, aisle, rack, shelf_u) are NEVER used
+    """
     if not EXPORT_AVAILABLE:
         return jsonify({"success": False, "error": "Export functionality not available. Missing dependencies."}), 500
 
@@ -139,7 +188,7 @@ def export_cabling_descriptor():
         if not cytoscape_data or "elements" not in cytoscape_data:
             return jsonify({"success": False, "error": "Invalid cytoscape data"}), 400
 
-        # Generate textproto content
+        # Generate textproto content (based on hierarchy information only)
         textproto_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
 
         # Return as plain text for download
@@ -174,6 +223,42 @@ def export_deployment_descriptor():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _validate_shelf_hostnames(cytoscape_data):
+    """Check if ALL shelf nodes have hostnames. Raises ValueError if any are missing."""
+    elements = cytoscape_data.get("elements", [])
+    
+    shelf_nodes = []
+    missing_hostname_nodes = []
+    
+    for element in elements:
+        # Skip edges
+        if "source" in element.get("data", {}):
+            continue
+        
+        node_data = element.get("data", {})
+        node_type = node_data.get("type")
+        
+        # Collect all shelf nodes
+        if node_type == "shelf":
+            shelf_nodes.append(node_data)
+            
+            # Check if hostname is missing or empty
+            hostname = node_data.get("label") or node_data.get("id") or ""
+            if not hostname.strip():
+                node_id = node_data.get("id", "unknown")
+                missing_hostname_nodes.append(node_id)
+    
+    if missing_hostname_nodes:
+        raise ValueError(
+            f"Cabling guide generation requires all shelf nodes to have hostnames. "
+            f"Missing hostnames for {len(missing_hostname_nodes)} node(s): {', '.join(missing_hostname_nodes[:5])}"
+            + (f" and {len(missing_hostname_nodes) - 5} more..." if len(missing_hostname_nodes) > 5 else "")
+        )
+    
+    if not shelf_nodes:
+        raise ValueError("No shelf nodes found in the graph")
 
 
 def _has_location_info(cytoscape_data):
@@ -221,7 +306,14 @@ def _has_location_info(cytoscape_data):
 
 @app.route("/generate_cabling_guide", methods=["POST"])
 def generate_cabling_guide():
-    """Generate CablingGuide CSV and/or FSD using the cabling generator"""
+    """Generate CablingGuide CSV and/or FSD using the cabling generator
+    
+    IMPORTANT: The cabling guide generation uses:
+    - CablingDescriptor: Based ONLY on hierarchy/topology information (hostname, node_type, connections)
+    - DeploymentDescriptor: Uses physical location information (hall, aisle, rack, shelf_u) when available
+    
+    The --simple flag is set based on whether location information exists in the DeploymentDescriptor.
+    """
     import subprocess
     import tempfile
     import os
@@ -237,18 +329,25 @@ def generate_cabling_guide():
         input_prefix = data["input_prefix"]
         generate_type = data.get("generate_type", "both")  # 'cabling_guide', 'fsd', or 'both'
         
-        # Check if location information is present
+        # Validate that all shelf nodes have hostnames - will raise ValueError if not
+        _validate_shelf_hostnames(cytoscape_data)
+        
+        # Check if location information is present (for deployment descriptor)
+        # This only affects the output format of the cabling guide (detailed vs simple)
+        # It does NOT affect the cabling descriptor which is always based on hierarchy
         has_location = _has_location_info(cytoscape_data)
         use_simple_format = not has_location
 
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
+            # Cabling descriptor: Based ONLY on hierarchy/topology information
             cabling_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as deployment_file:
+            # Deployment descriptor: Uses physical location information when available
             deployment_content = export_deployment_descriptor_for_visualizer(cytoscape_data)
             deployment_file.write(deployment_content)
             deployment_path = deployment_file.name
