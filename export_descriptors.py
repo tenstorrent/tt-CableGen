@@ -80,19 +80,24 @@ class CytoscapeDataParser:
         # Define patterns with their handlers - only include patterns that are actually used
         # Order matters: more specific patterns first, fallback last
         patterns = [
-            # Current standard: <label>-tray#-port# (used by both 20-column and 8-column CSV formats)
-            (r"(.+)-tray(\d+)-port(\d+)", self._handle_preferred_port),
-            (r"(.+)-tray(\d+)", self._handle_preferred_tray),
-            # Legacy ID pattern: port_<hostname>_<tray>_<port> (old node ID convention)
-            (r"port_(.+)_(\d+)_(\d+)", self._handle_hostname_port),
-            (r"tray_(.+)_(\d+)", self._handle_hostname_tray),
-            (r"shelf_(.+)", self._handle_hostname_shelf),
-            # Legacy ID pattern: port_<rack>_U<shelf>_<tray>_<port> (old node ID convention)
-            (r"port_(\d+)_U(\d+)_(\d+)_(\d+)", self._handle_rack_hierarchy_port),
-            (r"tray_(\d+)_U(\d+)_(\d+)", self._handle_rack_hierarchy_tray),
-            (r"shelf_(\d+)_U(\d+)", self._handle_rack_hierarchy_shelf),
+            # Cabling descriptor format: <host_id>:t<tray>:p<port> (e.g., "0:t1:p3")
+            # CSV imports now also use this format (numeric shelf IDs)
+            (r"^(\d+):t(\d+):p(\d+)$", self._handle_descriptor_port),
+            (r"^(\d+):t(\d+)$", self._handle_descriptor_tray),
+            (r"^(\d+)$", self._handle_descriptor_shelf),
+            # CSV standard: <label>-tray#-port# format
+            (r"^(.+)-tray(\d+)-port(\d+)$", self._handle_preferred_port),
+            (r"^(.+)-tray(\d+)$", self._handle_preferred_tray),
+            # Hostname-based ID pattern: port_<hostname>_<tray>_<port>
+            (r"^port_(.+)_(\d+)_(\d+)$", self._handle_hostname_port),
+            (r"^tray_(.+)_(\d+)$", self._handle_hostname_tray),
+            (r"^shelf_(.+)$", self._handle_hostname_shelf),
+            # Rack hierarchy ID pattern: port_<rack>_U<shelf>_<tray>_<port>
+            (r"^port_(\d+)_U(\d+)_(\d+)_(\d+)$", self._handle_rack_hierarchy_port),
+            (r"^tray_(\d+)_U(\d+)_(\d+)$", self._handle_rack_hierarchy_tray),
+            (r"^shelf_(\d+)_U(\d+)$", self._handle_rack_hierarchy_shelf),
             # Fallback for any other format
-            (r"(.+)", self._handle_preferred_shelf),
+            (r"^(.+)$", self._handle_preferred_shelf),
         ]
 
         for pattern, handler in patterns:
@@ -102,7 +107,43 @@ class CytoscapeDataParser:
 
         return None
 
-    # Pattern handlers for node ID formats (current standard and legacy patterns)
+    # Pattern handlers for node ID formats
+    def _handle_descriptor_port(self, groups):
+        """Handle <host_id>:t<tray>:p<port> format (cabling descriptor format)
+        Example: "0:t1:p3" → host_id=0, tray=1, port=3
+        """
+        host_id = groups[0]
+        return {
+            "type": "port",
+            "hostname": host_id,  # Use host_id as identifier
+            "shelf_id": host_id,
+            "tray_id": int(groups[1]),
+            "port_id": int(groups[2]),
+        }
+    
+    def _handle_descriptor_tray(self, groups):
+        """Handle <host_id>:t<tray> format (cabling descriptor format)
+        Example: "0:t1" → host_id=0, tray=1
+        """
+        host_id = groups[0]
+        return {
+            "type": "tray",
+            "hostname": host_id,
+            "shelf_id": host_id,
+            "tray_id": int(groups[1])
+        }
+    
+    def _handle_descriptor_shelf(self, groups):
+        """Handle <host_id> format (cabling descriptor format)
+        Example: "0" → host_id=0
+        """
+        host_id = groups[0]
+        return {
+            "type": "shelf",
+            "hostname": host_id,
+            "shelf_id": host_id
+        }
+    
     def _handle_preferred_port(self, groups):
         """Handle <label>-tray#-port# format (current standard node ID format)"""
         return {
@@ -122,7 +163,7 @@ class CytoscapeDataParser:
         return {"type": "shelf", "hostname": groups[0], "shelf_id": groups[0]}
 
     def _handle_hostname_port(self, groups):
-        """Handle port_<hostname>_<tray>_<port> format (legacy node ID pattern)"""
+        """Handle port_<hostname>_<tray>_<port> format"""
         hostname = groups[0]
         return {
             "type": "port",
@@ -133,17 +174,17 @@ class CytoscapeDataParser:
         }
 
     def _handle_hostname_tray(self, groups):
-        """Handle tray_<hostname>_<tray> format (legacy node ID pattern)"""
+        """Handle tray_<hostname>_<tray> format"""
         hostname = groups[0]
         return {"type": "tray", "hostname": hostname, "shelf_id": hostname, "tray_id": int(groups[1])}
 
     def _handle_hostname_shelf(self, groups):
-        """Handle shelf_<hostname> format (legacy node ID pattern)"""
+        """Handle shelf_<hostname> format"""
         hostname = groups[0]
         return {"type": "shelf", "hostname": hostname, "shelf_id": hostname}
 
     def _handle_rack_hierarchy_port(self, groups):
-        """Handle port_<rack>_U<shelf>_<tray>_<port> format (legacy node ID pattern)"""
+        """Handle port_<rack>_U<shelf>_<tray>_<port> format"""
         shelf_id = f"{groups[0]}_U{groups[1]}"
         return {
             "type": "port",
@@ -154,12 +195,12 @@ class CytoscapeDataParser:
         }
 
     def _handle_rack_hierarchy_tray(self, groups):
-        """Handle tray_<rack>_U<shelf>_<tray> format (legacy node ID pattern)"""
+        """Handle tray_<rack>_U<shelf>_<tray> format"""
         shelf_id = f"{groups[0]}_U{groups[1]}"
         return {"type": "tray", "hostname": shelf_id, "shelf_id": shelf_id, "tray_id": int(groups[2])}
 
     def _handle_rack_hierarchy_shelf(self, groups):
-        """Handle shelf_<rack>_U<shelf> format (legacy node ID pattern)"""
+        """Handle shelf_<rack>_U<shelf> format"""
         shelf_id = f"{groups[0]}_U{groups[1]}"
         return {"type": "shelf", "hostname": shelf_id, "shelf_id": shelf_id}
 
@@ -209,6 +250,15 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
     def extract_connections(self) -> List[Dict]:
         """Extract connection information from edges"""
         connections = []
+        
+        print(f"[PARSER] Starting to extract connections. Found {len(self.edges)} edges in visualization.")
+        
+        # Sample the first few edges to debug
+        if self.edges:
+            print(f"[PARSER] Sample edge IDs (first 3):")
+            for i, edge in enumerate(self.edges[:3]):
+                edge_data = edge.get("data", {})
+                print(f"  Edge {i}: source='{edge_data.get('source')}', target='{edge_data.get('target')}'")
 
         for edge in self.edges:
             edge_data = edge.get("data", {})
@@ -216,11 +266,17 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
             target_id = edge_data.get("target")
 
             if not source_id or not target_id:
+                print(f"[PARSER] Skipping edge with missing source/target: {edge_data.get('id')}")
                 continue
 
             # Extract hierarchy info for both endpoints
             source_info = self.extract_hierarchy_info(source_id)
             target_info = self.extract_hierarchy_info(target_id)
+
+            if not source_info:
+                print(f"[PARSER] Could not extract hierarchy info for source: '{source_id}'")
+            if not target_info:
+                print(f"[PARSER] Could not extract hierarchy info for target: '{target_id}'")
 
             if not source_info or not target_info:
                 continue
@@ -306,7 +362,11 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
         return None
 
     def _get_node_type_from_port(self, port_id: str) -> str:
-        """Get node_type from a port by traversing up to the shelf node (always 2 levels up: Port -> Tray -> Shelf)"""
+        """Get node_type from a port by traversing up to the shelf node
+        
+        Works in both logical hierarchy mode (Port -> Tray -> Shelf) 
+        and physical location mode (Port -> Tray -> Shelf -> Rack -> ...)
+        """
         # Find the port node
         for element in self.data.get("elements", []):
             if element.get("data", {}).get("id") == port_id:
@@ -315,47 +375,97 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                 if not tray_id:
                     raise ValueError(f"Port '{port_id}' has no parent (expected tray)")
                 
-                # Find tray and get its parent (shelf)
+                # Find tray and get its parent (should be shelf)
                 for tray_element in self.data.get("elements", []):
                     if tray_element.get("data", {}).get("id") == tray_id:
-                        shelf_id = tray_element.get("data", {}).get("parent")
-                        if not shelf_id:
+                        parent_id = tray_element.get("data", {}).get("parent")
+                        if not parent_id:
                             raise ValueError(f"Tray '{tray_id}' has no parent (expected shelf)")
                         
-                        # Find shelf and get node_type
-                        for shelf_element in self.data.get("elements", []):
-                            if shelf_element.get("data", {}).get("id") == shelf_id:
-                                node_type = shelf_element.get("data", {}).get("shelf_node_type")
-                                if not node_type:
-                                    raise ValueError(f"Shelf '{shelf_id}' is missing shelf_node_type")
-                                return node_type.upper()
+                        # Find the parent node - it should be a shelf
+                        # Build a map for efficient lookup
+                        elements_by_id = {el.get("data", {}).get("id"): el for el in self.data.get("elements", []) if "data" in el and "id" in el.get("data", {})}
+                        
+                        parent_element = elements_by_id.get(parent_id)
+                        if not parent_element:
+                            raise ValueError(f"Could not find parent '{parent_id}' of tray '{tray_id}'")
+                        
+                        parent_type = parent_element.get("data", {}).get("type")
+                        
+                        # Verify it's a shelf node
+                        if parent_type != "shelf":
+                            raise ValueError(f"Tray '{tray_id}' parent is '{parent_type}', expected 'shelf'. Hierarchy may be incorrect.")
+                        
+                        # Get node_type from shelf
+                        node_type = parent_element.get("data", {}).get("shelf_node_type")
+                        if not node_type:
+                            raise ValueError(f"Shelf '{parent_id}' is missing shelf_node_type")
+                        # Strip _DEFAULT suffix only
+                        node_type = node_type.upper()
+                        if node_type.endswith('_DEFAULT'):
+                            node_type = node_type[:-8]  # len('_DEFAULT') = 8
+                        return node_type
         
         raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
 
-    def _get_host_id_from_port(self, port_id: str) -> Optional[int]:
-        """Get host_id from a port by traversing up to the shelf node (always 2 levels up: Port -> Tray -> Shelf)"""
+    def _get_host_id_from_port(self, port_id: str) -> int:
+        """Get host_id from a port by traversing up to the shelf node
+        
+        Works in both logical hierarchy mode (Port -> Tray -> Shelf) 
+        and physical location mode (Port -> Tray -> Shelf -> Rack -> ...)
+        
+        Returns:
+            int: The host_index/host_id value from the shelf node
+            
+        Raises:
+            ValueError: If hierarchy is malformed or host_index/host_id is missing
+        """
         # Find the port node
         for element in self.data.get("elements", []):
             if element.get("data", {}).get("id") == port_id:
                 # Get parent (tray)
                 tray_id = element.get("data", {}).get("parent")
                 if not tray_id:
-                    return None
+                    raise ValueError(f"Port '{port_id}' has no parent (expected tray)")
                 
-                # Find tray and get its parent (shelf)
+                # Find tray and get its parent (should be shelf)
                 for tray_element in self.data.get("elements", []):
                     if tray_element.get("data", {}).get("id") == tray_id:
-                        shelf_id = tray_element.get("data", {}).get("parent")
-                        if not shelf_id:
-                            return None
+                        parent_id = tray_element.get("data", {}).get("parent")
+                        if not parent_id:
+                            raise ValueError(f"Tray '{tray_id}' has no parent (expected shelf)")
                         
-                        # Find shelf and get host_id
-                        for shelf_element in self.data.get("elements", []):
-                            if shelf_element.get("data", {}).get("id") == shelf_id:
-                                host_id = shelf_element.get("data", {}).get("host_id")
-                                return host_id
+                        # Find the parent node - it should be a shelf
+                        # Build a map for efficient lookup
+                        elements_by_id = {el.get("data", {}).get("id"): el for el in self.data.get("elements", []) if "data" in el and "id" in el.get("data", {})}
+                        
+                        parent_element = elements_by_id.get(parent_id)
+                        if not parent_element:
+                            raise ValueError(f"Could not find parent '{parent_id}' of tray '{tray_id}'")
+                        
+                        parent_type = parent_element.get("data", {}).get("type")
+                        
+                        # Verify it's a shelf node
+                        if parent_type != "shelf":
+                            raise ValueError(f"Tray '{tray_id}' parent is '{parent_type}', expected 'shelf'. Hierarchy may be incorrect.")
+                        
+                        # Get host_id from shelf
+                        # CRITICAL: Use explicit None check, not 'or', because host_index can be 0 (which is falsy)
+                        host_id = parent_element.get("data", {}).get("host_index")
+                        if host_id is None:
+                            # Fallback to host_id field name
+                            host_id = parent_element.get("data", {}).get("host_id")
+                        
+                        if host_id is None:
+                            # Debug: show available fields
+                            available_fields = list(parent_element.get("data", {}).keys())
+                            raise ValueError(
+                                f"Shelf '{parent_id}' is missing host_index/host_id (required for template-based export). "
+                                f"Available fields: {available_fields}"
+                            )
+                        return host_id
         
-        return None
+        raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
 
 
 class DeploymentDataParser:
@@ -393,9 +503,12 @@ class DeploymentDataParser:
         shelf_u = node_data.get("shelf_u")
         node_type = node_data.get("shelf_node_type")
 
-        # Convert node_type to uppercase for internal storage
+        # Convert node_type to uppercase and strip _DEFAULT suffix only
         if node_type:
             node_type = node_type.upper()
+            # Strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
+            if node_type.endswith('_DEFAULT'):
+                node_type = node_type[:-8]  # len('_DEFAULT') = 8
 
         # Normalize shelf_u to integer (strip 'U' prefix if present)
         if shelf_u is not None:
@@ -448,7 +561,7 @@ class DeploymentDataParser:
 
 def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, str]]:
     """
-    Extract a consistent, sorted list of (hostname, node_type) from the visualization.
+    Extract a consistent list of (hostname, node_type) from the visualization, sorted by host_index.
     
     This function extracts hosts from:
     1. Connections (connected shelf nodes)
@@ -470,51 +583,79 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     - hall, aisle, rack_num, shelf_u: Optional location data
     
     Returns:
-        List of (hostname, node_type) tuples, sorted alphabetically by hostname
+        List of (hostname, node_type) tuples, sorted by host_index
         
-    The index in this list corresponds to:
-    - CablingDescriptor: child_mappings[hostname].host_id = i
-    - DeploymentDescriptor: deployment_descriptor.hosts[i]
+    CRITICAL INDEXED RELATIONSHIP:
+    The index (i) in this list MUST match the host_index from the cabling descriptor:
+    - CablingDescriptor: child_mappings[hostname].host_id = host_index
+    - DeploymentDescriptor: deployment_descriptor.hosts[host_index].host = hostname
+    
+    This means: host_index N in cabling descriptor MUST map to hosts[N] in deployment descriptor.
+    We sort by host_index (NOT alphabetically) to maintain this critical relationship.
     """
-    parser = VisualizerCytoscapeDataParser(cytoscape_data)
-    connections = parser.extract_connections()
+    # Build a map of host_index -> (hostname, node_type) from shelf nodes
+    # This preserves the indexed relationship from the cabling descriptor
+    host_by_index = {}
+    host_without_index = []  # For CSV imports without host_index
     
-    # Build host_info dict from connections
-    host_info = {}
-    def extract_and_validate_host(connection, role, host_info):
-        host = connection[role].get("hostname", "")
-        if host:
-            host = host.strip()
-        if host and host not in host_info:
-            node_type = connection[role].get("node_type")
-            if not node_type:
-                raise ValueError(f"Missing node_type for {role} host '{host}' in connection")
-            host_info[host] = node_type
-
-    for connection in connections:
-        extract_and_validate_host(connection, "source", host_info)
-        extract_and_validate_host(connection, "target", host_info)
+    # Extract all shelf nodes directly to get host_index
+    elements = cytoscape_data.get("elements", [])
     
-    # Also extract standalone nodes (shelf nodes without connections)
-    deployment_parser = DeploymentDataParser(cytoscape_data)
-    all_shelf_nodes = deployment_parser.extract_hosts()
-    
-    for shelf_node in all_shelf_nodes:
-        hostname = shelf_node.get("hostname", "").strip()
-        node_type = shelf_node.get("node_type")
+    for element in elements:
+        if "source" in element.get("data", {}):
+            continue  # Skip edges
         
-        # Validate node_type is present
-        if not node_type:
-            raise ValueError(f"Missing node_type for standalone host '{hostname}'")
-        
-        # Add to host_info if not already present (connections take precedence)
-        if hostname and hostname not in host_info:
-            host_info[hostname] = node_type
+        node_data = element.get("data", {})
+        if node_data.get("type") == "shelf":
+            hostname = node_data.get("hostname", "").strip()
+            node_type = node_data.get("shelf_node_type") or node_data.get("node_type")
+            host_index = node_data.get("host_index")
+            
+            # Fallback to host_id if host_index not present
+            if host_index is None:
+                host_index = node_data.get("host_id")
+            
+            if not hostname or not node_type:
+                continue  # Skip incomplete nodes
+            
+            if host_index is not None:
+                # Has host_index (from cabling descriptor import)
+                host_by_index[host_index] = (hostname, node_type)
+            else:
+                # No host_index (from CSV import)
+                host_without_index.append((hostname, node_type))
     
-    # Return sorted list of (hostname, node_type) tuples
-    sorted_hosts = sorted(host_info.items())
+    # Determine export strategy based on whether nodes have host_index
+    if host_by_index and not host_without_index:
+        # All nodes have host_index - this is from a cabling descriptor import
+        # Sort by host_index to maintain the indexed relationship
+        sorted_indices = sorted(host_by_index.keys())
+        sorted_hosts = [host_by_index[idx] for idx in sorted_indices]
+        return sorted_hosts
     
-    return sorted_hosts
+    elif host_without_index and not host_by_index:
+        # No nodes have host_index - this is from a CSV import
+        # Sort alphabetically by hostname for consistent ordering
+        # Indices will be assigned dynamically based on this order
+        sorted_hosts = sorted(host_without_index)
+        return sorted_hosts
+    
+    elif host_by_index and host_without_index:
+        # Mixed - some have host_index, some don't
+        # This is an error state (shouldn't happen in normal usage)
+        raise ValueError(
+            f"Inconsistent visualization state: {len(host_by_index)} nodes have host_index, "
+            f"but {len(host_without_index)} nodes don't. "
+            f"This usually means nodes from different sources (CSV and descriptor) were mixed. "
+            f"Please use a consistent data source."
+        )
+    
+    else:
+        # No valid hosts found
+        raise ValueError(
+            "No valid hosts found for export. "
+            "Hosts must have both hostname and node_type defined."
+        )
 
 
 def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_prefix: str = "cabling_descriptor") -> str:
@@ -652,16 +793,22 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
         root_node_data = root_node_el.get("data", {})
         root_node_id = root_node_data.get("id", "")
         
-        # The visible root cluster has id "graph_root_cluster"
-        if root_node_id == "graph_root_cluster" or root_node_id.startswith("graph_root_"):
+        # Get the root node's template name
+        root_node_label = root_node_data.get("label", root_node_data.get("id"))
+        root_node_template = root_node_data.get("template_name", f"template_{root_node_label}")
+        
+        # The visible root cluster has id "graph_root_cluster" or matches the root template
+        # If the root node's template matches the root template, process its children directly
+        is_visible_root = (root_node_id == "graph_root_cluster" or 
+                          root_node_id.startswith("graph_root_") or
+                          root_node_template == root_template_name)
+        
+        if is_visible_root:
             # Process children of the visible root directly
             host_id = 0
             host_id = add_child_mappings_with_reuse(root_node_el, element_map, root_instance, host_id)
         else:
-            # This is a regular top-level node, wrap it (if non-empty)
-            root_node_label = root_node_data.get("label", root_node_data.get("id"))
-            root_node_template = root_node_data.get("template_name", f"template_{root_node_label}")
-            
+            # This is a regular top-level node with a different template, wrap it (if non-empty)
             # Only create instance if template is non-empty
             if root_node_template in cluster_desc.graph_templates:
                 nested_instance = cluster_config_pb2.GraphInstance()
@@ -1108,8 +1255,14 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
             # Look for node_type in shelf_node_type field (standard field name)
             node_descriptor = child_data.get("shelf_node_type") or child_data.get("node_descriptor_type") or child_data.get("node_type", "UNKNOWN")
             if not node_descriptor or node_descriptor == "UNKNOWN":
-                raise ValueError(f"Shelf '{child_label}' (hostname: {child_data.get('hostname')}) is missing shelf_node_type")
-            child.node_ref.node_descriptor = node_descriptor.upper()
+                # Note: hostname is optional here (it's a deployment property, not logical)
+                hostname_display = child_data.get('hostname') or '(not set - deployment property)'
+                raise ValueError(f"Shelf '{child_label}' (hostname: {hostname_display}) is missing shelf_node_type")
+            # Normalize: uppercase and strip _DEFAULT suffix only
+            node_descriptor = node_descriptor.upper()
+            if node_descriptor.endswith('_DEFAULT'):
+                node_descriptor = node_descriptor[:-8]  # len('_DEFAULT') = 8
+            child.node_ref.node_descriptor = node_descriptor
             
         elif not is_physical_container:
             # This is a hierarchical container (any compound node that's not rack/tray/port)
@@ -1147,20 +1300,24 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
     
     # Build a set of host_ids for THIS instance's children
     # We need to only include connections from THIS specific instance, not all instances of the template
-    # Using host_id because child_name is the same across all instances (e.g., all have "node1")
+    # Using host_index (stored in shelf nodes) because child_name is the same across all instances (e.g., all have "node1")
     child_host_ids = set()
-    child_id_to_name = {}  # Map host_id to child_name for path resolution
+    child_id_to_name = {}  # Map host_index to child_name for path resolution
     
     for child_el in children:
         child_data = child_el.get("data", {})
         child_type = child_data.get("type")
         if child_type == "shelf":
-            host_id = child_data.get("host_id")
-            child_name = child_data.get("child_name")
+            # Read host_index from shelf node (this is the field name used in shelf nodes)
+            host_id = child_data.get("host_index") or child_data.get("host_id")
+            child_id = child_data.get("id")
+            child_label = child_data.get("label", child_id)
+            # Use same fallback logic as when adding children to template (line 1117)
+            child_name = child_data.get("child_name", child_label)
             if host_id is not None:
                 child_host_ids.add(host_id)
-                if child_name:
-                    child_id_to_name[host_id] = child_name
+                # Always add to mapping (with fallback, child_name should never be empty)
+                child_id_to_name[host_id] = child_name
     
     # Add connections that belong to this template
     # IMPORTANT: Since multiple instances use the same template, we only take connections
@@ -1185,16 +1342,17 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
         if source_host_id not in child_host_ids or target_host_id not in child_host_ids:
             continue  # This connection is from a different instance of the same template
         
-        # Add the connection to this template
-        conn = port_connections.connections.add()
-        
         # Get template-relative child names from host_ids
+        # IMPORTANT: Validate BEFORE calling .add() to avoid creating incomplete protobuf objects
         source_child_name = child_id_to_name.get(source_host_id)
         target_child_name = child_id_to_name.get(target_host_id)
         
         if not source_child_name or not target_child_name:
             print(f"    Warning: Could not find child_name for host_id {source_host_id} or {target_host_id}")
             continue
+        
+        # Add the connection to this template (only after validation passes)
+        conn = port_connections.connections.add()
         
         # Build path using template-relative child names
         source_path = get_path_to_host(source_child_name, node_id, element_map)
@@ -1291,8 +1449,7 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id)
 def build_graph_template_recursive(node_el, element_map, connections, cluster_desc):
     """Recursively build a GraphTemplate from a hierarchical node structure
     
-    NOTE: This is the old function that doesn't support template reuse.
-    Use build_graph_template_with_reuse for new code.
+    Note: For template reuse support, use build_graph_template_with_reuse instead.
     """
     if cluster_config_pb2 is None:
         return None
@@ -1330,7 +1487,11 @@ def build_graph_template_recursive(node_el, element_map, connections, cluster_de
             node_descriptor = child_data.get("shelf_node_type") or child_data.get("node_descriptor_type") or child_data.get("node_type", "UNKNOWN")
             if not node_descriptor or node_descriptor == "UNKNOWN":
                 raise ValueError(f"Shelf '{child_label}' (hostname: {child_data.get('hostname')}) is missing shelf_node_type")
-            child.node_ref.node_descriptor = node_descriptor.upper()
+            # Normalize: uppercase and strip _DEFAULT suffix only
+            node_descriptor = node_descriptor.upper()
+            if node_descriptor.endswith('_DEFAULT'):
+                node_descriptor = node_descriptor[:-8]  # len('_DEFAULT') = 8
+            child.node_ref.node_descriptor = node_descriptor
             
         elif not is_physical_container:
             # This is a hierarchical container (any compound node that's not rack/tray/port)
@@ -1517,17 +1678,68 @@ def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
     return host_id
 
 
+def _ensure_host_indices(cytoscape_data: Dict, sorted_hosts: List[Tuple[str, str]]) -> None:
+    """Ensure all shelf nodes have host_index set.
+    
+    For CSV imports, shelf nodes won't have host_index. This function dynamically
+    assigns host_index based on the sorted host list order.
+    
+    Args:
+        cytoscape_data: The cytoscape visualization data (modified in-place)
+        sorted_hosts: List of (hostname, node_type) tuples in the order they should be indexed
+    """
+    # Build a map: hostname -> index
+    hostname_to_index = {hostname: idx for idx, (hostname, _) in enumerate(sorted_hosts)}
+    
+    # Update shelf nodes with their host_index if missing
+    elements = cytoscape_data.get("elements", [])
+    for element in elements:
+        if "source" in element.get("data", {}):
+            continue  # Skip edges
+        
+        node_data = element.get("data", {})
+        if node_data.get("type") == "shelf":
+            hostname = node_data.get("hostname", "").strip()
+            
+            # Only set host_index if it's missing
+            if node_data.get("host_index") is None and node_data.get("host_id") is None:
+                if hostname in hostname_to_index:
+                    # Dynamically assign host_index based on sorted position
+                    node_data["host_index"] = hostname_to_index[hostname]
+
+
 def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
-    """Export CablingDescriptor with flat structure (original behavior for location mode)"""
+    """Export CablingDescriptor with flat structure (original behavior for location mode)
+    
+    This is used for CSV imports or when no logical topology information is available.
+    Requires hostnames to be set (from CSV or deployment descriptor).
+    """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
 
-    # Get connections for building the topology
+    # Get the common sorted host list (shared with DeploymentDescriptor)
+    # This also dynamically assigns host_index if needed (CSV imports)
+    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    
+    # For CSV imports, dynamically assign host_index to shelf nodes
+    # This allows the connection parser to find host_id when building connections
+    _ensure_host_indices(cytoscape_data, sorted_hosts)
+    
+    # Get connections for building the topology (after host indices are assigned)
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
-
-    # Get the common sorted host list (shared with DeploymentDescriptor)
-    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    
+    print(f"[FLAT_EXPORT] Extracted {len(connections)} connections from visualization")
+    if len(connections) == 0:
+        print(f"[FLAT_EXPORT] WARNING: No connections found! This will result in an empty topology.")
+    
+    # Flat export requires hostnames as identifiers
+    if not sorted_hosts or all(not hostname for hostname, _ in sorted_hosts):
+        raise ValueError(
+            "Cannot export flat cabling descriptor: No hostnames found. "
+            "Flat export requires hostnames. If you imported a cabling descriptor, "
+            "the hierarchical export will be used automatically instead."
+        )
 
     # Create ClusterDescriptor with full structure
     cluster_desc = cluster_config_pb2.ClusterDescriptor()
@@ -1541,7 +1753,11 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     for i, (hostname, node_type) in enumerate(sorted_hosts):
         child = graph_template.children.add()
         child.name = hostname  # Use actual hostname instead of generic "host_i"
-        child.node_ref.node_descriptor = node_type.upper()  # Ensure node_descriptor is capitalized
+        # Ensure node_descriptor is capitalized and strip _DEFAULT suffix only
+        node_type_normalized = node_type.upper()
+        if node_type_normalized.endswith('_DEFAULT'):
+            node_type_normalized = node_type_normalized[:-8]  # len('_DEFAULT') = 8
+        child.node_ref.node_descriptor = node_type_normalized
 
     # Add connections to graph template
     port_connections = graph_template.internal_connections["QSFP_DD"]  # Default port type
@@ -1589,12 +1805,25 @@ def export_deployment_descriptor_for_visualizer(
     
     IMPORTANT: This uses the SAME host list in the SAME order as the CablingDescriptor
     because the cabling generator uses host_id indices to map between them.
+    
+    PREREQUISITE: Hostnames must be set (from CSV import OR from applying deployment descriptor).
+    If you imported a cabling descriptor, you must apply a deployment descriptor first before
+    exporting a deployment descriptor.
     """
     if deployment_pb2 is None:
         raise ImportError("deployment_pb2 not available")
 
     # Get the common sorted host list (shared with CablingDescriptor)
     sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    
+    # Check if hostnames are set - deployment descriptor requires hostnames
+    if not sorted_hosts or all(not hostname for hostname, _ in sorted_hosts):
+        raise ValueError(
+            "Cannot export deployment descriptor: No hostnames found. "
+            "Hostnames are physical/deployment properties. "
+            "If you imported a cabling descriptor, please apply a deployment descriptor first "
+            "using the 'Upload Deployment Descriptor' option in the Location tab or when switching to physical mode."
+        )
     
     # Get detailed deployment information for each host
     deployment_parser = DeploymentDataParser(cytoscape_data)

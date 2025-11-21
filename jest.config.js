@@ -1,4 +1,4 @@
-export default {
+module.exports = {
     testEnvironment: 'jsdom',
     collectCoverageFrom: [
         'static/js/**/*.js',
@@ -13,7 +13,12 @@ export default {
             lines: 80
         }
     },
-    transform: {},
-    testMatch: ['**/tests/**/*.test.js']
+    transform: {
+        '^.+\\.js$': 'babel-jest'
+    },
+    testMatch: ['**/tests/**/*.test.js'],
+    moduleNameMapper: {
+        '^(\\.{1,2}/.*)\\.js$': '$1'
+    }
 };
 

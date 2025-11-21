@@ -4,6 +4,29 @@
  */
 import { API_ENDPOINTS, API_DEFAULTS, HTTP_STATUS, getStatusMessage, isSuccessStatus } from '../config/api.js';
 
+/**
+ * Safely stringify JSON, handling circular references
+ * @param {*} obj - Object to stringify
+ * @returns {string} JSON string
+ */
+function safeStringify(obj) {
+    const seen = new WeakSet();
+    return JSON.stringify(obj, (key, value) => {
+        // Handle circular references
+        if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) {
+                return '[Circular Reference]';
+            }
+            seen.add(value);
+        }
+        // Handle functions (skip them)
+        if (typeof value === 'function') {
+            return undefined;
+        }
+        return value;
+    });
+}
+
 export class ApiClient {
     constructor() {
         this.baseUrl = window.location.origin;
@@ -47,7 +70,18 @@ export class ApiClient {
         if (formData) {
             requestOptions.body = formData;
         } else if (body) {
+            // Use safe stringify to handle circular references
+            try {
+                requestOptions.body = safeStringify(body);
+            } catch (error) {
+                // Fallback: if safeStringify fails, try regular stringify with error handling
+                console.warn('Error in safeStringify, attempting fallback:', error);
+                try {
             requestOptions.body = JSON.stringify(body);
+                } catch (stringifyError) {
+                    throw new Error(`Failed to serialize request body: ${stringifyError.message}`);
+                }
+            }
         }
         
         try {

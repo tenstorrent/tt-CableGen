@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+
+## Server Restart Policy
+
+When the server needs to be restarted (e.g., after code changes), NEVER ask to kill and rerun the server. Instead, output a reminder that the server needs to be restarted and wait for the user to respond.
+
+## Documentation Generation Policy
+
+NEVER proactively generate documentation files (*.md, README, etc.). Only create documentation files if explicitly requested by the user.

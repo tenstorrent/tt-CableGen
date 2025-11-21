@@ -136,12 +136,18 @@ class NetworkCablingCytoscapeVisualizer:
         Also maps alternative names to standard names:
         - "blackhole" -> "BH_GALAXY"
         
+        Strips _DEFAULT suffix only (_GLOBAL and _AMERICA are kept as distinct types)
+        
         Returns uppercase format for JavaScript NODE_CONFIGS compatibility
         """
         if not node_type:
             return default.upper()
         
         normalized = node_type.strip().lower()
+        
+        # Strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
+        if normalized.endswith('_default'):
+            normalized = normalized[:-8]  # len('_default') = 8
         
         # Map alternative names to standard names (lowercase input -> uppercase output)
         type_mappings = {
@@ -186,7 +192,7 @@ class NetworkCablingCytoscapeVisualizer:
         self.shelf_unit_configs = {
             "WH_GALAXY": {
                 "tray_count": 4,
-                "port_count": 6,
+                "port_count": 6,  # WH_GALAXY has 6 QSFP-DD ports per tray
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
@@ -605,6 +611,9 @@ class NetworkCablingCytoscapeVisualizer:
             
         Returns:
             True if parsing succeeded, False otherwise
+            
+        Raises:
+            ValueError: If the descriptor is missing critical host_id mappings
         """
         if not PROTOBUF_AVAILABLE:
             print("Error: Protobuf support not available. Cannot parse cabling descriptor.")
@@ -620,20 +629,128 @@ class NetworkCablingCytoscapeVisualizer:
             self.cluster_descriptor = cluster_config_pb2.ClusterDescriptor()
             text_format.Parse(textproto_content, self.cluster_descriptor)
             
+            # CRITICAL VALIDATION: Verify that host_id mappings are defined
+            # A cabling descriptor MUST have host_id mappings for the indexed relationship
+            # between cabling and deployment descriptors to work correctly
+            if not self._validate_host_id_mappings():
+                raise ValueError(
+                    "Invalid cabling descriptor: Missing host_id mappings in child_mappings. "
+                    "A valid cabling descriptor MUST define host_id for each leaf node (host device). "
+                    "This is required for the indexed relationship between cabling and deployment descriptors."
+                )
             
             # Resolve the hierarchy
             self.graph_hierarchy = self._resolve_graph_hierarchy()
+            
+            # Validate that hierarchy resolution produced valid host_ids
+            if self.graph_hierarchy and not all('host_id' in node for node in self.graph_hierarchy):
+                raise ValueError(
+                    "Invalid cabling descriptor: Not all nodes have host_id after hierarchy resolution. "
+                    "This indicates malformed child_mappings in the descriptor."
+                )
             
             # Parse connections
             self.descriptor_connections = self._parse_descriptor_connections()
             
             return True
             
+        except ValueError as e:
+            # Re-raise ValueError (validation errors) so server can return proper error message
+            print(f"Validation error parsing cabling descriptor: {e}")
+            raise
         except Exception as e:
             print(f"Error parsing cabling descriptor: {e}")
             import traceback
             traceback.print_exc()
             return False
+    
+    def _validate_host_id_mappings(self):
+        """Validate that every node specified by root_instance has a host_id assigned
+        
+        Traverses the root_instance hierarchy and verifies that all leaf nodes
+        (nodes with node_ref in templates) have host_id assigned in child_mappings.
+        
+        Returns:
+            True if all nodes have host_id mappings, False otherwise
+            
+        Raises:
+            ValueError: If any nodes are missing host_id, with details about which nodes
+        """
+        if not self.cluster_descriptor:
+            return False
+        
+        root_instance = self.cluster_descriptor.root_instance
+        if not root_instance:
+            return False
+        
+        # Check if there are any child_mappings at all
+        if not root_instance.child_mappings:
+            return False
+        
+        # Recursively validate that ALL leaf nodes have host_id
+        missing_nodes = []
+        self._validate_host_ids_recursive(
+            root_instance, 
+            root_instance.template_name, 
+            [], 
+            missing_nodes
+        )
+        
+        if missing_nodes:
+            missing_paths = [' > '.join(path) for path in missing_nodes]
+            raise ValueError(
+                f"Invalid cabling descriptor: Missing host_id for {len(missing_nodes)} node(s). "
+                f"Every node specified by root_instance must have a host_id assigned.\n\n"
+                f"Missing nodes:\n" + "\n".join(f"  - {' > '.join(path)}" for path in missing_nodes[:20]) +
+                (f"\n  ... and {len(missing_nodes) - 20} more" if len(missing_nodes) > 20 else "")
+            )
+        
+        return True
+    
+    def _validate_host_ids_recursive(self, instance, template_name, current_path, missing_nodes):
+        """Recursively validate that all leaf nodes have host_id
+        
+        Args:
+            instance: GraphInstance to validate
+            template_name: Name of the template this instance uses
+            current_path: List of child names representing the path to this instance
+            missing_nodes: List to accumulate paths of nodes missing host_id
+        """
+        if template_name not in self.cluster_descriptor.graph_templates:
+            return
+        
+        template = self.cluster_descriptor.graph_templates[template_name]
+        
+        for child_name, child_mapping in instance.child_mappings.items():
+            # Find the corresponding child in the template
+            child_instance = self._find_child_in_template(template, child_name)
+            
+            if not child_instance:
+                # Child not found in template - skip (will be warned elsewhere)
+                continue
+            
+            child_path = current_path + [child_name]
+            
+            # Check if this should be a leaf node (has node_ref in template)
+            if child_instance.HasField('node_ref'):
+                # This is a leaf node - must have host_id
+                if not child_mapping.HasField('host_id'):
+                    missing_nodes.append(child_path)
+            
+            # Check if this is a nested graph (has graph_ref in template)
+            elif child_instance.HasField('graph_ref'):
+                # This is a nested graph - recurse into it
+                if child_mapping.HasField('sub_instance'):
+                    nested_template_name = child_instance.graph_ref.graph_template
+                    self._validate_host_ids_recursive(
+                        child_mapping.sub_instance,
+                        nested_template_name,
+                        child_path,
+                        missing_nodes
+                    )
+                else:
+                    # Nested graph instance is missing - this is an error
+                    missing_nodes.append(child_path + ['<missing sub_instance>'])
 
     def _log_warning(self, message, context=None):
         """Log a warning message with optional context
@@ -852,7 +969,7 @@ class NetworkCablingCytoscapeVisualizer:
         self._hierarchy_resolver = self.HierarchyResolver(self)
         hierarchy = self._hierarchy_resolver.resolve_hierarchy()
         
-        # Store the path-to-host_id map for backward compatibility with existing code
+        # Store the path-to-host_id map for reference
         self._path_to_host_id_map = self._hierarchy_resolver._path_to_host_id_map
         
         return hierarchy
@@ -1104,9 +1221,16 @@ class NetworkCablingCytoscapeVisualizer:
         # Get the mapped shelf unit type
         config_name = self._node_descriptor_to_shelf_type(node_descriptor_name)
         
-        # Check if we have a predefined mapping
-        if config_name and config_name in self.shelf_unit_configs:
-            return self.shelf_unit_configs[config_name]
+        # Normalize config_name to uppercase to match shelf_unit_configs keys
+        # shelf_unit_configs uses uppercase keys (e.g., "N300_LB"), but _node_descriptor_to_shelf_type returns lowercase
+        config_name_upper = config_name.upper() if config_name else None
+        
+        # Check if we have a predefined mapping (try both lowercase and uppercase)
+        if config_name:
+            if config_name in self.shelf_unit_configs:
+                return self.shelf_unit_configs[config_name]
+            elif config_name_upper in self.shelf_unit_configs:
+                return self.shelf_unit_configs[config_name_upper]
         
         # Try to extract info from NodeDescriptor if available in cluster_descriptor
         if self.cluster_descriptor and node_descriptor_name in self.cluster_descriptor.node_descriptors:
@@ -1437,8 +1561,11 @@ class NetworkCablingCytoscapeVisualizer:
             
             # Create dynamic configurations for unknown node types
             for node_type in node_types_seen:
-                if node_type and node_type not in self.shelf_unit_configs:
-                    self.analyze_and_create_dynamic_config(node_type, self.connections)
+                if node_type:
+                    # Normalize node type before checking (in case it wasn't normalized earlier)
+                    normalized_type = self.normalize_node_type(node_type)
+                    if normalized_type not in self.shelf_unit_configs:
+                        self.analyze_and_create_dynamic_config(normalized_type, self.connections)
             
             # Set default shelf unit type
             if not self.shelf_unit_type and node_types_seen:
@@ -1551,13 +1678,23 @@ class NetworkCablingCytoscapeVisualizer:
             self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
 
     def generate_node_id(self, node_type, *args):
-        """Generate consistent node IDs for cytoscape elements"""
+        """Generate consistent node IDs for cytoscape elements
+        
+        For cabling descriptor imports, uses clean numeric-based IDs:
+        - Shelf: "{host_id}" (e.g., "0", "1", "2")
+        - Tray: "{host_id}:t{tray_num}" (e.g., "0:t1", "0:t2")
+        - Port: "{host_id}:t{tray_num}:p{port_num}" (e.g., "0:t1:p3")
+        
+        This creates a clean hierarchy that's easy to parse and debug.
+        """
         if node_type == "port" and len(args) >= 3:
-            # Format: <label>-tray#-port#
-            return f"{args[0]}-tray{args[1]}-port{args[2]}"
+            # Format: <shelf_id>:t<tray_num>:p<port_num>
+            # Example: "0:t1:p3" means host_id=0, tray 1, port 3
+            return f"{args[0]}:t{args[1]}:p{args[2]}"
         elif node_type == "tray" and len(args) >= 2:
-            # Format: <label>-tray#
-            return f"{args[0]}-tray{args[1]}"
+            # Format: <shelf_id>:t<tray_num>
+            # Example: "0:t1" means host_id=0, tray 1
+            return f"{args[0]}:t{args[1]}"
         elif node_type == "shelf":
             # Format: <label> - for hierarchical format, use rack_U_shelf format (shelf already numeric)
             if len(args) >= 2:
@@ -1595,8 +1732,7 @@ class NetworkCablingCytoscapeVisualizer:
     def calculate_position_in_sequence(self, element_type, index, parent_x=0, parent_y=0, depth=None):
         """Calculate position for an element in a sequence based on its template
         
-        DEPRECATED: Position calculation is now handled client-side in JavaScript.
-        This function is kept for backward compatibility but its results are not used.
+        Note: Initial positions are calculated server-side, then refined client-side in JavaScript.
         See calculateHierarchicalLayout() and applyLocationBasedLayout() in visualizer.js.
         
         Args:
@@ -1680,8 +1816,7 @@ class NetworkCablingCytoscapeVisualizer:
     def get_child_positions_for_parent(self, parent_type, child_indices, parent_x, parent_y):
         """Get all child positions for a parent element using templates
         
-        DEPRECATED: Position calculation is now handled client-side in JavaScript.
-        This function is kept for backward compatibility but its results are not used.
+        Note: Initial positions are calculated server-side, then refined client-side in JavaScript.
         """
         template = self.element_templates[parent_type]
         child_type = template["child_type"]
@@ -2076,8 +2211,12 @@ class NetworkCablingCytoscapeVisualizer:
         # Determine parent graph node
         parent_id = None
         if len(path) > 1:
+            # Nested hierarchy: parent is the containing graph
             parent_path_tuple = tuple(path[:-1])
             parent_id = graph_node_map.get(parent_path_tuple)
+        elif len(path) == 1:
+            # Flat topology: shelves are direct children of root graph
+            parent_id = graph_node_map.get(())
         
         # Generate unique ID for this node instance
         node_instance_id = f"node_instance_{host_id}_{child_name}"
@@ -2119,13 +2258,14 @@ class NetworkCablingCytoscapeVisualizer:
                 logical_path.append(enumerated_name)
         
         # Create shelf directly under graph (shelf = host device)
-        shelf_id = f"shelf_{host_id}_{child_name}"
+        # Use host_id directly as the ID - it's globally unique and matches deployment descriptor indexing
+        # This creates IDs like "0", "1", "2" instead of "shelf_0", "shelf_1", "shelf_2"
+        shelf_id = str(host_id)
         shelf_label = f"{child_name} (host_{host_id})"
         
-        # Create unique hostname using host_id for deployment descriptor export
-        # This ensures uniqueness across multiple instances of same template
-        # Format: "host_0", "host_1", "host_2", etc.
-        unique_hostname = f"host_{host_id}"
+        # IMPORTANT: Cabling descriptor is LOGICAL ONLY - it should NOT set hostname
+        # Hostname is a physical/deployment property that comes from deployment descriptor
+        # For now, leave hostname empty - it will be populated when deployment descriptor is applied
         
         shelf_node = self.create_node_from_template(
             "shelf",
@@ -2134,11 +2274,11 @@ class NetworkCablingCytoscapeVisualizer:
             shelf_label,
             x,
             y,
-            host_index=host_id,  # Globally unique numeric index
+            host_index=host_id,  # Globally unique numeric index (LOGICAL identifier)
             shelf_node_type=node_type,  # Store as shelf_node_type (standard field)
             node_descriptor_type=node_type,  # Keep for compatibility
             child_name=child_name,
-            hostname=unique_hostname,  # Use unique hostname for deployment descriptor
+            hostname="",  # Empty - hostname is a PHYSICAL property from deployment descriptor
             # Logical topology fields for descriptor imports
             logical_path=logical_path,  # Array of enumerated instance names
             logical_child_name=child_name,  # Normalized child name (e.g., "node_0")
@@ -2148,6 +2288,7 @@ class NetworkCablingCytoscapeVisualizer:
         self.nodes.append(shelf_node)
         
         # Create tray/port structure for this shelf (host)
+        # Note: hostname is empty for cabling descriptor imports (deployment property)
         self._create_trays_and_ports(
             shelf_id,
             node_config,
@@ -2156,7 +2297,7 @@ class NetworkCablingCytoscapeVisualizer:
             None,  # rack_num
             None,  # shelf_u
             node_type,  # shelf_node_type
-            unique_hostname,  # hostname (unique identifier for deployment descriptor)
+            "",  # hostname (empty - physical/deployment property, not from cabling descriptor)
             host_id,  # host_id
             child_name  # node_name
         )
@@ -2171,6 +2312,9 @@ class NetworkCablingCytoscapeVisualizer:
         """
         # Track global host index for all shelves
         host_index_counter = 0
+        
+        # Build a mapping from hostname to host_index for port ID generation
+        self.hostname_to_host_index = {}
         
         # Organize racks by hall and aisle
         # rack_units keys are now tuples: (hall, aisle, rack_num)
@@ -2276,14 +2420,27 @@ class NetworkCablingCytoscapeVisualizer:
                         shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
                         location_info = self.node_locations.get(shelf_key, {})
                         hostname = location_info.get("hostname", "")
+                        
+                        # Generate synthetic hostname from location if not provided
+                        # This ensures deployment descriptor export works even without explicit hostnames
+                        if not hostname or not hostname.strip():
+                            # Format: {Hall}{Aisle}{Rack:02d}U{ShelfU:02d} (e.g., "120B02U02")
+                            # Ensure rack_num and shelf_u are integers for formatting
+                            hostname = f"{hall}{aisle}{int(rack_num):02d}U{int(shelf_u):02d}"
+                            # Update location_info with generated hostname for consistency
+                            location_info["hostname"] = hostname
+                            # Also update node_locations dict so connections can find the hostname
+                            if shelf_key in self.node_locations:
+                                self.node_locations[shelf_key]["hostname"] = hostname
 
-                        # Create shelf node with hostname as ID (hostname is primary identifier)
-                        # Use hostname for shelf_id, or composite format for uniqueness
+                        # Create shelf node with host_index as ID (for consistent numeric IDs)
+                        # Use host_index for shelf_id to match cabling descriptor format
+                        shelf_id = str(host_index_counter)  # Use numeric index as ID (e.g., "0", "1", "2")
+                        
+                        # Build mapping from hostname to host_index for port ID generation
                         if hostname:
-                            shelf_id = self.generate_node_id("shelf", hostname)
-                        else:
-                            # Use composite ID format: hall_aisle_rack_U_shelf to ensure uniqueness
-                            shelf_id = f"{hall}_{aisle}_{rack_num}_U{shelf_u}"
+                            self.hostname_to_host_index[hostname] = host_index_counter
+                        
                         shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
                         shelf_node = self.create_node_from_template(
                             "shelf",
@@ -2297,8 +2454,8 @@ class NetworkCablingCytoscapeVisualizer:
                             shelf_node_type=shelf_node_type,
                             hostname=hostname,
                             host_index=host_index_counter,  # Assign sequential global index
-                            hall=location_info.get("hall", ""),
-                            aisle=location_info.get("aisle", ""),
+                            hall=location_info.get("hall", hall),  # Use actual hall if not in location_info
+                            aisle=location_info.get("aisle", aisle),  # Use actual aisle if not in location_info
                             # Logical topology fields for CSV imports (no logical topology)
                             logical_path=[],  # Empty - no logical topology from CSV
                             logical_child_name=None,  # No normalized child name
@@ -2306,10 +2463,37 @@ class NetworkCablingCytoscapeVisualizer:
                         )
                         self.nodes.append(shelf_node)
 
-                        # Create trays and ports
+                        # Update connections to include the generated hostname
+                        # This ensures _generate_port_ids can find the hostname when creating edges
+                        self._update_connections_with_hostname(hall, aisle, rack_num, shelf_u, hostname)
+                        
+                        # Create trays and ports (use numeric shelf_id)
                         self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter)
                         host_index_counter += 1
 
+    def _update_connections_with_hostname(self, hall, aisle, rack_num, shelf_u, hostname):
+        """Update connections to include hostname for matching location.
+        
+        This is crucial for edge creation - _generate_port_ids needs the hostname
+        to generate correct port IDs that match the created port nodes.
+        """
+        for connection in self.connections:
+            # Update source if it matches this location
+            src = connection.get("source", {})
+            if (src.get("hall") == hall and 
+                src.get("aisle") == aisle and 
+                str(src.get("rack_num")) == str(rack_num) and 
+                str(src.get("shelf_u")) == str(shelf_u)):
+                connection["source"]["hostname"] = hostname
+            
+            # Update destination if it matches this location
+            dst = connection.get("destination", {})
+            if (dst.get("hall") == hall and 
+                dst.get("aisle") == aisle and 
+                str(dst.get("rack_num")) == str(rack_num) and 
+                str(dst.get("shelf_u")) == str(shelf_u)):
+                connection["destination"]["hostname"] = hostname
+    
     def _create_shelf_hierarchy(self):
         """Create shelf-only hierarchy nodes (shelves -> trays -> ports)"""
         # Get sorted hostnames for consistent ordering
@@ -2512,9 +2696,10 @@ class NetworkCablingCytoscapeVisualizer:
             src_node_name = src_node_info['child_name'] if src_node_info else None
             dst_node_name = dst_node_info['child_name'] if dst_node_info else None
             
-            # Generate port node IDs
-            src_shelf_id = f"shelf_{src_host_id}_{src_node_name}"
-            dst_shelf_id = f"shelf_{dst_host_id}_{dst_node_name}"
+            # Generate port node IDs using the clean numeric format
+            # Shelf IDs are just the host_id (e.g., "0", "1", "2")
+            src_shelf_id = str(src_host_id)
+            dst_shelf_id = str(dst_host_id)
             src_port_id = self.generate_node_id("port", src_shelf_id, src_tray, src_port)
             dst_port_id = self.generate_node_id("port", dst_shelf_id, dst_tray, dst_port)
             
@@ -2546,27 +2731,30 @@ class NetworkCablingCytoscapeVisualizer:
             self.edges.append(edge_data)
 
     def _generate_port_ids(self, connection):
-        """Generate source and destination port IDs based on CSV format"""
-        # Use hostname if available, otherwise use rack/shelf format
-        # This must match the logic in _create_rack_hierarchy for shelf_id generation
+        """Generate source and destination port IDs based on CSV format
+        
+        Uses hostname -> host_index mapping to generate numeric IDs that match
+        the cabling descriptor format (e.g., "0:t1:p1").
+        """
+        # Get hostnames from connection
         src_hostname = connection["source"].get("hostname", "")
         dst_hostname = connection["destination"].get("hostname", "")
         
-        # Generate shelf IDs using same logic as node creation
-        if src_hostname:
-            src_shelf_id = self.generate_node_id("shelf", src_hostname)
+        # Map hostnames to host_index (numeric IDs)
+        if src_hostname and src_hostname in self.hostname_to_host_index:
+            src_shelf_id = str(self.hostname_to_host_index[src_hostname])
         else:
-            # Use composite format when hostname is not available (hall_aisle_rack_U_shelf)
+            # Fallback: use composite format if hostname not in mapping
             src_hall = connection["source"].get("hall", "")
             src_aisle = connection["source"].get("aisle", "")
             src_rack_num = connection["source"].get("rack_num", "")
             src_shelf_u = connection["source"].get("shelf_u", "")
             src_shelf_id = f"{src_hall}_{src_aisle}_{src_rack_num}_U{src_shelf_u}"
         
-        if dst_hostname:
-            dst_shelf_id = self.generate_node_id("shelf", dst_hostname)
+        if dst_hostname and dst_hostname in self.hostname_to_host_index:
+            dst_shelf_id = str(self.hostname_to_host_index[dst_hostname])
         else:
-            # Use composite format when hostname is not available (hall_aisle_rack_U_shelf)
+            # Fallback: use composite format if hostname not in mapping
             dst_hall = connection["destination"].get("hall", "")
             dst_aisle = connection["destination"].get("aisle", "")
             dst_rack_num = connection["destination"].get("rack_num", "")
@@ -2648,6 +2836,7 @@ class NetworkCablingCytoscapeVisualizer:
             root_template_name = self.cluster_descriptor.root_instance.template_name
             metadata["initialRootId"] = "graph_root"
             metadata["initialRootTemplate"] = root_template_name
+            
             # Extract template names and their full structure from the cluster descriptor
             template_data = {}
             for template_name, template_proto in self.cluster_descriptor.graph_templates.items():

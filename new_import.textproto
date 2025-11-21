@@ -1,0 +1,697 @@
+graph_templates {
+  key: "n300_lb_cluster"
+  value {
+    children {
+      name: "n300_lb_superpod_0"
+      graph_ref {
+        graph_template: "n300_lb_superpod"
+      }
+    }
+    children {
+      name: "n300_lb_superpod_1"
+      graph_ref {
+        graph_template: "n300_lb_superpod"
+      }
+    }
+    children {
+      name: "n300_lb_superpod_2"
+      graph_ref {
+        graph_template: "n300_lb_superpod"
+      }
+    }
+    children {
+      name: "n300_lb_superpod_3"
+      graph_ref {
+        graph_template: "n300_lb_superpod"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "n300_lb_superpod_0"
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+          port_b {
+            path: "n300_lb_superpod_2"
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_superpod_0"
+            path: "n300_lb_pod_2"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_superpod_1"
+            path: "n300_lb_pod_1"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_superpod_0"
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_superpod_3"
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_superpod_2"
+            path: "n300_lb_pod_2"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_superpod_3"
+            path: "n300_lb_pod_1"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_superpod_2"
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_superpod_1"
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_superpod_1"
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_superpod_3"
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+        }
+      }
+    }
+  }
+}
+graph_templates {
+  key: "n300_lb_pod"
+  value {
+    children {
+      name: "node_0"
+      node_ref {
+        node_descriptor: "N300_LB"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 1
+            port_id: 1
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 4
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "["
+            path: "C"
+            path: "i"
+            path: "r"
+            path: "c"
+            path: "u"
+            path: "l"
+            path: "a"
+            path: "r"
+            path: " "
+            path: "R"
+            path: "e"
+            path: "f"
+            path: "e"
+            path: "r"
+            path: "e"
+            path: "n"
+            path: "c"
+            path: "e"
+            path: "]"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "["
+            path: "C"
+            path: "i"
+            path: "r"
+            path: "c"
+            path: "u"
+            path: "l"
+            path: "a"
+            path: "r"
+            path: " "
+            path: "R"
+            path: "e"
+            path: "f"
+            path: "e"
+            path: "r"
+            path: "e"
+            path: "n"
+            path: "c"
+            path: "e"
+            path: "]"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 3
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 2
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "["
+            path: "C"
+            path: "i"
+            path: "r"
+            path: "c"
+            path: "u"
+            path: "l"
+            path: "a"
+            path: "r"
+            path: " "
+            path: "R"
+            path: "e"
+            path: "f"
+            path: "e"
+            path: "r"
+            path: "e"
+            path: "n"
+            path: "c"
+            path: "e"
+            path: "]"
+            tray_id: 3
+            port_id: 2
+          }
+          port_b {
+            path: "["
+            path: "C"
+            path: "i"
+            path: "r"
+            path: "c"
+            path: "u"
+            path: "l"
+            path: "a"
+            path: "r"
+            path: " "
+            path: "R"
+            path: "e"
+            path: "f"
+            path: "e"
+            path: "r"
+            path: "e"
+            path: "n"
+            path: "c"
+            path: "e"
+            path: "]"
+            tray_id: 2
+            port_id: 2
+          }
+        }
+      }
+    }
+  }
+}
+graph_templates {
+  key: "n300_lb_superpod"
+  value {
+    children {
+      name: "n300_lb_pod_0"
+      graph_ref {
+        graph_template: "n300_lb_pod"
+      }
+    }
+    children {
+      name: "n300_lb_pod_1"
+      graph_ref {
+        graph_template: "n300_lb_pod"
+      }
+    }
+    children {
+      name: "n300_lb_pod_2"
+      graph_ref {
+        graph_template: "n300_lb_pod"
+      }
+    }
+    children {
+      name: "n300_lb_pod_3"
+      graph_ref {
+        graph_template: "n300_lb_pod"
+      }
+    }
+    children {
+      name: "node_0"
+      node_ref {
+        node_descriptor: "N300_LB"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+          port_b {
+            path: "n300_lb_pod_1"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_pod_0"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_pod_2"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_pod_1"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+          port_b {
+            path: "n300_lb_pod_2"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_pod_1"
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "n300_lb_pod_2"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+          port_b {
+            path: "n300_lb_pod_3"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+      }
+    }
+  }
+}
+root_instance {
+  template_name: "n300_lb_cluster"
+  child_mappings {
+    key: "n300_lb_superpod_0"
+    value {
+      sub_instance {
+              template_name: "n300_lb_superpod"
+              child_mappings {
+                key: "n300_lb_pod_0"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 0
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_1"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 1
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_2"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 2
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_3"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 3
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "node_0"
+                value {
+                  host_id: 4
+                }
+              }
+            }
+          }
+  child_mappings {
+    key: "n300_lb_superpod_1"
+          value {
+            sub_instance {
+              template_name: "n300_lb_superpod"
+              child_mappings {
+                key: "n300_lb_pod_0"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 5
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_1"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 6
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_2"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 7
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_3"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 8
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "node_0"
+                value {
+                  host_id: 9
+                }
+              }
+            }
+          }
+  child_mappings {
+    key: "n300_lb_superpod_2"
+          value {
+            sub_instance {
+              template_name: "n300_lb_superpod"
+              child_mappings {
+                key: "n300_lb_pod_0"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 10
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_1"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 11
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_2"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 12
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_3"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 13
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "node_0"
+                value {
+                  host_id: 14
+                }
+              }
+            }
+          }
+  child_mappings {
+    key: "n300_lb_superpod_3"
+          value {
+            sub_instance {
+              template_name: "n300_lb_superpod"
+              child_mappings {
+                key: "n300_lb_pod_0"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 15
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_1"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 16
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_2"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 17
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "n300_lb_pod_3"
+                value {
+                  sub_instance {
+                    template_name: "n300_lb_pod"
+                    child_mappings {
+                      key: "node_0"
+                      value {
+                        host_id: 18
+                      }
+                    }
+                  }
+                }
+              }
+              child_mappings {
+                key: "node_0"
+                value {
+                  host_id: 19
+                }
+              }
+            }
+          }
+}

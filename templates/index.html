@@ -682,7 +682,7 @@
         style="display: none; position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 10000; min-width: 400px; max-width: 80%; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; padding: 15px 20px; font-size: 14px; font-weight: 500; animation: slideDown 0.3s ease-out;">
         <div style="display: flex; align-items: center; justify-content: space-between;">
             <div id="notificationContent" style="flex: 1; margin-right: 15px;"></div>
-            <button onclick="hideNotificationBanner()"
+            <button id="notificationCloseBtn"
                 style="background: none; border: none; font-size: 20px; cursor: pointer; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s;"
                 onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">×</button>
         </div>
@@ -718,11 +718,11 @@
 
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
-                    <button class="tab-button" onclick="switchTab('location')" id="locationTab">
+                    <button class="tab-button" id="locationTab">
                         📍 Location/Deployment
                         <span class="mode-badge csv-mode">CSV</span>
                     </button>
-                    <button class="tab-button" onclick="switchTab('topology')" id="topologyTab">
+                    <button class="tab-button" id="topologyTab">
                         🔗 Topology
                         <span class="mode-badge textproto-mode">Textproto</span>
                     </button>
@@ -789,11 +789,11 @@
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnLocation" onclick="uploadFile()" style="flex: 1;">
+                            <button class="upload-btn" id="uploadBtnLocation" style="flex: 1;">
                                 📊 Load CSV
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnLocation"
-                                onclick="createEmptyVisualizationLocation()" style="flex: 1; background: #28a745;">
+                                style="flex: 1; background: #28a745;">
                                 📋 Empty Canvas
                             </button>
                         </div>
@@ -824,12 +824,12 @@
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnTopology" onclick="uploadFileTopology()"
+                            <button class="upload-btn" id="uploadBtnTopology"
                                 style="flex: 1;">
                                 📊 Load Textproto
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnTopology"
-                                onclick="createEmptyVisualizationTopology()" style="flex: 1; background: #28a745;">
+                                style="flex: 1; background: #28a745;">
                                 📋 Empty Canvas
                             </button>
                         </div>
@@ -859,7 +859,7 @@
                             </div>
                         </div>
                         <div>
-                            <button id="toggleModeButton" onclick="toggleVisualizationMode()"
+                            <button id="toggleModeButton"
                                 style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
                                 Switch Mode
                             </button>
@@ -919,7 +919,7 @@
                 </div>
 
                 <div style="margin-bottom: 20px;">
-                    <button id="resetLayoutBtn" onclick="resetLayout()"
+                    <button id="resetLayoutBtn"
                         style="width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                         🔄 Reset Layout
                     </button>
@@ -931,11 +931,11 @@
                 <div style="margin-bottom: 20px;">
                     <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Compound Node Controls</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <button id="expandOneLevelBtn" onclick="expandOneLevel()"
+                        <button id="expandOneLevelBtn"
                             style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
                             ➕ Expand One Level
                         </button>
-                        <button id="collapseOneLevelBtn" onclick="collapseOneLevel()"
+                        <button id="collapseOneLevelBtn"
                             style="padding: 10px; background: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
                             ➖ Collapse One Level
                         </button>
@@ -945,7 +945,7 @@
                     </div>
                 </div>
 
-                <div class="collapsible-header" onclick="toggleCollapsible('connectionRangeFilter')">
+                <div class="collapsible-header" data-section="connectionRangeFilter">
                     <h3 style="margin: 0; color: #333;">Connection Range Filter</h3>
                     <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>
                 </div>
@@ -996,14 +996,14 @@
                         </div>
 
                         <div style="margin-bottom: 15px;">
-                            <button id="applyRangeBtn" onclick="applyConnectionRange()"
+                            <button id="applyRangeBtn"
                                 style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 Apply Range Filter
                             </button>
                         </div>
 
                         <div style="margin-bottom: 15px;">
-                            <button id="clearRangeBtn" onclick="clearConnectionRange()"
+                            <button id="clearRangeBtn"
                                 style="width: 100%; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 Show All Connections
                             </button>
@@ -1016,13 +1016,13 @@
                     </div>
                 </div>
 
-                <div class="collapsible-header" onclick="toggleCollapsible('cablingEditor')">
+                <div class="collapsible-header" data-section="cablingEditor">
                     <h3 style="margin: 0; color: #333;">Cabling Editor</h3>
                     <span class="collapsible-arrow collapsed" id="cablingEditor-arrow">▶</span>
                 </div>
                 <div class="collapsible-content collapsed" id="cablingEditor">
                     <div style="margin-bottom: 15px;">
-                        <button id="toggleEdgeHandlesBtn" onclick="toggleEdgeHandles()"
+                        <button id="toggleEdgeHandlesBtn"
                             style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                             🔗 Enable Cabling Editing
                         </button>
@@ -1033,7 +1033,7 @@
                     </div>
 
                     <div id="deleteElementSection" style="margin-bottom: 15px; display: none;">
-                        <button id="deleteElementBtn" onclick="deleteSelectedElement()" disabled
+                        <button id="deleteElementBtn" disabled
                             style="width: 100%; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; opacity: 0.5;">
                             🗑️ Delete Selected Element(s)
                         </button>
@@ -1128,7 +1128,7 @@
                             No physical location needed.
                         </div>
 
-                        <button id="addNodeBtn" onclick="addNewNode()" disabled
+                        <button id="addNodeBtn" disabled
                             style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
                             ➕ Add Node
                         </button>
@@ -1177,7 +1177,7 @@
                             </div>
                         </div>
 
-                        <button id="addGraphBtn" onclick="addNewGraph()" disabled
+                        <button id="addGraphBtn" disabled
                             style="width: 100%; padding: 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: not-allowed; font-size: 14px; font-weight: bold; opacity: 0.6;">
                             ➕ Add Graph Instance
                         </button>
@@ -1200,7 +1200,7 @@
                                 </div>
                             </div>
 
-                            <button id="createTemplateBtn" onclick="createNewTemplate()"
+                            <button id="createTemplateBtn"
                                 style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 ✨ Create Empty Template
                             </button>
@@ -1210,7 +1210,7 @@
 
 
 
-                <div class="collapsible-header" onclick="toggleCollapsible('exportOptions')">
+                <div class="collapsible-header" data-section="exportOptions">
                     <h3 style="margin: 0; color: #333;">Export Options</h3>
                     <span class="collapsible-arrow collapsed" id="exportOptions-arrow">▶</span>
                 </div>
@@ -1230,7 +1230,7 @@
 
                         <div style="margin-bottom: 15px;" id="exportCablingDescriptorSection"
                             class="hierarchy-mode-only">
-                            <button id="exportCablingBtn" onclick="exportCablingDescriptor()"
+                            <button id="exportCablingBtn"
                                 style="width: 100%; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 📄 Export CablingDescriptor
                             </button>
@@ -1241,7 +1241,7 @@
 
                         <div style="margin-bottom: 15px;" id="exportDeploymentDescriptorSection"
                             class="location-mode-only">
-                            <button id="exportDeploymentBtn" onclick="exportDeploymentDescriptor()"
+                            <button id="exportDeploymentBtn"
                                 style="width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 🏗️ Export DeploymentDescriptor
                             </button>
@@ -1251,7 +1251,7 @@
                         </div>
 
                         <div style="margin-bottom: 15px;" id="generateCablingGuideSection" class="location-mode-only">
-                            <button id="generateCablingGuideBtn" onclick="generateCablingGuide()"
+                            <button id="generateCablingGuideBtn"
                                 style="width: 100%; padding: 12px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 📊 Generate Cabling Guide
                             </button>
@@ -1261,7 +1261,7 @@
                         </div>
 
                         <div style="margin-bottom: 15px;" id="generateFSDSection" class="location-mode-only">
-                            <button id="generateFSDBtn" onclick="generateFSD()"
+                            <button id="generateFSDBtn"
                                 style="width: 100%; padding: 12px; background: #fd7e14; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 🏭 Generate FSD
                             </button>
@@ -1323,7 +1323,7 @@
                     <!-- Placement options will be dynamically inserted here -->
                 </div>
                 <div class="modal-footer">
-                    <button class="modal-btn modal-btn-secondary" onclick="cancelConnectionPlacement()">Cancel</button>
+                    <button class="modal-btn modal-btn-secondary" id="cancelConnectionPlacementBtn">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1339,11 +1339,11 @@
 
                 <!-- Tab selection for manual vs upload -->
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd;">
-                    <button class="layout-tab-btn active" id="manualLayoutTab" onclick="switchLayoutTab('manual')"
+                    <button class="layout-tab-btn active" id="manualLayoutTab"
                         style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid #007bff; cursor: pointer; font-weight: bold;">
                         📝 Manual Entry
                     </button>
-                    <button class="layout-tab-btn" id="uploadLayoutTab" onclick="switchLayoutTab('upload')"
+                    <button class="layout-tab-btn" id="uploadLayoutTab"
                         style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer;">
                         📁 Upload Deployment Descriptor
                     </button>
@@ -1403,11 +1403,9 @@
                 </div>
 
                 <div class="modal-footer">
-                    <button class="modal-btn modal-btn-secondary" onclick="cancelPhysicalLayoutModal()">Cancel</button>
-                    <button class="modal-btn modal-btn-primary" id="applyLayoutBtn"
-                        onclick="applyPhysicalLayout()">Apply Layout</button>
-                    <button class="modal-btn modal-btn-primary" id="applyUploadBtn"
-                        onclick="applyDeploymentDescriptorFromModal()" style="display: none;">Upload & Apply</button>
+                    <button class="modal-btn modal-btn-secondary" id="cancelPhysicalLayoutModalBtn">Cancel</button>
+                    <button class="modal-btn modal-btn-primary" id="applyLayoutBtn">Apply Layout</button>
+                    <button class="modal-btn modal-btn-primary" id="applyUploadBtn" style="display: none;">Upload & Apply</button>
                 </div>
             </div>
         </div>
@@ -1421,6 +1419,20 @@
     </script>
     <script type="module" src="{{ url_for('static', filename='js/visualizer.js') }}"></script>
     <script>
+        // TODO: REFACTORING - Module Scoping Issues
+        // ==========================================
+        // This inline script section contains functions that need access to module-scoped
+        // functions from visualizer.js. Currently, we work around this by:
+        //   1. Exposing functions via window object in visualizer.js
+        //   2. Using typeof checks before calling functions
+        //   3. Using window.functionName() instead of direct functionName()
+        //
+        // LONG-TERM SOLUTION (Phase 6.4 in refactoring plan):
+        //   - Move all inline onclick handlers to event listeners
+        //   - Move inline functions to visualizer.js or separate modules
+        //   - Use EventManager to centralize event handling
+        //   - This will eliminate the need for window.* workarounds
+        //
         function toggleCollapsible(sectionId) {
             const content = document.getElementById(sectionId);
             const arrow = document.getElementById(sectionId + '-arrow');
@@ -1498,7 +1510,7 @@
             const uploadBtn = document.getElementById('uploadBtnLocation');
 
             // Check if there's an existing visualization
-            if (!currentData || !currentData.elements) {
+            if (!window.currentData || !window.currentData.elements) {
                 showErrorLocation('Please load a cabling descriptor in the Topology tab first, then apply the deployment descriptor here.');
                 return;
             }
@@ -1512,7 +1524,7 @@
 
             const formData = new FormData();
             formData.append('deployment_file', file);
-            formData.append('cytoscape_data', JSON.stringify(currentData));
+            formData.append('cytoscape_data', JSON.stringify(window.currentData));
 
             try {
                 const response = await fetch('/apply_deployment_descriptor', {
@@ -1524,10 +1536,12 @@
 
                 if (response.ok && result.success) {
                     // Update the current visualization with new location data
-                    currentData = result.data;
+                    window.currentData = result.data;
 
                     // Re-initialize the visualization
-                    initVisualization(result.data);
+                    if (typeof window.initVisualization === 'function') {
+                        window.initVisualization(result.data);
+                    }
 
                     // Use the detailed message from backend (includes validation warnings)
                     let message = result.message || `Successfully applied deployment descriptor to ${result.updated_count} hosts`;
@@ -1596,7 +1610,7 @@
                 return;
             }
 
-            if (!currentData || !currentData.elements) {
+            if (!window.currentData || !window.currentData.elements) {
                 alert('No visualization loaded. This should not happen.');
                 return;
             }
@@ -1609,7 +1623,7 @@
 
             const formData = new FormData();
             formData.append('deployment_file', file);
-            formData.append('cytoscape_data', JSON.stringify(currentData));
+            formData.append('cytoscape_data', JSON.stringify(window.currentData));
 
             try {
                 const response = await fetch('/apply_deployment_descriptor', {
@@ -1621,11 +1635,11 @@
 
                 if (response.ok && result.success) {
                     // Update the current visualization with new location data
-                    currentData = result.data;
+                    window.currentData = result.data;
 
                     // DEBUG: Check if host_index is preserved in the returned data
                     console.log('=== DEPLOYMENT DESCRIPTOR APPLIED ===');
-                    const shelfElements = currentData.elements.filter(el => el.data && el.data.type === 'shelf');
+                    const shelfElements = window.currentData.elements.filter(el => el.data && el.data.type === 'shelf');
                     console.log(`Total shelf elements in result: ${shelfElements.length}`);
 
                     // Sample first 3 shelves
@@ -1655,7 +1669,9 @@
 
                     // IMPORTANT: Re-initialize the cytoscape graph with updated data first
                     // This ensures shelf nodes have the physical location data before switching modes
-                    initVisualization(result.data);
+                    if (typeof window.initVisualization === 'function') {
+                        window.initVisualization(result.data);
+                    }
 
                     // Close modal
                     const modal = document.getElementById('physicalLayoutModal');
@@ -1667,22 +1683,32 @@
                     sessionStorage.setItem('physicalLayoutAssigned', 'true');
 
                     // Now switch to location mode (this will create rack hierarchy from shelf location data)
-                    setVisualizationMode('location');
+                    if (typeof window.setVisualizationMode === 'function') {
+                        window.setVisualizationMode('location');
+                    }
 
                     // Update the connection legend
-                    if (initialVisualizationData) {
-                        updateConnectionLegend(initialVisualizationData);
+                    if (window.initialVisualizationData && typeof window.updateConnectionLegend === 'function') {
+                        window.updateConnectionLegend(window.initialVisualizationData);
                     }
 
                     // Proceed with the location mode switch - this creates the rack hierarchy
-                    location_switchMode();
+                    if (typeof window.location_switchMode === 'function') {
+                        window.location_switchMode();
+                    }
 
                     // Update mode indicator
-                    updateModeIndicator();
+                    if (typeof window.updateModeIndicator === 'function') {
+                        window.updateModeIndicator();
+                    }
 
                     // Show success message
                     let message = result.message || `Successfully applied deployment descriptor to ${result.updated_count} hosts`;
-                    showExportStatus(message, 'success');
+                    if (typeof window.showExportStatus === 'function') {
+                        window.showExportStatus(message, 'success');
+                    } else {
+                        alert(message);
+                    }
                 } else {
                     alert(`Error: ${result.error || 'Unknown error occurred'}`);
                 }
@@ -1726,8 +1752,8 @@
             const uploadBtn = document.getElementById(uploadBtnId);
 
             // Reset any global state
-            if (typeof currentData !== 'undefined') {
-                currentData = null;
+            if (typeof window.currentData !== 'undefined') {
+                window.currentData = null;
             }
             if (typeof selectedConnection !== 'undefined') {
                 selectedConnection = null;
@@ -1755,8 +1781,8 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    if (typeof currentData !== 'undefined') {
-                        currentData = result.data;
+                    if (typeof window.currentData !== 'undefined') {
+                        window.currentData = result.data;
                     }
 
                     // Check for unknown node types and show warning

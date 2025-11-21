@@ -28,7 +28,7 @@
  *   - Improved documentation
  * 
  * Phase 8: ⏳ Pending (Backward Compatibility Cleanup)
- *   - Remove legacy global variables (cy, currentData, etc.)
+ *   - Remove legacy global variables (cy, state.data.currentData, etc.)
  *   - Remove syncLegacyGlobals() function
  *   - Replace inline onclick handlers with event listeners
  *   - Remove functionsToExpose workaround
@@ -104,7 +104,7 @@ const CONNECTION_COLORS = {
  * Logs warnings for any missing extensions
  */
 function verifyCytoscapeExtensions() {
-    if (typeof cy === 'undefined' || !cy) {
+    if (typeof cy === 'undefined' || !cy || !state.cy) {
         console.warn('⚠ Cannot verify extensions: cytoscape instance not initialized');
         return;
     }
@@ -113,7 +113,7 @@ function verifyCytoscapeExtensions() {
     const availableExtensions = [];
 
     // Check for expand-collapse extension
-    if (typeof cy.expandCollapse === 'function') {
+    if (typeof state.cy.expandCollapse === 'function') {
         availableExtensions.push('cytoscape-expand-collapse');
     } else {
         missingExtensions.push('cytoscape-expand-collapse');
@@ -123,7 +123,7 @@ function verifyCytoscapeExtensions() {
     // fcose registers itself as a layout algorithm, so we check by trying to create a layout
     try {
         // Try to create a test layout with fcose - if it fails, the extension isn't loaded
-        const testLayout = cy.layout({ name: 'fcose', eles: cy.collection() });
+        const testLayout = state.cy.layout({ name: 'fcose', eles: state.cy.collection() });
         if (testLayout && typeof testLayout.run === 'function') {
             availableExtensions.push('cytoscape-fcose');
             // Note: layout-base and cose-base are dependencies loaded before fcose
@@ -172,12 +172,12 @@ function common_arrangeTraysAndPorts(shelfNode) {
  * Used for initial CSV imports in location mode
  */
 function location_calculateLayout() {
-    if (!cy) return;
+    if (!state.cy) return;
 
     console.log('Applying location-based stacked hall/aisle layout');
 
     // Get all racks and group by hall/aisle
-    const racks = cy.nodes('[type="rack"]');
+    const racks = state.cy.nodes('[type="rack"]');
     if (racks.length === 0) {
         console.log('No racks found, using simple grid layout');
         return;
@@ -230,26 +230,26 @@ function location_calculateLayout() {
     const baseX = 200;
     const baseY = 300;
 
-    cy.startBatch();
+    state.cy.startBatch();
 
     // Remove existing hall/aisle nodes if we're not showing them
     if (!shouldShowHalls) {
-        cy.nodes('[type="hall"]').remove();
+        state.cy.nodes('[type="hall"]').remove();
     }
     if (!shouldShowAisles) {
-        cy.nodes('[type="aisle"]').remove();
+        state.cy.nodes('[type="aisle"]').remove();
     }
 
     // Keep track of existing hall and aisle nodes (don't recreate if already exist)
     const existingHalls = {};
     const existingAisles = {};
     if (shouldShowHalls) {
-        cy.nodes('[type="hall"]').forEach(hallNode => {
+        state.cy.nodes('[type="hall"]').forEach(hallNode => {
             existingHalls[hallNode.data('hall')] = hallNode;
         });
     }
     if (shouldShowAisles) {
-        cy.nodes('[type="aisle"]').forEach(aisleNode => {
+        state.cy.nodes('[type="aisle"]').forEach(aisleNode => {
             const key = `${aisleNode.data('hall')}_${aisleNode.data('aisle')}`;
             existingAisles[key] = aisleNode;
         });
@@ -269,7 +269,7 @@ function location_calculateLayout() {
 
             if (!hallNode || hallNode.length === 0) {
                 // Create new hall node
-                cy.add({
+                state.cy.add({
                     data: {
                         id: hallId,
                         label: `Hall ${hall}`,
@@ -278,7 +278,7 @@ function location_calculateLayout() {
                     },
                     position: { x: baseX, y: hallStartY }
                 });
-                hallNode = cy.getElementById(hallId);
+                hallNode = state.cy.getElementById(hallId);
             } else {
                 // Update existing hall node position
                 hallNode.position({ x: baseX, y: hallStartY });
@@ -311,11 +311,11 @@ function location_calculateLayout() {
                     if (hallId) {
                         aisleData.parent = hallId;
                     }
-                    cy.add({
+                    state.cy.add({
                         data: aisleData,
                         position: { x: aisleStartX, y: aisleStartY }
                     });
-                    aisleNode = cy.getElementById(aisleId);
+                    aisleNode = state.cy.getElementById(aisleId);
                 } else {
                     // Update existing aisle node position and parent
                     aisleNode.position({ x: aisleStartX, y: aisleStartY });
@@ -406,17 +406,17 @@ function location_calculateLayout() {
         hallIndex++;
     });
 
-    cy.endBatch();
+    state.cy.endBatch();
 
     console.log('Location-based layout applied with hall > aisle > rack > shelf hierarchy');
 
     // Apply fcose layout to prevent overlaps in location mode
     // This fine-tunes the positions calculated by the manual layout
     setTimeout(() => {
-        const locationNodes = cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
+        const locationNodes = state.cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
         if (locationNodes.length > 0) {
             try {
-                const layout = cy.layout({
+                const layout = state.cy.layout({
                     name: 'fcose',
                     eles: locationNodes,
                     quality: 'default',
@@ -432,7 +432,7 @@ function location_calculateLayout() {
                     stop: function () {
                         // Re-arrange trays/ports after fcose moves shelves
                         // This ensures tray/port positions are correct relative to new shelf positions
-                        cy.nodes('[type="shelf"]').forEach(shelf => {
+                        state.cy.nodes('[type="shelf"]').forEach(shelf => {
                             common_arrangeTraysAndPorts(shelf);
                         });
                         applyDragRestrictions();
@@ -455,10 +455,10 @@ function location_calculateLayout() {
  * Uses percentage-based spacing that adapts to actual node sizes
  */
 function hierarchy_calculateLayout() {
-    if (!cy) return;
+    if (!state.cy) return;
 
     // Get all top-level graph nodes (no parent)
-    const topLevelNodes = cy.nodes('[type="graph"]').filter(node => {
+    const topLevelNodes = state.cy.nodes('[type="graph"]').filter(node => {
         const parent = node.parent();
         return parent.length === 0;
     });
@@ -667,16 +667,8 @@ const statusManager = new StatusManager();
 // These are kept in sync with state via observers to maintain backward compatibility
 // during the migration period. All new code should use state.* instead.
 
-let cy; // Use state.cy instead
-let currentData; // Use state.data.currentData instead
-let initialVisualizationData; // Use state.data.initialVisualizationData instead
-let hierarchyModeState; // Use state.data.hierarchyModeState instead
-let selectedConnection; // Use state.editing.selectedConnection instead
-let selectedNode; // Use state.editing.selectedNode instead
-let isEdgeCreationMode; // Use state.editing.isEdgeCreationMode instead
-let sourcePort; // Use state.editing.selectedFirstPort instead
-let availableGraphTemplates; // Use state.data.availableGraphTemplates instead
-let globalHostCounter; // Use state.data.globalHostCounter instead
+// Legacy globals removed - all code now uses state.* directly
+// Only window globals remain for HTML onclick handlers (will be removed in Phase 8.5)
 
 // Initialize window globals for HTML access (required for inline onclick handlers)
 window.currentData = null;
@@ -687,40 +679,19 @@ window.initialVisualizationData = null;
  * Sync legacy globals with state (temporary during migration)
  * TODO: Phase 8 - Remove this function and all references to legacy globals
  */
-function syncLegacyGlobals() {
-    cy = state.cy;
-    currentData = state.data.currentData;
-    initialVisualizationData = state.data.initialVisualizationData;
-    hierarchyModeState = state.data.hierarchyModeState;
-    selectedConnection = state.editing.selectedConnection;
-    selectedNode = state.editing.selectedNode;
-    isEdgeCreationMode = state.editing.isEdgeCreationMode;
-    sourcePort = state.editing.selectedFirstPort;
-    availableGraphTemplates = state.data.availableGraphTemplates;
-    globalHostCounter = state.data.globalHostCounter;
-}
+// Legacy globals and sync functions removed - all code now uses state.* directly
+// Window globals are kept only for HTML onclick handlers (will be removed in Phase 8.5)
 
-// Subscribe to state changes to keep legacy globals in sync
-// TODO: Phase 8 - Remove these observers when legacy globals are removed
+// Subscribe to state changes to keep window globals in sync for HTML access
 stateObserver.subscribe('cy', (newVal) => {
-    cy = newVal;
     window.cy = newVal; // Expose to global scope for HTML access
 });
 stateObserver.subscribe('data.currentData', (newVal) => {
-    currentData = newVal;
     window.currentData = newVal; // Expose to global scope for HTML access
 });
 stateObserver.subscribe('data.initialVisualizationData', (newVal) => {
-    initialVisualizationData = newVal;
     window.initialVisualizationData = newVal; // Expose to global scope for HTML access
 });
-stateObserver.subscribe('data.hierarchyModeState', (newVal) => { hierarchyModeState = newVal; });
-stateObserver.subscribe('editing.selectedConnection', (newVal) => { selectedConnection = newVal; });
-stateObserver.subscribe('editing.selectedNode', (newVal) => { selectedNode = newVal; });
-stateObserver.subscribe('editing.isEdgeCreationMode', (newVal) => { isEdgeCreationMode = newVal; });
-stateObserver.subscribe('editing.selectedFirstPort', (newVal) => { sourcePort = newVal; });
-stateObserver.subscribe('data.availableGraphTemplates', (newVal) => { availableGraphTemplates = newVal; });
-stateObserver.subscribe('data.globalHostCounter', (newVal) => { globalHostCounter = newVal; });
 
 // ===== Node Drag Control =====
 /**
@@ -741,7 +712,6 @@ function applyDragRestrictions() {
  */
 function setVisualizationMode(mode) {
     state.setMode(mode);
-    syncLegacyGlobals();
 
     // Update body class for mode-specific CSS visibility
     document.body.classList.remove('mode-location', 'mode-hierarchy');
@@ -806,7 +776,6 @@ function updateModeIndicator() {
  */
 function extractGraphTemplates(data) {
     state.data.availableGraphTemplates = {};
-    availableGraphTemplates = {};
 
     // Check if metadata contains graph_templates
     if (data.metadata && data.metadata.graph_templates) {
@@ -836,7 +805,6 @@ function extractGraphTemplates(data) {
         }
 
         state.data.availableGraphTemplates = cleanedTemplates;
-        availableGraphTemplates = cleanedTemplates;
 
         console.log(`[extractGraphTemplates] Loaded ${Object.keys(cleanedTemplates).length} templates`);
     } else {
@@ -856,7 +824,7 @@ function populateGraphTemplateDropdown() {
     // Clear existing options
     graphTemplateSelect.innerHTML = '';
 
-    const templateCount = Object.keys(availableGraphTemplates).length;
+    const templateCount = Object.keys(state.data.availableGraphTemplates).length;
 
     if (templateCount === 0) {
         // No templates available - show message
@@ -884,7 +852,7 @@ function populateGraphTemplateDropdown() {
         graphTemplateSelect.appendChild(placeholderOption);
 
         // Add available templates
-        Object.keys(availableGraphTemplates).sort().forEach(templateName => {
+        Object.keys(state.data.availableGraphTemplates).sort().forEach(templateName => {
             const option = document.createElement('option');
             option.value = templateName;
             option.textContent = `${templateName} (Graph Template)`;
@@ -898,7 +866,7 @@ function populateGraphTemplateDropdown() {
  * Toggle between hierarchy and location visualization modes
  */
 function toggleVisualizationMode() {
-    if (!cy) {
+    if (!state.cy) {
         alert('No visualization loaded. Please upload a file first.');
         return;
     }
@@ -910,7 +878,7 @@ function toggleVisualizationMode() {
     if (newMode === 'location') {
         // Check if we need to show the physical layout specification modal
         // This happens on first switch to location mode when nodes don't have physical locations
-        const shelfNodes = cy.nodes('[type="shelf"]');
+        const shelfNodes = state.cy.nodes('[type="shelf"]');
 
         // Check if ANY node has physical location data
         const hasPhysicalLocations = shelfNodes.length > 0 && shelfNodes.some(node => {
@@ -976,15 +944,15 @@ function toggleVisualizationMode() {
  * Recolor connections for physical view using simple intra/inter-node coloring
  */
 function recolorConnectionsForPhysicalView() {
-    if (!cy) return;
+    if (!state.cy) return;
 
-    cy.edges().forEach(edge => {
+    state.cy.edges().forEach(edge => {
         const sourceId = edge.data('source');
         const targetId = edge.data('target');
 
         // Check if ports are on the same shelf (2 levels up: port -> tray -> shelf)
-        const sourceNode = cy.getElementById(sourceId);
-        const targetNode = cy.getElementById(targetId);
+        const sourceNode = state.cy.getElementById(sourceId);
+        const targetNode = state.cy.getElementById(targetId);
 
         if (!sourceNode.length || !targetNode.length) return;
 
@@ -1007,7 +975,7 @@ function recolorConnectionsForPhysicalView() {
  * Recolor connections for logical view using depth-based coloring
  */
 function recolorConnectionsForLogicalView() {
-    if (!cy) return;
+    if (!state.cy) return;
 
     // Depth-based color palette matching the legend
     const depthColors = {
@@ -1020,7 +988,7 @@ function recolorConnectionsForLogicalView() {
         6: '#E91E63'   // Magenta/Pink
     };
 
-    cy.edges().forEach(edge => {
+    state.cy.edges().forEach(edge => {
         const depth = edge.data('depth');
 
         // Use depth-based color if available, otherwise use default
@@ -1038,13 +1006,13 @@ function recolorConnectionsForLogicalView() {
 function location_switchMode() {
 
     // Save current state before modifying (for switching back)
-    hierarchyModeState = {
-        elements: cy.elements().jsons(),
-        metadata: (currentData && currentData.metadata) ? JSON.parse(JSON.stringify(currentData.metadata)) : {}
+    state.data.hierarchyModeState = {
+        elements: state.cy.elements().jsons(),
+        metadata: (state.data.currentData && state.data.currentData.metadata) ? JSON.parse(JSON.stringify(state.data.currentData.metadata)) : {}
     };
 
     // Extract shelf nodes with their physical location and connection data
-    const shelfNodes = cy.nodes('[type="shelf"]');
+    const shelfNodes = state.cy.nodes('[type="shelf"]');
     if (shelfNodes.length === 0) {
         console.warn('No shelf nodes found');
         return;
@@ -1112,7 +1080,7 @@ function location_switchMode() {
 
     // Extract all connections (edges)
     const connections = [];
-    cy.edges().forEach(edge => {
+    state.cy.edges().forEach(edge => {
         // Get all data fields from the edge
         const edgeData = {};
         const data = edge.data();
@@ -1126,7 +1094,7 @@ function location_switchMode() {
     });
 
     // Clear the entire graph
-    cy.elements().remove();
+    state.cy.elements().remove();
 
     // Rebuild visualization based ONLY on physical location data
     const newElements = [];
@@ -1427,7 +1395,7 @@ function location_switchMode() {
     });
 
     // Add all elements back to cytoscape
-    cy.add(newElements);
+    state.cy.add(newElements);
 
     // Apply the proper location-based layout with stacked halls/aisles and dynamic spacing
     location_calculateLayout();
@@ -1452,13 +1420,13 @@ function location_switchMode() {
  */
 function hierarchy_switchMode() {
 
-    if (!hierarchyModeState || !hierarchyModeState.elements) {
+    if (!state.data.hierarchyModeState || !state.data.hierarchyModeState.elements) {
         alert('Cannot restore logical topology - no saved state available. Please switch to location mode first or re-upload your file.');
         return;
     }
 
     // Extract shelf nodes with their logical topology data
-    const shelfNodes = cy.nodes('[type="shelf"]');
+    const shelfNodes = state.cy.nodes('[type="shelf"]');
     if (shelfNodes.length === 0) {
         console.warn('No shelf nodes found');
         return;
@@ -1522,7 +1490,7 @@ function hierarchy_switchMode() {
 
     // Extract all connections (edges)
     const connections = [];
-    cy.edges().forEach(edge => {
+    state.cy.edges().forEach(edge => {
         // Get all data fields from the edge
         const edgeData = {};
         const data = edge.data();
@@ -1536,7 +1504,7 @@ function hierarchy_switchMode() {
     });
 
     // Clear the entire graph
-    cy.elements().remove();
+    state.cy.elements().remove();
 
     // Rebuild visualization based ONLY on logical topology data
     const newElements = [];
@@ -1551,9 +1519,9 @@ function hierarchy_switchMode() {
         // Find and recreate the root node from saved hierarchy state
         // The root is not in logical_path arrays since those only store parent paths
         let rootNode = null;
-        if (hierarchyModeState && hierarchyModeState.elements) {
+        if (state.data.hierarchyModeState && state.data.hierarchyModeState.elements) {
             // Find the root graph node (depth 0, no parent)
-            const savedRootNodes = hierarchyModeState.elements.filter(el =>
+            const savedRootNodes = state.data.hierarchyModeState.elements.filter(el =>
                 el.data && el.data.type === 'graph' && el.data.depth === 0 && !el.data.parent
             );
 
@@ -1746,7 +1714,7 @@ function hierarchy_switchMode() {
     });
 
     // Add all elements back to cytoscape
-    cy.add(newElements);
+    state.cy.add(newElements);
 
     // Apply drag restrictions
     applyDragRestrictions();
@@ -1755,15 +1723,15 @@ function hierarchy_switchMode() {
     recolorConnectionsForLogicalView();
 
     // Run preset layout first
-    cy.layout({ name: 'preset' }).run();
+    state.cy.layout({ name: 'preset' }).run();
 
     // Then apply fcose ONLY to graph-level nodes to prevent overlap
     setTimeout(() => {
-        const graphNodes = cy.nodes('[type="graph"]');
+        const graphNodes = state.cy.nodes('[type="graph"]');
         if (graphNodes.length > 0) {
             // Verify fcose extension is available before using it
             try {
-                const layout = cy.layout({
+                const layout = state.cy.layout({
                     name: 'fcose',
                     eles: graphNodes,
                     quality: 'default',
@@ -1787,12 +1755,12 @@ function hierarchy_switchMode() {
                     layout.run();
                 } else {
                     console.warn('fcose layout extension not available, falling back to preset layout');
-                    cy.layout({ name: 'preset' }).run();
+                    state.cy.layout({ name: 'preset' }).run();
                     forceApplyCurveStyles();
                 }
             } catch (e) {
                 console.warn('Error using fcose layout:', e.message, '- falling back to preset layout');
-                cy.layout({ name: 'preset' }).run();
+                state.cy.layout({ name: 'preset' }).run();
                 forceApplyCurveStyles();
             }
         } else {
@@ -1809,7 +1777,7 @@ function hierarchy_switchMode() {
  */
 function location_organizeNodes() {
 
-    const shelfNodes = cy.nodes('[type="shelf"]');
+    const shelfNodes = state.cy.nodes('[type="shelf"]');
 
     // Group shelves by rack number
     const rackGroups = new Map();
@@ -1841,11 +1809,11 @@ function location_organizeNodes() {
             const aisle = parts.length > 2 ? parts[1] : '';
 
             const rackId = `rack_${rackKey}`;
-            let rackNode = cy.getElementById(rackId);
+            let rackNode = state.cy.getElementById(rackId);
 
             if (rackNode.length === 0) {
                 // Create new rack node
-                cy.add({
+                state.cy.add({
                     group: 'nodes',
                     data: {
                         id: rackId,
@@ -1858,7 +1826,7 @@ function location_organizeNodes() {
                     classes: 'rack',
                     position: { x: rackX, y: LAYOUT_CONSTANTS.MIN_START_Y }
                 });
-                rackNode = cy.getElementById(rackId);
+                rackNode = state.cy.getElementById(rackId);
             }
 
             // Move shelves into this rack
@@ -1890,7 +1858,7 @@ function location_organizeNodes() {
  */
 function organizeInGrid() {
 
-    const shelfNodes = cy.nodes('[type="shelf"]');
+    const shelfNodes = state.cy.nodes('[type="shelf"]');
     const cols = 3;
     const spacing = 500;
     const startX = 300;
@@ -1911,7 +1879,7 @@ function organizeInGrid() {
     });
 
     // Fit view to show all nodes
-    cy.fit(null, 50);
+    state.cy.fit(null, 50);
 }
 
 // Node configurations - now loaded from server-side to ensure consistency
@@ -1932,7 +1900,7 @@ function getNextConnectionNumber() {
     if (!cy) return 0;
 
     // Get all existing edges and find the highest connection number
-    const allEdges = cy.edges();
+    const allEdges = state.cy.edges();
     let maxConnectionNumber = -1;
 
     allEdges.forEach(edge => {
@@ -2008,19 +1976,19 @@ function updateDeleteButtonState() {
     if (!deleteBtn) return; // Button might not exist yet
 
     // Check for both single selections and multi-selections
-    const hasConnection = selectedConnection && selectedConnection.length > 0;
-    const hasNode = selectedNode && selectedNode.length > 0;
+    const hasConnection = state.editing.selectedConnection && state.editing.selectedConnection.length > 0;
+    const hasNode = state.editing.selectedNode && state.editing.selectedNode.length > 0;
 
     // Also check cytoscape multi-selections
-    const selectedNodes = cy ? cy.nodes(':selected') : [];
-    const selectedEdges = cy ? cy.edges(':selected') : [];
+    const selectedNodes = cy ? state.cy.nodes(':selected') : [];
+    const selectedEdges = cy ? state.cy.edges(':selected') : [];
     const hasMultipleSelections = selectedNodes.length > 0 || selectedEdges.length > 0;
 
     let isDeletable = false;
 
     // Check single node selection
     if (hasNode) {
-        const nodeType = selectedNode.data('type');
+        const nodeType = state.editing.selectedNode.data('type');
         isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
     }
 
@@ -2032,7 +2000,7 @@ function updateDeleteButtonState() {
         });
     }
 
-    if (isEdgeCreationMode && (hasConnection || isDeletable || hasMultipleSelections)) {
+    if (state.editing.isEdgeCreationMode && (hasConnection || isDeletable || hasMultipleSelections)) {
         deleteBtn.disabled = false;
         deleteBtn.style.opacity = '1';
         deleteBtn.style.cursor = 'pointer';
@@ -2178,25 +2146,23 @@ function hierarchy_getPath(node) {
  */
 function handlePortClickEditMode(node, evt) {
     const portId = node.id();
-    const existingConnections = cy.edges(`[source="${portId}"], [target="${portId}"]`);
+    const existingConnections = state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
 
     // If port is already connected, select the connection
     if (existingConnections.length > 0) {
         const edge = existingConnections[0]; // Only one connection per port
 
         // Clear source port selection if any
-        if (sourcePort) {
-            sourcePort.removeClass('source-selected');
+        if (state.editing.selectedFirstPort) {
+            state.editing.selectedFirstPort.removeClass('source-selected');
             state.editing.selectedFirstPort = null;
-            sourcePort = null;
         }
 
         // Select this connection
-        if (selectedConnection) {
-            selectedConnection.removeClass('selected-connection');
+        if (state.editing.selectedConnection) {
+            state.editing.selectedConnection.removeClass('selected-connection');
         }
         state.editing.selectedConnection = edge;
-        selectedConnection = edge;
         edge.addClass('selected-connection');
 
         // Show port info and update UI
@@ -2206,29 +2172,27 @@ function handlePortClickEditMode(node, evt) {
     }
 
     // Port is unconnected - handle connection creation
-    if (!sourcePort) {
+    if (!state.editing.selectedFirstPort) {
         // First click - select source port
         state.editing.selectedFirstPort = node;
-        sourcePort = node;
-        sourcePort.addClass('source-selected');
+        state.editing.selectedFirstPort.addClass('source-selected');
     } else {
         // Second click - create connection
         const targetPort = node;
 
         // Can't connect port to itself
-        if (sourcePort.id() === targetPort.id()) {
-            sourcePort.removeClass('source-selected');
+        if (state.editing.selectedFirstPort.id() === targetPort.id()) {
+            state.editing.selectedFirstPort.removeClass('source-selected');
             state.editing.selectedFirstPort = null;
-            sourcePort = null;
             return;
         }
 
         // Create the connection
-        createConnection(sourcePort.id(), targetPort.id());
+        createConnection(state.editing.selectedFirstPort.id(), targetPort.id());
 
         // Clear source port selection
-        sourcePort.removeClass('source-selected');
-        sourcePort = null;
+        state.editing.selectedFirstPort.removeClass('source-selected');
+        state.editing.selectedFirstPort = null;
     }
 }
 
@@ -2237,26 +2201,24 @@ function handlePortClickEditMode(node, evt) {
  */
 function handlePortClickViewMode(node, evt) {
     const portId = node.id();
-    const connectedEdges = cy.edges(`[source="${portId}"], [target="${portId}"]`);
+    const connectedEdges = state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
 
     if (connectedEdges.length > 0) {
         // Port has connection - select it
         const edge = connectedEdges[0]; // Only one connection per port
 
-        if (selectedConnection) {
-            selectedConnection.removeClass('selected-connection');
+        if (state.editing.selectedConnection) {
+            state.editing.selectedConnection.removeClass('selected-connection');
         }
 
         state.editing.selectedConnection = edge;
-        selectedConnection = edge;
         edge.addClass('selected-connection');
         showNodeInfo(node, evt.renderedPosition || evt.position);
     } else {
         // Port has no connection - just show info
-        if (selectedConnection) {
-            selectedConnection.removeClass('selected-connection');
+        if (state.editing.selectedConnection) {
+            state.editing.selectedConnection.removeClass('selected-connection');
             state.editing.selectedConnection = null;
-            selectedConnection = null;
             updateDeleteButtonState();
         }
         showNodeInfo(node, evt.renderedPosition || evt.position);
@@ -2271,32 +2233,30 @@ function clearAllSelections() {
 
     // Clear isEditing flag from all nodes
     if (cy) {
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.data('isEditing')) {
                 n.data('isEditing', false);
             }
         });
 
         // Clear cytoscape multi-selections
-        cy.elements().unselect();
+        state.cy.elements().unselect();
     }
 
-    if (sourcePort) {
-        sourcePort.removeClass('source-selected');
-        sourcePort = null;
+    if (state.editing.selectedFirstPort) {
+        state.editing.selectedFirstPort.removeClass('source-selected');
+        state.editing.selectedFirstPort = null;
     }
 
-    if (selectedConnection) {
-        selectedConnection.removeClass('selected-connection');
+    if (state.editing.selectedConnection) {
+        state.editing.selectedConnection.removeClass('selected-connection');
         state.editing.selectedConnection = null;
-        selectedConnection = null;
         updateDeleteButtonState();
     }
 
-    if (selectedNode) {
-        selectedNode.removeClass('selected-node');
+    if (state.editing.selectedNode) {
+        state.editing.selectedNode.removeClass('selected-node');
         state.editing.selectedNode = null;
-        selectedNode = null;
         updateDeleteNodeButtonState();
     }
 }
@@ -2345,24 +2305,23 @@ function getPortLocationInfo(portNode) {
 }
 
 function deleteSelectedConnection() {
-    if (!selectedConnection || selectedConnection.length === 0) {
+    if (!state.editing.selectedConnection || state.editing.selectedConnection.length === 0) {
         alert('Please select a connection first by clicking on it.');
         return;
     }
 
-    const edge = selectedConnection;
+    const edge = state.editing.selectedConnection;
 
     // Check if edge still exists and is valid
     if (!edge || !edge.cy() || edge.removed()) {
         alert('Selected connection is no longer valid.');
         state.editing.selectedConnection = null;
-        selectedConnection = null;
         updateDeleteButtonState();
         return;
     }
 
-    const sourceNode = cy.getElementById(edge.data('source'));
-    const targetNode = cy.getElementById(edge.data('target'));
+    const sourceNode = state.cy.getElementById(edge.data('source'));
+    const targetNode = state.cy.getElementById(edge.data('target'));
 
     const sourceInfo = getPortLocationInfo(sourceNode);
     const targetInfo = getPortLocationInfo(targetNode);
@@ -2379,7 +2338,7 @@ function deleteSelectedConnection() {
         isTemplateConnection = true;
 
         // Count how many instances will be affected (including empty ones)
-        const templateGraphs = cy.nodes().filter(node =>
+        const templateGraphs = state.cy.nodes().filter(node =>
             node.data('type') === 'graph' && node.data('template_name') === edgeTemplateName
         );
 
@@ -2398,7 +2357,7 @@ function deleteSelectedConnection() {
         }
 
         state.editing.selectedConnection = null;
-        selectedConnection = null;
+        state.editing.selectedConnection = null;
         updateDeleteButtonState();
         updatePortConnectionStatus();
         updatePortEditingHighlight();
@@ -2411,17 +2370,24 @@ function deleteSelectedConnection() {
  */
 function deleteConnectionFromAllTemplateInstances(edge, templateName) {
     // Get connection pattern (relative to the template)
-    const sourcePort = cy.getElementById(edge.data('source'));
-    const targetPort = cy.getElementById(edge.data('target'));
+    const sourcePort = state.cy.getElementById(edge.data('source'));
+    const targetPort = state.cy.getElementById(edge.data('target'));
 
-    if (!sourcePort.length || !targetPort.length) {
+    // Use selectedFirstPort if available (for single connection deletion), otherwise use sourcePort from edge
+    const actualSourcePort = state.editing.selectedFirstPort && state.editing.selectedFirstPort.length > 0
+        ? state.editing.selectedFirstPort
+        : sourcePort;
+
+    // Check if ports exist (getElementById can return null, and selectedFirstPort can be null)
+    if (!actualSourcePort || !actualSourcePort.length ||
+        !targetPort || !targetPort.length) {
         console.warn('Source or target port not found');
         edge.remove();
         return;
     }
 
     // Find all graph nodes with the same template (including empty ones)
-    const templateGraphs = cy.nodes().filter(node =>
+    const templateGraphs = state.cy.nodes().filter(node =>
         node.data('type') === 'graph' && node.data('template_name') === templateName
     );
 
@@ -2434,7 +2400,7 @@ function deleteConnectionFromAllTemplateInstances(edge, templateName) {
     // Find which instance contains the ports we're deleting
     let sourceInstance = null;
     for (const graph of templateGraphs) {
-        if (sourcePort.ancestors().filter(n => n.id() === graph.id()).length > 0) {
+        if (actualSourcePort.ancestors().filter(n => n.id() === graph.id()).length > 0) {
             sourceInstance = graph;
             break;
         }
@@ -2447,7 +2413,7 @@ function deleteConnectionFromAllTemplateInstances(edge, templateName) {
     }
 
     // Extract pattern ONCE relative to the instance that contains the ports
-    const sourcePattern = extractPortPattern(sourcePort, sourceInstance);
+    const sourcePattern = extractPortPattern(actualSourcePort, sourceInstance);
     const targetPattern = extractPortPattern(targetPort, sourceInstance);
 
     console.log(`[deleteConnectionFromAllTemplateInstances] Pattern from ${sourceInstance.id()}:`);
@@ -2475,7 +2441,7 @@ function deleteConnectionFromAllTemplateInstances(edge, templateName) {
         }
 
         // Find matching edge
-        const matchingEdges = cy.edges().filter(e =>
+        const matchingEdges = state.cy.edges().filter(e =>
             (e.data('source') === sourcePortNode.id() && e.data('target') === targetPortNode.id()) ||
             (e.data('source') === targetPortNode.id() && e.data('target') === sourcePortNode.id())
         );
@@ -2500,7 +2466,7 @@ function deleteConnectionFromAllTemplateInstances(edge, templateName) {
  */
 function updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel) {
     // Check for existing child with same name to prevent duplicates
-    const existingChild = availableGraphTemplates[parentTemplateName]?.children?.find(
+    const existingChild = state.data.availableGraphTemplates[parentTemplateName]?.children?.find(
         child => child.name === childLabel
     );
 
@@ -2509,9 +2475,9 @@ function updateTemplateWithNewChild(parentTemplateName, childTemplateName, child
         return; // Skip adding duplicate
     }
 
-    // Update availableGraphTemplates
-    if (availableGraphTemplates[parentTemplateName]) {
-        const parentTemplate = availableGraphTemplates[parentTemplateName];
+    // Update state.data.availableGraphTemplates
+    if (state.data.availableGraphTemplates[parentTemplateName]) {
+        const parentTemplate = state.data.availableGraphTemplates[parentTemplateName];
 
         // Initialize children array if it doesn't exist
         if (!parentTemplate.children) {
@@ -2528,9 +2494,9 @@ function updateTemplateWithNewChild(parentTemplateName, childTemplateName, child
         console.log(`[updateTemplateWithNewChild] Added child "${childLabel}" to template "${parentTemplateName}"`);
     }
 
-    // Update currentData.metadata.graph_templates if it exists (for export)
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const parentTemplate = currentData.metadata.graph_templates[parentTemplateName];
+    // Update state.data.currentData.metadata.graph_templates if it exists (for export)
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const parentTemplate = state.data.currentData.metadata.graph_templates[parentTemplateName];
         if (parentTemplate) {
             // Check for duplicate in metadata too
             const existingMetaChild = parentTemplate.children?.find(
@@ -2650,7 +2616,7 @@ function recalculateHostIndicesForTemplates() {
     }
 
     // Find all root graph nodes (graphs with no parent)
-    const rootGraphNodes = cy.nodes('[type="graph"]').filter(node => {
+    const rootGraphNodes = state.cy.nodes('[type="graph"]').filter(node => {
         const parent = node.parent();
         return parent.length === 0; // No parent = root level
     });
@@ -2669,10 +2635,10 @@ function recalculateHostIndicesForTemplates() {
         dfsTraverse(rootGraph, 0);
     });
 
-    // Update globalHostCounter to the next available index
+    // Update state.data.globalHostCounter to the next available index
     state.data.globalHostCounter = nextHostIndex;
-    globalHostCounter = state.data.globalHostCounter;
-    console.log(`DFS traversal complete. Assigned ${nextHostIndex} host indices. Next available: ${globalHostCounter}`);
+    state.data.globalHostCounter = state.data.globalHostCounter;
+    console.log(`DFS traversal complete. Assigned ${nextHostIndex} host indices. Next available: ${state.data.globalHostCounter}`);
 }
 
 /**
@@ -2683,8 +2649,40 @@ function recalculateHostIndicesForTemplates() {
  */
 function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName, childTemplateName) {
 
+    // First, verify that the child graph actually exists in the parent template definition
+    // This ensures we only delete from the correct template, not other templates with same child name
+    let childExistsInTemplate = false;
+    if (state.data.availableGraphTemplates[parentTemplateName]) {
+        const parentTemplate = state.data.availableGraphTemplates[parentTemplateName];
+        if (parentTemplate.children) {
+            childExistsInTemplate = parentTemplate.children.some(child =>
+                child.name === childName &&
+                child.type === 'graph' &&
+                child.graph_template === childTemplateName
+            );
+        }
+    }
+
+    // Also check metadata
+    if (!childExistsInTemplate && state.data.currentData && state.data.currentData.metadata &&
+        state.data.currentData.metadata.graph_templates) {
+        const parentTemplate = state.data.currentData.metadata.graph_templates[parentTemplateName];
+        if (parentTemplate && parentTemplate.children) {
+            childExistsInTemplate = parentTemplate.children.some(child =>
+                child.name === childName &&
+                child.type === 'graph' &&
+                child.graph_template === childTemplateName
+            );
+        }
+    }
+
+    if (!childExistsInTemplate) {
+        console.warn(`Child graph "${childName}" (template: ${childTemplateName}) not found in parent template "${parentTemplateName}" definition. Skipping deletion to prevent cross-template deletion.`);
+        return;
+    }
+
     // Find all instances of the parent template (including empty ones)
-    const parentTemplateInstances = cy.nodes().filter(node =>
+    const parentTemplateInstances = state.cy.nodes().filter(node =>
         node.data('type') === 'graph' &&
         node.data('template_name') === parentTemplateName
     );
@@ -2714,9 +2712,9 @@ function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName,
 
     console.log(`Deleted child graph from ${deletedCount} template instance(s)`);
 
-    // Update template definition in availableGraphTemplates
-    if (availableGraphTemplates[parentTemplateName]) {
-        const parentTemplate = availableGraphTemplates[parentTemplateName];
+    // Update template definition in state.data.availableGraphTemplates
+    if (state.data.availableGraphTemplates[parentTemplateName]) {
+        const parentTemplate = state.data.availableGraphTemplates[parentTemplateName];
         if (parentTemplate.children) {
             // Remove the child from the template definition
             parentTemplate.children = parentTemplate.children.filter(child =>
@@ -2741,14 +2739,14 @@ function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName,
 
             const removedConnections = originalConnectionCount - parentTemplate.connections.length;
             if (removedConnections > 0) {
-                console.log(`Removed ${removedConnections} connection(s) referencing deleted child graph "${childName}" from availableGraphTemplates["${parentTemplateName}"]`);
+                console.log(`Removed ${removedConnections} connection(s) referencing deleted child graph "${childName}" from state.data.availableGraphTemplates["${parentTemplateName}"]`);
             }
         }
     }
 
     // Update template definition in metadata
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const parentTemplate = currentData.metadata.graph_templates[parentTemplateName];
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const parentTemplate = state.data.currentData.metadata.graph_templates[parentTemplateName];
         if (parentTemplate && parentTemplate.children) {
             // Remove the child from the template definition
             parentTemplate.children = parentTemplate.children.filter(child =>
@@ -2787,8 +2785,86 @@ function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName,
  */
 function deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, childType) {
 
+    // First, verify that the child actually exists in the parent template definition
+    // This ensures we only delete from the correct template, not other templates with same child name
+    // For shelves, they can be either:
+    // 1. Direct children of the parent template
+    // 2. Children of a child graph (in which case they're defined in the child graph's template)
+    let childExistsInTemplate = false;
+    let childGraphName = null; // Track which child graph contains the shelf (if applicable)
+
+    if (state.data.availableGraphTemplates[parentTemplateName]) {
+        const parentTemplate = state.data.availableGraphTemplates[parentTemplateName];
+        if (parentTemplate.children) {
+            // Check for direct child match
+            childExistsInTemplate = parentTemplate.children.some(child =>
+                child.name === childName &&
+                ((childType === 'shelf' && child.type === 'node') ||
+                    (childType === 'graph' && child.type === 'graph'))
+            );
+
+            // If not found and it's a shelf, check if it's in a child graph's template
+            if (!childExistsInTemplate && childType === 'shelf') {
+                for (const child of parentTemplate.children) {
+                    if (child.type === 'graph' && child.graph_template) {
+                        // Check if the child graph's template contains this shelf
+                        const childGraphTemplate = state.data.availableGraphTemplates[child.graph_template];
+                        if (childGraphTemplate && childGraphTemplate.children) {
+                            const shelfInChildGraph = childGraphTemplate.children.some(c =>
+                                c.name === childName && c.type === 'node'
+                            );
+                            if (shelfInChildGraph) {
+                                childExistsInTemplate = true;
+                                childGraphName = child.name;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check metadata
+    if (!childExistsInTemplate && state.data.currentData && state.data.currentData.metadata &&
+        state.data.currentData.metadata.graph_templates) {
+        const parentTemplate = state.data.currentData.metadata.graph_templates[parentTemplateName];
+        if (parentTemplate && parentTemplate.children) {
+            // Check for direct child match
+            childExistsInTemplate = parentTemplate.children.some(child =>
+                child.name === childName &&
+                ((childType === 'shelf' && child.type === 'node') ||
+                    (childType === 'graph' && child.type === 'graph'))
+            );
+
+            // If not found and it's a shelf, check if it's in a child graph's template
+            if (!childExistsInTemplate && childType === 'shelf') {
+                for (const child of parentTemplate.children) {
+                    if (child.type === 'graph' && child.graph_template) {
+                        const childGraphTemplate = state.data.currentData.metadata.graph_templates[child.graph_template];
+                        if (childGraphTemplate && childGraphTemplate.children) {
+                            const shelfInChildGraph = childGraphTemplate.children.some(c =>
+                                c.name === childName && c.type === 'node'
+                            );
+                            if (shelfInChildGraph) {
+                                childExistsInTemplate = true;
+                                childGraphName = child.name;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!childExistsInTemplate) {
+        console.warn(`Child "${childName}" not found in template "${parentTemplateName}" definition. Skipping deletion to prevent cross-template deletion.`);
+        return;
+    }
+
     // Find all instances of the parent template (including empty ones)
-    const parentTemplateInstances = cy.nodes().filter(node =>
+    const parentTemplateInstances = state.cy.nodes().filter(node =>
         node.data('type') === 'graph' &&
         node.data('template_name') === parentTemplateName
     );
@@ -2799,27 +2875,73 @@ function deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, 
     // For each parent instance, find and delete the matching child node
     parentTemplateInstances.forEach(parentInstance => {
         const parentLabel = parentInstance.data('label');
+        const parentId = parentInstance.id();
 
-        // Find descendant nodes with matching child_name or label and type
-        const childNodes = parentInstance.descendants().filter(child =>
-            child.data('type') === childType &&
-            (child.data('child_name') === childName || child.data('label') === childName)
-        );
+        // Find direct children first, then check if they match
+        // This ensures we only delete nodes that are direct children of this specific template instance
+        const directChildren = parentInstance.children();
 
-        if (childNodes.length > 0) {
-            childNodes.forEach(childNode => {
-                childNode.remove(); // This will also remove all descendants (trays, ports, etc.)
-                deletedCount++;
+        // Filter to find nodes that match the child_name and are direct children
+        // For shelf nodes, we need to check if they're direct children or in a direct child graph
+        const matchingChildNodes = [];
+
+        directChildren.forEach(directChild => {
+            if (directChild.data('type') === childType) {
+                // Direct child of the correct type - verify it matches the child name
+                if (directChild.data('child_name') === childName || directChild.data('label') === childName) {
+                    matchingChildNodes.push(directChild);
+                }
+            } else if (directChild.data('type') === 'graph' && childType === 'shelf') {
+                // For shelf nodes within child graphs, verify:
+                // 1. If childGraphName is set, only search in that specific child graph
+                // 2. If childGraphName is null, the shelf is a direct child, so skip child graphs
+
+                if (childGraphName !== null) {
+                    // Shelf is in a child graph - only match if this is the correct child graph
+                    const childGraphInstanceName = directChild.data('child_name') || directChild.data('label');
+
+                    if (childGraphInstanceName === childGraphName) {
+                        // Find shelves that are direct children of this child graph
+                        const shelvesInGraph = directChild.children().filter(desc =>
+                            desc.data('type') === childType &&
+                            (desc.data('child_name') === childName || desc.data('label') === childName)
+                        );
+
+                        // Verify each shelf's parent is actually this direct child graph
+                        shelvesInGraph.forEach(shelf => {
+                            const shelfParent = shelf.parent();
+                            if (shelfParent.length > 0 && shelfParent.id() === directChild.id()) {
+                                matchingChildNodes.push(shelf);
+                            }
+                        });
+                    }
+                }
+                // If childGraphName is null, shelf is a direct child, so we skip child graphs
+            }
+        });
+
+        if (matchingChildNodes.length > 0) {
+            matchingChildNodes.forEach(childNode => {
+                // Verify this node is actually a descendant of the parent instance
+                // Double-check to ensure we're not deleting from wrong template
+                const ancestors = childNode.ancestors();
+                const isDescendantOfParent = ancestors.some(anc => anc.id() === parentId) || childNode.parent().id() === parentId;
+
+                if (isDescendantOfParent) {
+                    childNode.remove(); // This will also remove all descendants (trays, ports, etc.)
+                    deletedCount++;
+                } else {
+                    console.warn(`Skipping deletion of ${childName} - not a descendant of parent template instance ${parentId}`);
+                }
             });
-        } else {
         }
     });
 
     console.log(`Deleted ${childType} from ${deletedCount} template instance(s)`);
 
-    // Update template definition in availableGraphTemplates
-    if (availableGraphTemplates[parentTemplateName]) {
-        const parentTemplate = availableGraphTemplates[parentTemplateName];
+    // Update template definition in state.data.availableGraphTemplates
+    if (state.data.availableGraphTemplates[parentTemplateName]) {
+        const parentTemplate = state.data.availableGraphTemplates[parentTemplateName];
         if (parentTemplate.children) {
             // Remove the child from the template definition
             parentTemplate.children = parentTemplate.children.filter(child =>
@@ -2844,14 +2966,14 @@ function deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, 
 
             const removedConnections = originalConnectionCount - parentTemplate.connections.length;
             if (removedConnections > 0) {
-                console.log(`Removed ${removedConnections} connection(s) referencing deleted ${childType} "${childName}" from availableGraphTemplates["${parentTemplateName}"]`);
+                console.log(`Removed ${removedConnections} connection(s) referencing deleted ${childType} "${childName}" from state.data.availableGraphTemplates["${parentTemplateName}"]`);
             }
         }
     }
 
     // Update template definition in metadata
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const parentTemplate = currentData.metadata.graph_templates[parentTemplateName];
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const parentTemplate = state.data.currentData.metadata.graph_templates[parentTemplateName];
         if (parentTemplate && parentTemplate.children) {
             // Remove the child from the template definition
             parentTemplate.children = parentTemplate.children.filter(child =>
@@ -3011,7 +3133,7 @@ function enumeratePlacementLevels(sourcePort, targetPort) {
     const placementLevels = [];
 
     // Find closest common ancestor that is NOT a shelf node
-    const sourceShelf = getParentAtLevel(sourcePort, 2);  // Port -> Tray -> Shelf
+    const sourceShelf = getParentAtLevel(state.editing.selectedFirstPort, 2);  // Port -> Tray -> Shelf
     const targetShelf = getParentAtLevel(targetPort, 2);
 
     if (!sourceShelf || !targetShelf) {
@@ -3055,7 +3177,7 @@ function enumeratePlacementLevels(sourcePort, targetPort) {
             const duplicationCount = calculateDuplicationCount(graphNode, sourceShelf, targetShelf);
 
             // Check if this level is available (no existing connections blocking it)
-            const isAvailable = isPlacementLevelAvailable(sourcePort, targetPort, graphNode, template_name, sourceShelf, targetShelf);
+            const isAvailable = isPlacementLevelAvailable(state.editing.selectedFirstPort, targetPort, graphNode, template_name, sourceShelf, targetShelf);
 
             console.log(`[enumeratePlacementLevels] Level: ${label} (${template_name}), depth: ${depth}, available: ${isAvailable}, duplicationCount: ${duplicationCount}`);
 
@@ -3113,7 +3235,7 @@ function findPortByPath(graphNode, path, trayId, portId) {
 
     // Find the port within this shelf using descriptor format
     // Descriptor format: {shelf_id}:t{trayId}:p{portId}
-    let portNode = cy.getElementById(`${current.id()}:t${trayId}:p${portId}`);
+    let portNode = state.cy.getElementById(`${current.id()}:t${trayId}:p${portId}`);
 
     if (!portNode || portNode.length === 0) {
         // Fallback: find by navigating parent-child relationships
@@ -3140,7 +3262,7 @@ function findPortByPath(graphNode, path, trayId, portId) {
  * For template-level: Available ONLY if ALL instances of the PLACEMENT template have both ports free
  * For instance-specific: Available if THESE SPECIFIC ports are free
  * 
- * @param {Object} sourcePort - Source port node
+ * @param {Object} state.editing.selectedFirstPort - Source port node
  * @param {Object} targetPort - Target port node
  * @param {Object} placementGraphNode - The graph node representing the placement level
  * @param {string} placementTemplateName - Template name of the placement level
@@ -3153,7 +3275,7 @@ function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, p
     const isTemplateLevel = placementTemplateName !== null && placementTemplateName !== 'unknown';
 
     console.log(`[isPlacementLevelAvailable] Checking ${placementTemplateName}, isTemplateLevel: ${isTemplateLevel}`);
-    console.log(`[isPlacementLevelAvailable] sourcePort: ${sourcePort.id()}, targetPort: ${targetPort.id()}`);
+    console.log(`[isPlacementLevelAvailable] state.editing.selectedFirstPort: ${state.editing.selectedFirstPort.id()}, targetPort: ${targetPort.id()}`);
     console.log(`[isPlacementLevelAvailable] sourceShelf: ${sourceShelf.id()}, targetShelf: ${targetShelf.id()}`);
 
     if (isTemplateLevel) {
@@ -3161,7 +3283,7 @@ function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, p
 
         // First, extract the pattern relative to the PLACEMENT LEVEL
         // This gives us the template-relative pattern that should exist in all instances
-        const sourcePattern = extractPortPattern(sourcePort, placementGraphNode);
+        const sourcePattern = extractPortPattern(state.editing.selectedFirstPort, placementGraphNode);
         const targetPattern = extractPortPattern(targetPort, placementGraphNode);
 
         console.log(`[isPlacementLevelAvailable] Template pattern from ${placementGraphNode.id()}:`);
@@ -3175,7 +3297,7 @@ function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, p
         }
 
         // Find all instances of the PLACEMENT template (including empty ones)
-        const templateGraphs = cy.nodes().filter(node =>
+        const templateGraphs = state.cy.nodes().filter(node =>
             node.data('type') === 'graph' && node.data('template_name') === placementTemplateName
         );
 
@@ -3201,10 +3323,10 @@ function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, p
             }
 
             // Check if either port has ANY connection in this instance
-            const srcPortConnections = cy.edges().filter(e =>
+            const srcPortConnections = state.cy.edges().filter(e =>
                 e.data('source') === srcPort.id() || e.data('target') === srcPort.id()
             );
-            const tgtPortConnections = cy.edges().filter(e =>
+            const tgtPortConnections = state.cy.edges().filter(e =>
                 e.data('source') === tgtPort.id() || e.data('target') === tgtPort.id()
             );
 
@@ -3225,13 +3347,13 @@ function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, p
 
     } else {
         // Instance-specific: Available if THESE SPECIFIC ports are free
-        const sourceId = sourcePort.id();
+        const sourceId = state.editing.selectedFirstPort.id();
         const targetId = targetPort.id();
 
-        const sourceConnections = cy.edges().filter(e =>
+        const sourceConnections = state.cy.edges().filter(e =>
             e.data('source') === sourceId || e.data('target') === sourceId
         );
-        const targetConnections = cy.edges().filter(e =>
+        const targetConnections = state.cy.edges().filter(e =>
             e.data('source') === targetId || e.data('target') === targetId
         );
 
@@ -3264,7 +3386,7 @@ function calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
     // If placement level matches closest ancestor = template-level connection
     if (closestTemplateName && placementTemplateName === closestTemplateName) {
         // Count how many instances of this template exist (including empty ones)
-        const templateInstances = cy.nodes().filter(node =>
+        const templateInstances = state.cy.nodes().filter(node =>
             node.data('type') === 'graph' && node.data('template_name') === placementTemplateName
         );
         return templateInstances.length;
@@ -3275,12 +3397,12 @@ function calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
 }
 
 function deleteSelectedNode() {
-    if (!selectedNode || selectedNode.length === 0) {
+    if (!state.editing.selectedNode || state.editing.selectedNode.length === 0) {
         alert('Please select a node first by clicking on it.');
         return;
     }
 
-    const node = selectedNode;
+    const node = state.editing.selectedNode;
     const nodeType = node.data('type');
     const nodeLabel = node.data('label') || node.id();
 
@@ -3366,15 +3488,15 @@ function deleteSelectedNode() {
         } else {
             // Check if deleting the original root before removal
             const nodeId = node.id();
-            const isOriginalRoot = currentData && currentData.metadata &&
-                currentData.metadata.initialRootId === nodeId;
+            const isOriginalRoot = state.data.currentData && state.data.currentData.metadata &&
+                state.data.currentData.metadata.initialRootId === nodeId;
 
             // If it's a compound node, Cytoscape will automatically remove all descendants
             node.remove();
 
             // Track original root deletion for export optimization
-            if (isOriginalRoot && currentData && currentData.metadata) {
-                currentData.metadata.hasTopLevelAdditions = true;
+            if (isOriginalRoot && state.data.currentData && state.data.currentData.metadata) {
+                state.data.currentData.metadata.hasTopLevelAdditions = true;
                 console.log(`Original root deleted - flagging export to use synthetic root`);
             }
 
@@ -3387,7 +3509,7 @@ function deleteSelectedNode() {
         }
 
         state.editing.selectedNode = null;
-        selectedNode = null;
+        state.editing.selectedNode = null;
         updateDeleteNodeButtonState();
         updatePortConnectionStatus();
         updatePortEditingHighlight();
@@ -3404,8 +3526,8 @@ function deleteMultipleSelected() {
      * Delete multiple selected nodes and/or connections at once.
      * This function handles bulk deletion of cytoscape selections.
      */
-    const selectedNodes = cy.nodes(':selected');
-    const selectedEdges = cy.edges(':selected');
+    const selectedNodes = state.cy.nodes(':selected');
+    const selectedEdges = state.cy.edges(':selected');
 
     const nodeCount = selectedNodes.length;
     const edgeCount = selectedEdges.length;
@@ -3523,14 +3645,14 @@ function deleteMultipleSelected() {
         // Delete standalone nodes
         standaloneNodes.forEach(node => {
             const nodeId = node.id();
-            const isOriginalRoot = currentData && currentData.metadata &&
-                currentData.metadata.initialRootId === nodeId;
+            const isOriginalRoot = state.data.currentData && state.data.currentData.metadata &&
+                state.data.currentData.metadata.initialRootId === nodeId;
 
             node.remove();
 
             // Track original root deletion for export optimization
-            if (isOriginalRoot && currentData && currentData.metadata) {
-                currentData.metadata.hasTopLevelAdditions = true;
+            if (isOriginalRoot && state.data.currentData && state.data.currentData.metadata) {
+                state.data.currentData.metadata.hasTopLevelAdditions = true;
                 console.log(`Original root deleted - flagging export to use synthetic root`);
             }
         });
@@ -3544,9 +3666,9 @@ function deleteMultipleSelected() {
     }
 
     // Clear selections and update UI
-    cy.elements().unselect();
-    selectedNode = null;
-    selectedConnection = null;
+    state.cy.elements().unselect();
+    state.editing.selectedNode = null;
+    state.editing.selectedConnection = null;
     updateDeleteNodeButtonState();
     updateDeleteButtonState();
     updatePortConnectionStatus();
@@ -3563,8 +3685,8 @@ function deleteSelectedElement() {
      * Combined delete function that handles single or multiple selections.
      * Priority: Check for multiple selections first, then single connection, then single node.
      */
-    const selectedNodes = cy.nodes(':selected');
-    const selectedEdges = cy.edges(':selected');
+    const selectedNodes = state.cy.nodes(':selected');
+    const selectedEdges = state.cy.edges(':selected');
     const totalSelected = selectedNodes.length + selectedEdges.length;
 
     // If multiple items selected, use bulk delete
@@ -3574,9 +3696,9 @@ function deleteSelectedElement() {
     }
 
     // Single item deletion (legacy behavior)
-    if (selectedConnection && selectedConnection.length > 0) {
+    if (state.editing.selectedConnection && state.editing.selectedConnection.length > 0) {
         deleteSelectedConnection();
-    } else if (selectedNode && selectedNode.length > 0) {
+    } else if (state.editing.selectedNode && state.editing.selectedNode.length > 0) {
         deleteSelectedNode();
     } else if (totalSelected === 1) {
         // Fallback: use cytoscape selection if our tracking variables aren't set
@@ -3592,8 +3714,8 @@ function updatePortConnectionStatus() {
 }
 
 function createConnection(sourceId, targetId) {
-    const sourceNode = cy.getElementById(sourceId);
-    const targetNode = cy.getElementById(targetId);
+    const sourceNode = state.cy.getElementById(sourceId);
+    const targetNode = state.cy.getElementById(targetId);
 
     if (!sourceNode.length || !targetNode.length) {
         console.error('Source or target node not found');
@@ -3601,8 +3723,8 @@ function createConnection(sourceId, targetId) {
     }
 
     // Check if either port already has a connection
-    const sourceConnections = cy.edges(`[source="${sourceId}"], [target="${sourceId}"]`);
-    const targetConnections = cy.edges(`[source="${targetId}"], [target="${targetId}"]`);
+    const sourceConnections = state.cy.edges(`[source="${sourceId}"], [target="${sourceId}"]`);
+    const targetConnections = state.cy.edges(`[source="${targetId}"], [target="${targetId}"]`);
 
     if (sourceConnections.length > 0) {
         alert(`Cannot create connection: Source port "${sourceNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
@@ -3625,7 +3747,7 @@ function createConnection(sourceId, targetId) {
 
     // In hierarchy mode, check if we have graph hierarchy
     // If so, show placement level selection modal
-    const hasGraphHierarchy = cy.nodes('[type="graph"]').length > 0;
+    const hasGraphHierarchy = state.cy.nodes('[type="graph"]').length > 0;
 
     if (hasGraphHierarchy) {
         // Enumerate all possible placement levels
@@ -4019,7 +4141,7 @@ function applyPhysicalLayout() {
     }
 
     // Get all shelf nodes
-    const shelfNodes = cy.nodes('[type="shelf"]');
+    const shelfNodes = state.cy.nodes('[type="shelf"]');
     if (shelfNodes.length === 0) {
         alert('No shelf nodes found to assign physical locations');
         cancelPhysicalLayoutModal();
@@ -4211,7 +4333,7 @@ function createSingleConnection(sourceNode, targetNode, template_name, depth) {
         }
     };
 
-    cy.add(newEdge);
+    state.cy.add(newEdge);
 
     // Update visuals
     updatePortConnectionStatus();
@@ -4219,8 +4341,8 @@ function createSingleConnection(sourceNode, targetNode, template_name, depth) {
     setTimeout(() => forceApplyCurveStyles(), 50);
 
     // Update the connection legend after creating a connection
-    if (currentData) {
-        updateConnectionLegend(currentData);
+    if (state.data.currentData) {
+        updateConnectionLegend(state.data.currentData);
     }
 }
 
@@ -4230,7 +4352,7 @@ function createSingleConnection(sourceNode, targetNode, template_name, depth) {
  */
 function createConnectionInAllTemplateInstances(sourceNode, targetNode, template_name, depth) {
     // Find all instances of this template (including empty ones)
-    const templateGraphs = cy.nodes().filter(node =>
+    const templateGraphs = state.cy.nodes().filter(node =>
         node.data('type') === 'graph' && node.data('template_name') === template_name
     );
 
@@ -4285,10 +4407,10 @@ function createConnectionInAllTemplateInstances(sourceNode, targetNode, template
         }
 
         // Check if EITHER port already has ANY connection
-        const sourcePortConnections = cy.edges().filter(e =>
+        const sourcePortConnections = state.cy.edges().filter(e =>
             e.data('source') === sourcePortNode.id() || e.data('target') === sourcePortNode.id()
         );
-        const targetPortConnections = cy.edges().filter(e =>
+        const targetPortConnections = state.cy.edges().filter(e =>
             e.data('source') === targetPortNode.id() || e.data('target') === targetPortNode.id()
         );
 
@@ -4308,9 +4430,9 @@ function createConnectionInAllTemplateInstances(sourceNode, targetNode, template
 
     // Update the template definition to include the new connection
     if (createdCount > 0 && sourcePattern && targetPattern) {
-        // Update availableGraphTemplates
-        if (availableGraphTemplates && availableGraphTemplates[template_name]) {
-            const template = availableGraphTemplates[template_name];
+        // Update state.data.availableGraphTemplates
+        if (state.data.availableGraphTemplates && state.data.availableGraphTemplates[template_name]) {
+            const template = state.data.availableGraphTemplates[template_name];
             if (!template.connections) {
                 template.connections = [];
             }
@@ -4333,9 +4455,9 @@ function createConnectionInAllTemplateInstances(sourceNode, targetNode, template
             console.log(`Updated template "${template_name}" with new connection pattern`);
         }
 
-        // Update currentData.metadata.graph_templates if it exists (for export)
-        if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-            const template = currentData.metadata.graph_templates[template_name];
+        // Update state.data.currentData.metadata.graph_templates if it exists (for export)
+        if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+            const template = state.data.currentData.metadata.graph_templates[template_name];
             if (template) {
                 if (!template.connections) {
                     template.connections = [];
@@ -4360,8 +4482,8 @@ function createConnectionInAllTemplateInstances(sourceNode, targetNode, template
     }
 
     // Update the connection legend after creating connections
-    if (createdCount > 0 && currentData) {
-        updateConnectionLegend(currentData);
+    if (createdCount > 0 && state.data.currentData) {
+        updateConnectionLegend(state.data.currentData);
     }
 
     if (createdCount > 0) {
@@ -4379,7 +4501,7 @@ function updateAddNodeButtonState() {
     const addNodeBtn = document.getElementById('addNodeBtn');
     const addNodeText = addNodeBtn.nextElementSibling;
 
-    if (cy && currentData) {
+    if (cy && state.data.currentData) {
         // Enable the button
         addNodeBtn.disabled = false;
         addNodeBtn.style.background = '#007bff';
@@ -4432,11 +4554,11 @@ function createEmptyVisualization() {
             total_nodes: 0
         }
     };
-    currentData = state.data.currentData;
+    state.data.currentData = state.data.currentData;
     window.currentData = state.data.currentData; // Expose to global scope
 
     // Initialize Cytoscape with empty data
-    initVisualization(currentData);
+    initVisualization(state.data.currentData);
 
     // Enable the Add Node button
     updateAddNodeButtonState();
@@ -4480,7 +4602,7 @@ function resetLayout() {
         hierarchy_calculateLayout();
 
         // Fit viewport to show all nodes
-        cy.fit(null, 50);
+        state.cy.fit(null, 50);
 
         // Apply drag restrictions
         applyDragRestrictions();
@@ -4499,7 +4621,7 @@ function resetLayout() {
 
     // Location mode - recalculate based on rack/shelf positions with hall/aisle grouping
     // Get all racks and group by hall/aisle
-    const racks = cy.nodes('[type="rack"]');
+    const racks = state.cy.nodes('[type="rack"]');
     if (racks.length === 0) {
         // No racks - this might be 8-column format with standalone shelves
         alert('No rack hierarchy found.');
@@ -4661,7 +4783,7 @@ function resetLayout() {
     });
 
     // Second pass: apply all position updates in a batch
-    cy.startBatch();
+    state.cy.startBatch();
     positionUpdates.forEach(function (update) {
         update.node.position(update.newPos);
 
@@ -4670,19 +4792,19 @@ function resetLayout() {
             common_arrangeTraysAndPorts(update.node);
         }
     });
-    cy.endBatch();
+    state.cy.endBatch();
 
     // Force a complete refresh of the cytoscape instance
-    cy.resize();
-    cy.forceRender();
+    state.cy.resize();
+    state.cy.forceRender();
 
     // Small delay to ensure rendering is complete before fitting viewport and reapplying styles
     setTimeout(function () {
         // Apply fcose layout to prevent overlaps in location mode
-        const locationNodes = cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
+        const locationNodes = state.cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
         if (locationNodes.length > 0) {
             try {
-                const layout = cy.layout({
+                const layout = state.cy.layout({
                     name: 'fcose',
                     eles: locationNodes,
                     quality: 'default',
@@ -4699,7 +4821,7 @@ function resetLayout() {
                     stop: function () {
                         // Re-arrange trays/ports after fcose moves shelves
                         // This ensures tray/port positions are correct relative to new shelf positions
-                        cy.nodes('[type="shelf"]').forEach(shelf => {
+                        state.cy.nodes('[type="shelf"]').forEach(shelf => {
                             common_arrangeTraysAndPorts(shelf);
                         });
                         applyDragRestrictions();
@@ -4707,9 +4829,9 @@ function resetLayout() {
                         updatePortConnectionStatus();
 
                         // Fit the view to show all nodes with padding
-                        cy.fit(50);
-                        cy.center();
-                        cy.forceRender();
+                        state.cy.fit(50);
+                        state.cy.center();
+                        state.cy.forceRender();
 
                         // Show success message
                         showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
@@ -4732,11 +4854,11 @@ function resetLayout() {
         updatePortConnectionStatus();
 
         // Fit the view to show all nodes with padding
-        cy.fit(50);
-        cy.center();
+        state.cy.fit(50);
+        state.cy.center();
 
         // Force another render to ensure everything is updated
-        cy.forceRender();
+        state.cy.forceRender();
 
         // Show success message
         showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
@@ -4790,7 +4912,7 @@ function addNewNode() {
         let parentNode = null;
 
         // Check if there's a selected graph instance
-        const selectedNodes = cy.nodes(':selected');
+        const selectedNodes = state.cy.nodes(':selected');
         if (selectedNodes.length > 0) {
             const selectedGraphNode = selectedNodes[0];
             const selectedType = selectedGraphNode.data('type');
@@ -4827,7 +4949,7 @@ function addNewNode() {
             const parentTemplateName = parentNode.data('template_name');
 
             // Find ALL instances globally with the same template_name
-            const allInstances = cy.nodes('[type="graph"]').filter(node => {
+            const allInstances = state.cy.nodes('[type="graph"]').filter(node => {
                 return node.data('template_name') === parentTemplateName && node.id() !== parentId;
             });
 
@@ -4844,21 +4966,21 @@ function addNewNode() {
 
         if (isTopLevelNode) {
             // Create a single top-level node (no parent)
-            const existingTopLevelNodes = cy.nodes('[type="shelf"]').filter(n => !n.parent().length);
+            const existingTopLevelNodes = state.cy.nodes('[type="shelf"]').filter(n => !n.parent().length);
             const nodeIndex = existingTopLevelNodes.length;
             autoNodeName = `node_${nodeIndex}`;
 
             // Generate global host_index
-            const hostIndex = globalHostCounter;
+            const hostIndex = state.data.globalHostCounter;
             state.data.globalHostCounter++;
-            globalHostCounter = state.data.globalHostCounter;
+            state.data.globalHostCounter = state.data.globalHostCounter;
 
             // Create shelf node ID using descriptor format (numeric host_index)
             const shelfId = String(hostIndex);
             const shelfLabel = `${autoNodeName} (host_${hostIndex})`;
 
             // Add shelf node at top level (no parent)
-            cy.add({
+            state.cy.add({
                 group: 'nodes',
                 data: {
                     id: shelfId,
@@ -4878,10 +5000,10 @@ function addNewNode() {
             // Create trays and ports
             const nodesToAdd = [];
             createTraysAndPorts(shelfId, autoNodeName, hostIndex, nodeType, config, 0, 0, nodesToAdd);
-            cy.add(nodesToAdd);
+            state.cy.add(nodesToAdd);
 
             // Arrange trays and ports using common layout function
-            const addedShelf = cy.getElementById(shelfId);
+            const addedShelf = state.cy.getElementById(shelfId);
             common_arrangeTraysAndPorts(addedShelf);
 
             totalNodesAdded = 1;
@@ -4900,9 +5022,9 @@ function addNewNode() {
                 }
 
                 // Generate global host_index (will be recalculated later)
-                const hostIndex = globalHostCounter;
+                const hostIndex = state.data.globalHostCounter;
                 state.data.globalHostCounter++;
-                globalHostCounter = state.data.globalHostCounter;
+                state.data.globalHostCounter = state.data.globalHostCounter;
 
                 // Create shelf node ID using descriptor format (numeric host_index)
                 const shelfId = String(hostIndex);
@@ -4915,7 +5037,7 @@ function addNewNode() {
                 }
 
                 // Add shelf node
-                cy.add({
+                state.cy.add({
                     group: 'nodes',
                     data: {
                         id: shelfId,
@@ -4935,10 +5057,10 @@ function addNewNode() {
                 // Create trays and ports
                 const nodesToAdd = [];
                 createTraysAndPorts(shelfId, autoNodeName, hostIndex, nodeType, config, 0, 0, nodesToAdd);
-                cy.add(nodesToAdd);
+                state.cy.add(nodesToAdd);
 
                 // Arrange trays and ports using common layout function
-                const addedShelf = cy.getElementById(shelfId);
+                const addedShelf = state.cy.getElementById(shelfId);
                 common_arrangeTraysAndPorts(addedShelf);
 
                 totalNodesAdded++;
@@ -4949,9 +5071,9 @@ function addNewNode() {
         if (!isTopLevelNode && autoNodeName) {
             const parentTemplateName = parentNode.data('template_name');
 
-            // Update availableGraphTemplates
-            if (availableGraphTemplates && availableGraphTemplates[parentTemplateName]) {
-                const template = availableGraphTemplates[parentTemplateName];
+            // Update state.data.availableGraphTemplates
+            if (state.data.availableGraphTemplates && state.data.availableGraphTemplates[parentTemplateName]) {
+                const template = state.data.availableGraphTemplates[parentTemplateName];
                 if (!template.children) {
                     template.children = [];
                 }
@@ -4975,9 +5097,9 @@ function addNewNode() {
                 }
             }
 
-            // Update currentData.metadata.graph_templates if it exists (for export)
-            if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-                const template = currentData.metadata.graph_templates[parentTemplateName];
+            // Update state.data.currentData.metadata.graph_templates if it exists (for export)
+            if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+                const template = state.data.currentData.metadata.graph_templates[parentTemplateName];
                 if (template) {
                     if (!template.children) {
                         template.children = [];
@@ -5010,8 +5132,8 @@ function addNewNode() {
         hierarchy_calculateLayout();
 
         // Update the connection legend (in case template structure affects it)
-        if (currentData) {
-            updateConnectionLegend(currentData);
+        if (state.data.currentData) {
+            updateConnectionLegend(state.data.currentData);
         }
 
         // Success message
@@ -5052,7 +5174,7 @@ function addNewNode() {
 
     // Check for existing node with same hostname or location
     if (hasHostname) {
-        const existingNode = cy.nodes(`[hostname="${hostname}"]`);
+        const existingNode = state.cy.nodes(`[hostname="${hostname}"]`);
         if (existingNode.length > 0) {
             alert(`A node with hostname "${hostname}" already exists. Please choose a different hostname.`);
             hostnameInput.focus();
@@ -5060,7 +5182,7 @@ function addNewNode() {
         }
     } else {
         // Check for existing node with same location
-        const existingNode = cy.nodes(`[hall="${hall}"][aisle="${aisle}"][rack_num="${rack}"][shelf_u="${shelfU}"]`);
+        const existingNode = state.cy.nodes(`[hall="${hall}"][aisle="${aisle}"][rack_num="${rack}"][shelf_u="${shelfU}"]`);
         if (existingNode.length > 0) {
             alert(`A node already exists at Hall: ${hall}, Aisle: ${aisle}, Rack: ${rack}, Shelf U: ${shelfU}. Please choose a different location.`);
             return;
@@ -5078,14 +5200,14 @@ function addNewNode() {
     let rackParentId = null;
     if (hasLocation) {
         const rackId = `rack_${rack.toString().padStart(2, '0')}`;
-        let rackNode = cy.getElementById(rackId);
+        let rackNode = state.cy.getElementById(rackId);
 
         // Create rack if it doesn't exist
         if (rackNode.length === 0) {
             // Calculate position for new rack
             let newRackX = 0;
             let newRackY = 0;
-            const existingRacks = cy.nodes('[type="rack"]');
+            const existingRacks = state.cy.nodes('[type="rack"]');
 
             if (existingRacks.length > 0) {
                 // Position new rack to the right of the rightmost rack
@@ -5105,7 +5227,7 @@ function addNewNode() {
             }
 
             const rackLabel = `Rack ${rack}`;
-            cy.add({
+            state.cy.add({
                 group: 'nodes',
                 data: {
                     id: rackId,
@@ -5121,7 +5243,7 @@ function addNewNode() {
                     y: newRackY
                 }
             });
-            rackNode = cy.getElementById(rackId);
+            rackNode = state.cy.getElementById(rackId);
         }
 
         rackParentId = rackId;
@@ -5132,7 +5254,7 @@ function addNewNode() {
 
     if (rackParentId) {
         // Position shelf within the rack
-        const rackNode = cy.getElementById(rackParentId);
+        const rackNode = state.cy.getElementById(rackParentId);
         const rackPos = rackNode.position();
 
         // Get existing shelves in this rack to determine vertical position
@@ -5144,7 +5266,7 @@ function addNewNode() {
         newY = rackPos.y - (shelfCount * shelfSpacing / 2); // Position based on shelf count
     } else {
         // 8-column format or no rack - position to the right of existing shelves
-        const existingShelves = cy.nodes('.shelf');
+        const existingShelves = state.cy.nodes('.shelf');
         let maxX = 0;
         existingShelves.forEach(shelf => {
             const pos = shelf.position();
@@ -5157,7 +5279,7 @@ function addNewNode() {
     // Create shelf node using descriptor format
     // Shelf ID is the host_index (numeric), but label shows hostname or location
     const hostIndex = state.data.globalHostCounter++;
-    globalHostCounter = state.data.globalHostCounter;
+    state.data.globalHostCounter = state.data.globalHostCounter;
     const shelfId = String(hostIndex);  // Descriptor format: numeric ID as string
     let nodeLabel, nodeData;
 
@@ -5227,10 +5349,10 @@ function addNewNode() {
 
     try {
         // Add all nodes to cytoscape
-        cy.add(nodesToAdd);
+        state.cy.add(nodesToAdd);
 
         // Arrange trays and ports for the newly added shelf
-        const addedShelf = cy.getElementById(shelfId);
+        const addedShelf = state.cy.getElementById(shelfId);
         if (addedShelf && addedShelf.length > 0) {
             common_arrangeTraysAndPorts(addedShelf);
         }
@@ -5283,7 +5405,7 @@ function templateContainsTemplate(parentTemplateName, childTemplateName) {
         }
         visited.add(templateName);
 
-        const template = availableGraphTemplates[templateName];
+        const template = state.data.availableGraphTemplates[templateName];
         if (!template || !template.children) {
             return false;
         }
@@ -5320,7 +5442,7 @@ function addNewGraph() {
     }
 
     // Check if there are any templates available
-    if (Object.keys(availableGraphTemplates).length === 0) {
+    if (Object.keys(state.data.availableGraphTemplates).length === 0) {
         showNotificationBanner('No graph templates available. Please load a textproto file that contains graph_templates first.', 'error');
         return;
     }
@@ -5333,7 +5455,7 @@ function addNewGraph() {
     }
 
     // Get the template structure
-    const template = availableGraphTemplates[selectedTemplate];
+    const template = state.data.availableGraphTemplates[selectedTemplate];
     if (!template) {
         showNotificationBanner(`Template "${selectedTemplate}" not found.`, 'error');
         return;
@@ -5349,7 +5471,7 @@ function addNewGraph() {
     let parentNode = null;
 
     // Check if there's a selected node that could be a parent
-    const selectedNodes = cy.nodes(':selected');
+    const selectedNodes = state.cy.nodes(':selected');
     if (selectedNodes.length > 0) {
         const selectedNode = selectedNodes[0];
         const selectedType = selectedNode.data('type');
@@ -5357,7 +5479,7 @@ function addNewGraph() {
         // Only graph nodes (type="graph") can be parents for new graph instances (even if empty)
         if (selectedType === 'graph') {
             // Check for circular dependency
-            const parentTemplateName = selectedNode.data('template_name');
+            const parentTemplateName = state.editing.selectedNode.data('template_name');
 
             // Case 1: Self-reference - template cannot contain itself
             if (parentTemplateName === selectedTemplate) {
@@ -5372,8 +5494,8 @@ function addNewGraph() {
                 return;
             }
 
-            parentNode = selectedNode;
-            parentId = selectedNode.id();
+            parentNode = state.editing.selectedNode;
+            parentId = state.editing.selectedNode.id();
         } else {
             console.log(`Selected node is not a graph (type: ${selectedType}). Adding at top level.`);
         }
@@ -5389,7 +5511,7 @@ function addNewGraph() {
         });
     } else {
         // Count top-level instances (no parent, including empty ones)
-        existingInstances = cy.nodes().roots().filter(node => {
+        existingInstances = state.cy.nodes().roots().filter(node => {
             return node.data('type') === 'graph' && node.data('template_name') === selectedTemplate;
         });
     }
@@ -5436,7 +5558,7 @@ function addNewGraph() {
         }
     } else {
         // No parent - position at top level
-        const existingGraphs = cy.nodes().filter(node => node.isParent() && !node.parent().length && !['rack', 'tray', 'port'].includes(node.data('type')));
+        const existingGraphs = state.cy.nodes().filter(node => node.isParent() && !node.parent().length && !['rack', 'tray', 'port'].includes(node.data('type')));
 
         if (existingGraphs.length > 0) {
             // Position new graph to the right of existing top-level graphs
@@ -5470,7 +5592,7 @@ function addNewGraph() {
             updateTemplateWithNewChild(parentTemplateName, selectedTemplate, graphLabel);
 
             // Find all instances of the parent template (including empty ones)
-            const parentTemplateInstances = cy.nodes().filter(node =>
+            const parentTemplateInstances = state.cy.nodes().filter(node =>
                 node.data('type') === 'graph' &&
                 node.data('template_name') === parentTemplateName
             );
@@ -5536,12 +5658,12 @@ function addNewGraph() {
                 );
 
                 // Add nodes for this instance
-                cy.add(nodesToAdd);
+                state.cy.add(nodesToAdd);
 
                 // Arrange trays and ports for all newly added shelves
                 nodesToAdd.forEach(node => {
                     if (node.data && node.data.type === 'shelf') {
-                        const shelfNode = cy.getElementById(node.data.id);
+                        const shelfNode = state.cy.getElementById(node.data.id);
                         if (shelfNode && shelfNode.length > 0) {
                             common_arrangeTraysAndPorts(shelfNode);
                         }
@@ -5550,10 +5672,10 @@ function addNewGraph() {
 
                 // Process connections
                 processDeferredConnections(deferredConnections, edgesToAdd);
-                cy.add(edgesToAdd);
+                state.cy.add(edgesToAdd);
 
                 // Explicitly apply graph class to ensure styling works
-                cy.getElementById(childGraphId).addClass('graph');
+                state.cy.getElementById(childGraphId).addClass('graph');
 
                 instancesUpdated++;
             });
@@ -5565,19 +5687,19 @@ function addNewGraph() {
             applyDragRestrictions();
 
             // Force complete style recalculation and redraw
-            cy.style().update();
-            cy.forceRender();
+            state.cy.style().update();
+            state.cy.forceRender();
 
             // Defer layout calculation to ensure nodes are fully rendered and bounding boxes are accurate
             setTimeout(() => {
                 hierarchy_calculateLayout();
-                cy.fit(null, 50);
+                state.cy.fit(null, 50);
 
                 // Apply curves and update status after layout is done
                 setTimeout(() => {
                     forceApplyCurveStyles();
                     updatePortConnectionStatus();
-                    cy.forceRender();
+                    state.cy.forceRender();
                 }, 50);
             }, 50);
 
@@ -5593,7 +5715,7 @@ function addNewGraph() {
             // Get parent depth for proper color cascading
             let parentDepthValue = -1; // Default for top-level (depth will be 0)
             if (parentId) {
-                const parentNodeForDepth = cy.getElementById(parentId);
+                const parentNodeForDepth = state.cy.getElementById(parentId);
                 if (parentNodeForDepth && parentNodeForDepth.length > 0) {
                     parentDepthValue = parentNodeForDepth.data('depth') || 0;
                 }
@@ -5618,12 +5740,12 @@ function addNewGraph() {
 
             // Add all nodes to cytoscape FIRST
             console.log(`Adding ${nodesToAdd.length} nodes to Cytoscape`);
-            cy.add(nodesToAdd);
+            state.cy.add(nodesToAdd);
 
             // Arrange trays and ports for all newly added shelves
             nodesToAdd.forEach(node => {
                 if (node.data && node.data.type === 'shelf') {
-                    const shelfNode = cy.getElementById(node.data.id);
+                    const shelfNode = state.cy.getElementById(node.data.id);
                     if (shelfNode && shelfNode.length > 0) {
                         common_arrangeTraysAndPorts(shelfNode);
                     }
@@ -5631,10 +5753,10 @@ function addNewGraph() {
             });
 
             // Track top-level additions for export optimization
-            if (parentId === null && currentData && currentData.metadata) {
+            if (parentId === null && state.data.currentData && state.data.currentData.metadata) {
                 // Adding at top level - check if we had an initial root
-                if (currentData.metadata.initialRootTemplate) {
-                    currentData.metadata.hasTopLevelAdditions = true;
+                if (state.data.currentData.metadata.initialRootTemplate) {
+                    state.data.currentData.metadata.hasTopLevelAdditions = true;
                     console.log(`Top-level graph added - flagging export to use synthetic root`);
                 }
             }
@@ -5645,7 +5767,7 @@ function addNewGraph() {
 
             // Add all edges
             console.log(`Adding ${edgesToAdd.length} edges to Cytoscape`);
-            cy.add(edgesToAdd);
+            state.cy.add(edgesToAdd);
 
             // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
             if (state.mode === 'hierarchy') {
@@ -5656,23 +5778,23 @@ function addNewGraph() {
             applyDragRestrictions();
 
             // Explicitly apply graph class to ensure styling works
-            cy.getElementById(graphId).addClass('graph');
+            state.cy.getElementById(graphId).addClass('graph');
 
             // Force complete style recalculation and redraw
-            cy.style().update();
-            cy.forceRender();
+            state.cy.style().update();
+            state.cy.forceRender();
 
             // Defer layout calculation to ensure nodes are fully rendered and bounding boxes are accurate
             // This prevents the "weird look" on initial creation
             setTimeout(() => {
                 hierarchy_calculateLayout();
-                cy.fit(null, 50);  // Fit viewport to show all content
+                state.cy.fit(null, 50);  // Fit viewport to show all content
 
                 // Apply curves and update status after layout is done
                 setTimeout(() => {
                     forceApplyCurveStyles();
                     updatePortConnectionStatus();
-                    cy.forceRender();
+                    state.cy.forceRender();
                 }, 50);
             }, 50);
 
@@ -5707,14 +5829,14 @@ function createNewTemplate() {
     }
 
     // Check if template name already exists
-    if (availableGraphTemplates && availableGraphTemplates[newTemplateName]) {
+    if (state.data.availableGraphTemplates && state.data.availableGraphTemplates[newTemplateName]) {
         showNotificationBanner(`Template "${newTemplateName}" already exists. Please choose a different name.`, 'error');
         templateNameInput.focus();
         return;
     }
 
     try {
-        // Initialize currentData if it doesn't exist (for empty canvas scenario)
+        // Initialize state.data.currentData if it doesn't exist (for empty canvas scenario)
         if (!state.data.currentData) {
             state.data.currentData = {
                 nodes: [],
@@ -5726,15 +5848,15 @@ function createNewTemplate() {
                     graph_templates: {}
                 }
             };
-            currentData = state.data.currentData;
+            state.data.currentData = state.data.currentData;
         }
 
         // Initialize metadata.graph_templates if it doesn't exist
-        if (!currentData.metadata) {
-            currentData.metadata = { graph_templates: {} };
+        if (!state.data.currentData.metadata) {
+            state.data.currentData.metadata = { graph_templates: {} };
         }
-        if (!currentData.metadata.graph_templates) {
-            currentData.metadata.graph_templates = {};
+        if (!state.data.currentData.metadata.graph_templates) {
+            state.data.currentData.metadata.graph_templates = {};
         }
 
         // Create an empty template structure
@@ -5743,17 +5865,16 @@ function createNewTemplate() {
             connections: []
         };
 
-        // Initialize availableGraphTemplates if it doesn't exist
-        if (!availableGraphTemplates) {
+        // Initialize state.data.availableGraphTemplates if it doesn't exist
+        if (!state.data.availableGraphTemplates) {
             state.data.availableGraphTemplates = {};
-            availableGraphTemplates = {};
         }
 
-        // Add the new template to availableGraphTemplates
-        availableGraphTemplates[newTemplateName] = emptyTemplate;
+        // Add the new template to state.data.availableGraphTemplates
+        state.data.availableGraphTemplates[newTemplateName] = emptyTemplate;
 
-        // Also add to currentData.metadata.graph_templates for export
-        currentData.metadata.graph_templates[newTemplateName] = emptyTemplate;
+        // Also add to state.data.currentData.metadata.graph_templates for export
+        state.data.currentData.metadata.graph_templates[newTemplateName] = emptyTemplate;
 
         // Update the template dropdown
         const graphTemplateSelect = document.getElementById('graphTemplateSelect');
@@ -5761,7 +5882,7 @@ function createNewTemplate() {
             // Rebuild the dropdown
             graphTemplateSelect.innerHTML = '<option value="">-- Select a Template --</option>';
 
-            Object.keys(availableGraphTemplates).sort().forEach(templateName => {
+            Object.keys(state.data.availableGraphTemplates).sort().forEach(templateName => {
                 const option = document.createElement('option');
                 option.value = templateName;
                 option.textContent = templateName;
@@ -5775,16 +5896,16 @@ function createNewTemplate() {
         let parentDepth = -1;
 
         // Check if there's a selected node that could be a parent
-        const selectedNodes = cy.nodes(':selected');
+        const selectedNodes = state.cy.nodes(':selected');
         if (selectedNodes.length > 0) {
             const selectedNode = selectedNodes[0];
             const selectedType = selectedNode.data('type');
 
             // Only graph nodes can be parents for new graph instances (even if empty)
             if (selectedType === 'graph') {
-                parentNode = selectedNode;
-                parentId = selectedNode.id();
-                parentDepth = selectedNode.data('depth') || 0;
+                parentNode = state.editing.selectedNode;
+                parentId = state.editing.selectedNode.id();
+                parentDepth = state.editing.selectedNode.data('depth') || 0;
             }
         }
 
@@ -5804,7 +5925,7 @@ function createNewTemplate() {
             instanceIndex = siblings.length;
         } else {
             // Count all instances of this template at the top level
-            const topLevelInstances = cy.nodes('[type="graph"]').filter(node => {
+            const topLevelInstances = state.cy.nodes('[type="graph"]').filter(node => {
                 return !node.parent().length && node.data('template_name') === newTemplateName;
             });
             instanceIndex = topLevelInstances.length;
@@ -5836,7 +5957,7 @@ function createNewTemplate() {
                 updateTemplateWithNewChild(parentTemplateName, newTemplateName, graphLabel);
 
                 // Find all instances of the parent template
-                const parentTemplateInstances = cy.nodes().filter(node =>
+                const parentTemplateInstances = state.cy.nodes().filter(node =>
                     node.data('type') === 'graph' &&
                     node.data('template_name') === parentTemplateName
                 );
@@ -5891,7 +6012,7 @@ function createNewTemplate() {
                         classes: 'graph'
                     };
 
-                    cy.add(childGraphNode);
+                    state.cy.add(childGraphNode);
                 });
 
                 console.log(`Added new template "${newTemplateName}" to ${parentTemplateInstances.length} instance(s) of parent template "${parentTemplateName}"`);
@@ -5916,21 +6037,21 @@ function createNewTemplate() {
             };
 
             // Add the node to the graph
-            cy.add(graphNode);
+            state.cy.add(graphNode);
         }
 
         // Force render
-        cy.forceRender();
+        state.cy.forceRender();
 
         // Recalculate layout
         setTimeout(() => {
             hierarchy_calculateLayout();
-            cy.fit(null, 50);
+            state.cy.fit(null, 50);
 
             setTimeout(() => {
                 forceApplyCurveStyles();
                 updatePortConnectionStatus();
-                cy.forceRender();
+                state.cy.forceRender();
             }, 50);
         }, 50);
 
@@ -5941,15 +6062,15 @@ function createNewTemplate() {
         updateAddNodeButtonState();
 
         // Update the connection legend to show the new template
-        if (currentData) {
-            updateConnectionLegend(currentData);
+        if (state.data.currentData) {
+            updateConnectionLegend(state.data.currentData);
         }
 
         // Show success message
         if (parentId && parentNode) {
             const parentTemplateName = parentNode.data('template_name');
             if (parentTemplateName) {
-                const parentTemplateInstances = cy.nodes().filter(node =>
+                const parentTemplateInstances = state.cy.nodes().filter(node =>
                     node.data('type') === 'graph' &&
                     node.data('template_name') === parentTemplateName
                 );
@@ -6012,7 +6133,7 @@ function processDeferredConnections(deferredConnections, edgesToAdd) {
                 }
 
                 // Get the shelf node to retrieve host_index (ports use host_index in their IDs)
-                const sourceShelfNode = cy.getElementById(sourceNodeId);
+                const sourceShelfNode = state.cy.getElementById(sourceNodeId);
                 if (!sourceShelfNode || sourceShelfNode.length === 0) {
                     console.warn(`Source shelf node not found: ${sourceNodeId} in graph "${graphLabel}"`);
                     return;
@@ -6028,7 +6149,7 @@ function processDeferredConnections(deferredConnections, edgesToAdd) {
                 const sourcePortId = `${sourceHostIndex}:t${conn.port_a.tray_id}:p${conn.port_a.port_id}`;
 
                 // Verify port exists before creating edge
-                const sourcePortNode = cy.getElementById(sourcePortId);
+                const sourcePortNode = state.cy.getElementById(sourcePortId);
                 if (!sourcePortNode || sourcePortNode.length === 0) {
                     console.warn(`Source port not found: ${sourcePortId} (shelf: ${sourceNodeId}, host_index: ${sourceHostIndex}) in graph "${graphLabel}"`);
                     return;
@@ -6044,7 +6165,7 @@ function processDeferredConnections(deferredConnections, edgesToAdd) {
                 }
 
                 // Get the target shelf node to retrieve host_index
-                const targetShelfNode = cy.getElementById(targetNodeId);
+                const targetShelfNode = state.cy.getElementById(targetNodeId);
                 if (!targetShelfNode || targetShelfNode.length === 0) {
                     console.warn(`Target shelf node not found: ${targetNodeId} in graph "${graphLabel}"`);
                     return;
@@ -6059,7 +6180,7 @@ function processDeferredConnections(deferredConnections, edgesToAdd) {
                 const targetPortId = `${targetHostIndex}:t${conn.port_b.tray_id}:p${conn.port_b.port_id}`;
 
                 // Verify target port exists before creating edge
-                const targetPortNode = cy.getElementById(targetPortId);
+                const targetPortNode = state.cy.getElementById(targetPortId);
                 if (!targetPortNode || targetPortNode.length === 0) {
                     console.warn(`Target port not found: ${targetPortId} (shelf: ${targetNodeId}, host_index: ${targetHostIndex}) in graph "${graphLabel}"`);
                     return;
@@ -6174,9 +6295,9 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
                 }
 
                 // Generate a new globally unique host index
-                let hostIndex = globalHostCounter;
+                let hostIndex = state.data.globalHostCounter;
                 state.data.globalHostCounter++;
-                globalHostCounter = state.data.globalHostCounter;
+                state.data.globalHostCounter = state.data.globalHostCounter;
 
                 // child.name from template is already enumerated (node_0, node_1, etc.)
                 // Format label as "node_X (host_Y)"
@@ -6203,7 +6324,7 @@ function instantiateTemplateRecursive(template, templateName, graphId, graphLabe
 
             } else if (child.type === 'graph') {
                 // Recursively instantiate nested graph
-                const nestedTemplate = availableGraphTemplates[child.graph_template];
+                const nestedTemplate = state.data.availableGraphTemplates[child.graph_template];
                 if (!nestedTemplate) {
                     console.error(`Template not found: ${child.graph_template}`);
                     return;
@@ -6309,7 +6430,7 @@ function toggleEdgeHandles() {
     if (btn.textContent.includes('Enable')) {
         // Enable connection creation mode
         state.enableEditMode();
-        isEdgeCreationMode = true;
+        state.editing.isEdgeCreationMode = true;
         btn.textContent = '🔗 Disable Connection Editing';
         btn.style.backgroundColor = '#dc3545';
 
@@ -6331,13 +6452,13 @@ function toggleEdgeHandles() {
     } else {
         // Disable connection creation mode
         state.disableEditMode();
-        isEdgeCreationMode = false;
+        state.editing.isEdgeCreationMode = false;
 
         // Clear source port selection and remove styling
-        if (sourcePort) {
-            sourcePort.removeClass('source-selected');
+        if (state.editing.selectedFirstPort) {
+            state.editing.selectedFirstPort.removeClass('source-selected');
         }
-        sourcePort = null;
+        state.editing.selectedFirstPort = null;
 
         btn.textContent = '🔗 Enable Connection Editing';
         btn.style.backgroundColor = '#28a745';
@@ -6352,46 +6473,46 @@ function toggleEdgeHandles() {
         document.getElementById('addGraphSection').style.display = 'none';
 
         // Clear any selected connection and remove its styling
-        if (selectedConnection) {
-            selectedConnection.removeClass('selected-connection');
+        if (state.editing.selectedConnection) {
+            state.editing.selectedConnection.removeClass('selected-connection');
         }
         state.editing.selectedConnection = null;
-        selectedConnection = null;
+        state.editing.selectedConnection = null;
 
         // Clear any selected node and remove its styling
-        if (selectedNode) {
-            selectedNode.removeClass('selected-node');
+        if (state.editing.selectedNode) {
+            state.editing.selectedNode.removeClass('selected-node');
         }
         state.editing.selectedNode = null;
-        selectedNode = null;
+        state.editing.selectedNode = null;
 
         // Update delete button state
         updateDeleteButtonState();
 
         // Remove visual feedback from all ports
-        cy.nodes('.port').style({
+        state.cy.nodes('.port').style({
             'border-width': '2px',
             'border-color': '#666666',
             'border-opacity': 1.0
         });
 
         // Remove any source port highlighting (redundant but safe)
-        cy.nodes('.port').removeClass('source-selected');
+        state.cy.nodes('.port').removeClass('source-selected');
 
         // Remove selected-connection class from all edges
-        cy.edges().removeClass('selected-connection');
+        state.cy.edges().removeClass('selected-connection');
 
         // Remove selected-node class from all nodes
-        cy.nodes().removeClass('selected-node');
+        state.cy.nodes().removeClass('selected-node');
     }
 }
 
 function updatePortEditingHighlight() {
-    if (!isEdgeCreationMode) return;
+    if (!state.editing.isEdgeCreationMode) return;
 
-    cy.nodes('.port').forEach(port => {
+    state.cy.nodes('.port').forEach(port => {
         const portId = port.id();
-        const connections = cy.edges(`[source="${portId}"], [target="${portId}"]`);
+        const connections = state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
 
         if (connections.length === 0) {
             // Port is available - add orange highlighting
@@ -6515,10 +6636,10 @@ async function uploadFile() {
 
     // Reset any global state
     state.data.currentData = null;
-    currentData = null;
+    state.data.currentData = null;
     window.currentData = null; // Expose to global scope
-    selectedConnection = null;
-    isEdgeCreationMode = false;
+    state.editing.selectedConnection = null;
+    state.editing.isEdgeCreationMode = false;
 
     // Show loading state
     if (loadingElement) loadingElement.style.display = 'block';
@@ -6534,7 +6655,7 @@ async function uploadFile() {
 
         if (result.success) {
             state.data.currentData = result.data;
-            currentData = result.data;
+            state.data.currentData = result.data;
             window.currentData = result.data; // Expose to global scope (backward compatibility)
 
             // Hide initialization section and show visualization controls
@@ -6630,17 +6751,17 @@ function updateConnectionLegend(data) {
         csvLegend.style.display = 'none';
         descriptorLegend.style.display = 'block';
 
-        // Collect all unique template names from availableGraphTemplates
+        // Collect all unique template names from state.data.availableGraphTemplates
         const templateNames = new Set();
 
-        // Add templates from availableGraphTemplates (including empty ones)
-        if (availableGraphTemplates) {
-            Object.keys(availableGraphTemplates).forEach(name => {
+        // Add templates from state.data.availableGraphTemplates (including empty ones)
+        if (state.data.availableGraphTemplates) {
+            Object.keys(state.data.availableGraphTemplates).forEach(name => {
                 templateNames.add(name);
             });
         }
 
-        // Also add templates from edges in case some aren't in availableGraphTemplates
+        // Also add templates from edges in case some aren't in state.data.availableGraphTemplates
         const edges = data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target));
         edges.forEach(e => {
             if (e.data && e.data.template_name) {
@@ -6710,31 +6831,31 @@ function initVisualization(data) {
     // Initialize hierarchy mode state (allows mode switching even without going to location first)
     const hierarchyStateCopy = JSON.parse(JSON.stringify(data));
     state.data.hierarchyModeState = hierarchyStateCopy;
-    hierarchyModeState = hierarchyStateCopy;
+    state.data.hierarchyModeState = hierarchyStateCopy;
     console.log('Initialized hierarchy mode state');
 
-    // Ensure currentData has metadata for exports (without breaking position references)
+    // Ensure state.data.currentData has metadata for exports (without breaking position references)
     if (!state.data.currentData) {
-        // First time loading - set currentData
+        // First time loading - set state.data.currentData
         state.data.currentData = data;
-        currentData = data;
+        state.data.currentData = data;
         window.currentData = data; // Expose to global scope
-        console.log('Initialized currentData');
+        console.log('Initialized state.data.currentData');
     } else if (data.metadata && data.metadata.graph_templates &&
         (!state.data.currentData.metadata || !state.data.currentData.metadata.graph_templates)) {
-        // Data has graph_templates but currentData doesn't - merge metadata only
+        // Data has graph_templates but state.data.currentData doesn't - merge metadata only
         if (!state.data.currentData.metadata) {
             state.data.currentData.metadata = {};
         }
         state.data.currentData.metadata.graph_templates = data.metadata.graph_templates;
-        currentData = state.data.currentData;
+        state.data.currentData = state.data.currentData;
     }
 
     // Track initial root template for efficient export decisions
-    if (currentData && !currentData.metadata) {
-        currentData.metadata = {};
+    if (state.data.currentData && !state.data.currentData.metadata) {
+        state.data.currentData.metadata = {};
     }
-    if (currentData && currentData.metadata) {
+    if (state.data.currentData && state.data.currentData.metadata) {
         // Find the single top-level graph node from initial import
         const topLevelGraphs = data.elements.filter(el => {
             const elData = el.data || {};
@@ -6745,14 +6866,14 @@ function initVisualization(data) {
 
         if (topLevelGraphs.length === 1) {
             const rootNode = topLevelGraphs[0].data;
-            currentData.metadata.initialRootTemplate = rootNode.template_name || 'unknown_template';
-            currentData.metadata.initialRootId = rootNode.id;
-            currentData.metadata.hasTopLevelAdditions = false;
+            state.data.currentData.metadata.initialRootTemplate = rootNode.template_name || 'unknown_template';
+            state.data.currentData.metadata.initialRootId = rootNode.id;
+            state.data.currentData.metadata.hasTopLevelAdditions = false;
         } else {
             // Multiple roots on import - already modified, set flag
-            currentData.metadata.initialRootTemplate = null;
-            currentData.metadata.initialRootId = null;
-            currentData.metadata.hasTopLevelAdditions = true;
+            state.data.currentData.metadata.initialRootTemplate = null;
+            state.data.currentData.metadata.initialRootId = null;
+            state.data.currentData.metadata.hasTopLevelAdditions = true;
             console.log(`Multiple top-level nodes on import (${topLevelGraphs.length}) - flagging as modified`);
         }
     }
@@ -6776,8 +6897,8 @@ function initVisualization(data) {
     // Initialize global host counter based on existing shelf nodes
     const existingShelves = data.elements.filter(el => el.data && el.data.type === 'shelf');
     state.data.globalHostCounter = existingShelves.length;
-    globalHostCounter = state.data.globalHostCounter;
-    console.log(`Initialized global host counter: ${globalHostCounter} existing hosts`);
+    state.data.globalHostCounter = state.data.globalHostCounter;
+    console.log(`Initialized global host counter: ${state.data.globalHostCounter} existing hosts`);
 
     // Extract available graph templates from metadata (for textproto imports)
     extractGraphTemplates(data);
@@ -6799,13 +6920,13 @@ function initVisualization(data) {
             cy = state.cy;
             // Clear existing elements and add new ones
             console.log('Clearing existing elements and adding new ones');
-            cy.elements().remove();
-            cy.add(data.elements);
+            state.cy.elements().remove();
+            state.cy.add(data.elements);
 
             // Apply drag restrictions
             applyDragRestrictions();
 
-            cy.layout({ name: 'preset' }).run();
+            state.cy.layout({ name: 'preset' }).run();
         } else {
             // Create new Cytoscape instance
             console.log('Creating new Cytoscape instance');
@@ -6859,7 +6980,7 @@ function initVisualization(data) {
 
                 // Only recalculate host_indices if they're missing or incomplete
                 // Don't recalculate for descriptor imports where host_index is already correctly assigned
-                const allShelves = cy.nodes('[type="shelf"]');
+                const allShelves = state.cy.nodes('[type="shelf"]');
                 const needsRecalculation = allShelves.length > 0 && allShelves.some(node => {
                     const hostIndex = node.data('host_index');
                     return hostIndex === undefined || hostIndex === null;
@@ -6877,7 +6998,7 @@ function initVisualization(data) {
             }
 
             // Fit viewport to show all content
-            cy.fit(null, 50);
+            state.cy.fit(null, 50);
 
             // Apply drag restrictions after layout
             setTimeout(() => {
@@ -6886,7 +7007,7 @@ function initVisualization(data) {
 
             // Debug: Check rendered positions
             setTimeout(() => {
-                const graphsInCy = cy.nodes('[type="graph"]');
+                const graphsInCy = state.cy.nodes('[type="graph"]');
                 graphsInCy.forEach(g => {
                     const pos = g.position();
                     const bb = g.boundingBox();
@@ -6894,9 +7015,9 @@ function initVisualization(data) {
             }, 500);
 
             // Initialize expand-collapse extension
-            if (cy.expandCollapse) {
+            if (state.cy.expandCollapse) {
                 console.log('✓ Initializing cytoscape-expand-collapse extension');
-                window.api = cy.expandCollapse({
+                window.api = state.cy.expandCollapse({
                     layoutBy: null,  // Disable automatic layout - use preset positions
                     fisheye: false,
                     animate: true,
@@ -6924,7 +7045,7 @@ function initVisualization(data) {
 
                     window.api.collapse = function (nodes) {
                         // Filter to only allowed node types (hall, aisle, rack, shelf)
-                        const filtered = cy.collection(nodes).filter(function (node) {
+                        const filtered = state.cy.collection(nodes).filter(function (node) {
                             const nodeType = node.data('type');
                             return nodeType === 'graph' || nodeType === 'hall' || nodeType === 'aisle' || nodeType === 'rack' || nodeType === 'shelf';
                         });
@@ -6935,7 +7056,7 @@ function initVisualization(data) {
 
                     window.api.expand = function (nodes) {
                         // Filter to only allowed node types (hall, aisle, rack, shelf)
-                        const filtered = cy.collection(nodes).filter(function (node) {
+                        const filtered = state.cy.collection(nodes).filter(function (node) {
                             const nodeType = node.data('type');
                             return nodeType === 'graph' || nodeType === 'hall' || nodeType === 'aisle' || nodeType === 'rack' || nodeType === 'shelf';
                         });
@@ -6964,8 +7085,8 @@ function initVisualization(data) {
 
         console.log('Cytoscape instance ready:', cy);
         if (cy) {
-            console.log('Nodes count:', cy.nodes().length);
-            console.log('Edges count:', cy.edges().length);
+            console.log('Nodes count:', state.cy.nodes().length);
+            console.log('Edges count:', state.cy.edges().length);
         } else {
             console.error('Cytoscape instance is null!');
         }
@@ -7003,13 +7124,13 @@ function initVisualization(data) {
 function forceApplyCurveStyles() {
     if (typeof cy === 'undefined' || !cy) return;
 
-    const edges = cy.edges();
-    const viewport = cy.extent();
+    const edges = state.cy.edges();
+    const viewport = state.cy.extent();
     const viewportWidth = viewport.w;
     const viewportHeight = viewport.h;
     const baseDistance = Math.min(viewportWidth, viewportHeight) * 0.05; // 5% of smaller viewport dimension
 
-    cy.startBatch();
+    state.cy.startBatch();
 
     edges.forEach(function (edge) {
         const sourceNode = edge.source();
@@ -7046,17 +7167,17 @@ function forceApplyCurveStyles() {
         }
     });
 
-    cy.endBatch();
+    state.cy.endBatch();
 
     // Force render to ensure z-index changes take effect
-    cy.forceRender();
+    state.cy.forceRender();
 }
 
 function checkSameShelf(sourceId, targetId) {
     if (typeof cy === 'undefined' || !cy) return false;
 
-    const sourceNode = cy.getElementById(sourceId);
-    const targetNode = cy.getElementById(targetId);
+    const sourceNode = state.cy.getElementById(sourceId);
+    const targetNode = state.cy.getElementById(targetId);
 
     if (!sourceNode.length || !targetNode.length) {
         return false;
@@ -7457,12 +7578,12 @@ function getCytoscapeStyles() {
 
 function addCytoscapeEventHandlers() {
     // Node click handler for info display and port connection creation
-    cy.on('tap', 'node', function (evt) {
+    state.cy.on('tap', 'node', function (evt) {
         const node = evt.target;
 
         // Handle port clicks
         if (node.hasClass('port')) {
-            if (isEdgeCreationMode) {
+            if (state.editing.isEdgeCreationMode) {
                 handlePortClickEditMode(node, evt);
             } else {
                 handlePortClickViewMode(node, evt);
@@ -7473,30 +7594,30 @@ function addCytoscapeEventHandlers() {
             const isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
 
             // Clear connection selection when clicking on any non-port node
-            if (selectedConnection) {
-                selectedConnection.removeClass('selected-connection');
+            if (state.editing.selectedConnection) {
+                state.editing.selectedConnection.removeClass('selected-connection');
                 state.editing.selectedConnection = null;
-                selectedConnection = null;
+                state.editing.selectedConnection = null;
                 updateDeleteButtonState();
             }
 
             // In editing mode, allow selection of deletable nodes
-            if (isEdgeCreationMode && isDeletable) {
+            if (state.editing.isEdgeCreationMode && isDeletable) {
                 // Deselect previously selected node
-                if (selectedNode) {
-                    selectedNode.removeClass('selected-node');
+                if (state.editing.selectedNode) {
+                    state.editing.selectedNode.removeClass('selected-node');
                 }
 
                 // Select this node
-                selectedNode = node;
+                state.editing.selectedNode = node;
                 node.addClass('selected-node');
                 updateDeleteNodeButtonState();
             } else {
                 // Clear node selection if not in editing mode or not deletable
-                if (selectedNode) {
-                    selectedNode.removeClass('selected-node');
+                if (state.editing.selectedNode) {
+                    state.editing.selectedNode.removeClass('selected-node');
                     state.editing.selectedNode = null;
-                    selectedNode = null;
+                    state.editing.selectedNode = null;
                     updateDeleteNodeButtonState();
                 }
             }
@@ -7506,7 +7627,7 @@ function addCytoscapeEventHandlers() {
     });
 
     // Double-click handler for inline editing of shelf node details OR collapse/expand compound nodes
-    cy.on('dbltap', 'node', function (evt) {
+    state.cy.on('dbltap', 'node', function (evt) {
         const node = evt.target;
         const data = node.data();
         const nodeType = data.type;
@@ -7558,37 +7679,37 @@ function addCytoscapeEventHandlers() {
     });
 
     // Edge click handler for connection selection and info display
-    cy.on('tap', 'edge', function (evt) {
+    state.cy.on('tap', 'edge', function (evt) {
         const edge = evt.target;
         const position = evt.renderedPosition || evt.position;
 
         // Clear source port selection if clicking on an edge (editing mode only)
-        if (isEdgeCreationMode && sourcePort) {
-            sourcePort.removeClass('source-selected');
+        if (state.editing.isEdgeCreationMode && state.editing.selectedFirstPort) {
+            state.editing.selectedFirstPort.removeClass('source-selected');
             state.editing.selectedFirstPort = null;
-            sourcePort = null;
+            state.editing.selectedFirstPort = null;
         }
 
         // Clear node selection when clicking on an edge
-        if (selectedNode) {
-            selectedNode.removeClass('selected-node');
+        if (state.editing.selectedNode) {
+            state.editing.selectedNode.removeClass('selected-node');
             state.editing.selectedNode = null;
-            selectedNode = null;
+            state.editing.selectedNode = null;
             updateDeleteNodeButtonState();
         }
 
         // Deselect previously selected connection (works in both editing and normal mode)
-        if (selectedConnection) {
-            selectedConnection.removeClass('selected-connection');
+        if (state.editing.selectedConnection) {
+            state.editing.selectedConnection.removeClass('selected-connection');
         }
 
         // Select this connection (works in both editing and normal mode)
         state.editing.selectedConnection = edge;
-        selectedConnection = edge;
+        state.editing.selectedConnection = edge;
         edge.addClass('selected-connection');
 
         // Update delete button state (only relevant in editing mode)
-        if (isEdgeCreationMode) {
+        if (state.editing.isEdgeCreationMode) {
             updateDeleteButtonState();
         }
 
@@ -7597,23 +7718,23 @@ function addCytoscapeEventHandlers() {
     });
 
     // Click on background to hide info, deselect connection, and clear source port
-    cy.on('tap', function (evt) {
+    state.cy.on('tap', function (evt) {
         if (evt.target === cy) {
             clearAllSelections();
         }
     });
 
     // Handle multi-selection events (Ctrl+Click selection)
-    cy.on('select', 'node, edge', function (evt) {
+    state.cy.on('select', 'node, edge', function (evt) {
         // Update delete button state when elements are selected
-        if (isEdgeCreationMode) {
+        if (state.editing.isEdgeCreationMode) {
             updateDeleteButtonState();
         }
     });
 
-    cy.on('unselect', 'node, edge', function (evt) {
+    state.cy.on('unselect', 'node, edge', function (evt) {
         // Update delete button state when elements are unselected
-        if (isEdgeCreationMode) {
+        if (state.editing.isEdgeCreationMode) {
             updateDeleteButtonState();
         }
     });
@@ -7670,7 +7791,7 @@ function applyConnectionTypeFilter() {
     const showInterRack = document.getElementById('showInterRackConnections').checked;
 
     // Get all edges
-    const allEdges = cy.edges();
+    const allEdges = state.cy.edges();
     let visibleCount = 0;
     let hiddenCount = 0;
 
@@ -7736,7 +7857,7 @@ function applyNodeFilter() {
     const selectedNodeId = nodeFilterSelect.value;
 
     // Get all edges
-    const allEdges = cy.edges();
+    const allEdges = state.cy.edges();
     let visibleCount = 0;
     let hiddenCount = 0;
 
@@ -7774,7 +7895,7 @@ function applyNodeFilter() {
         statusDiv.textContent = `Showing all connections (${visibleCount} total)`;
         statusDiv.style.color = '#666';
     } else {
-        const selectedNode = cy.getElementById(selectedNodeId);
+        const selectedNode = state.cy.getElementById(selectedNodeId);
         const nodeLabel = selectedNode.data('label') || selectedNodeId;
         statusDiv.textContent = `Showing connections for "${nodeLabel}" (${visibleCount} visible, ${hiddenCount} hidden)`;
         statusDiv.style.color = '#28a745';
@@ -7795,10 +7916,10 @@ function populateNodeFilterDropdown() {
     nodeFilterSelect.innerHTML = '<option value="">Show all nodes</option>';
 
     // Check if this is a descriptor/hierarchical import
-    const isDescriptor = cy.nodes().some(node => node.data('type') === 'graph');
+    const isDescriptor = state.cy.nodes().some(node => node.data('type') === 'graph');
 
     // Get all shelf nodes (main nodes, not trays or ports)
-    const shelfNodes = cy.nodes().filter(function (node) {
+    const shelfNodes = state.cy.nodes().filter(function (node) {
         const nodeType = node.data('type');
         return nodeType === 'shelf' || nodeType === 'node';
     });
@@ -7842,7 +7963,7 @@ function populateNodeFilterDropdown() {
 function showNodeInfo(node, position) {
     // Clear isEditing flag from all nodes when showing regular info
     if (cy) {
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.data('isEditing')) {
                 n.data('isEditing', false);
             }
@@ -8028,8 +8149,8 @@ function showConnectionInfo(edge, position) {
     const edgeData = edge.data();
     // Always use the original port IDs from edge data, not the visual source/target
     // which might point to collapsed parents
-    const sourceNode = cy.getElementById(edgeData.source);
-    const targetNode = cy.getElementById(edgeData.target);
+    const sourceNode = state.cy.getElementById(edgeData.source);
+    const targetNode = state.cy.getElementById(edgeData.target);
 
     // Get detailed location info for both endpoints - always full path
     const sourceInfo = getPortLocationInfo(sourceNode);
@@ -8067,7 +8188,7 @@ function showConnectionInfo(edge, position) {
 function enableShelfEditing(node, position) {
     // Clear isEditing flag from all other nodes first
     if (cy) {
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.id() !== node.id() && n.data('isEditing')) {
                 n.data('isEditing', false);
             }
@@ -8089,7 +8210,7 @@ function enableShelfEditing(node, position) {
 
     if (isHierarchyMode) {
         // In hierarchy mode, show move to template section (only in editing mode)
-        if (isEdgeCreationMode) {
+        if (state.editing.isEdgeCreationMode) {
             html += `<div style="margin-bottom: 15px; padding: 10px; background: #e7f3ff; border-radius: 4px;">`;
             html += `<strong>Move to Different Template:</strong><br>`;
             html += `<select id="moveTargetTemplateSelect" style="width: 200px; padding: 5px; margin-top: 5px;">`;
@@ -8146,7 +8267,7 @@ function enableShelfEditing(node, position) {
     // Mark as editing
     node.data('isEditing', true);
 
-    if (isHierarchyMode && isEdgeCreationMode) {
+    if (isHierarchyMode && state.editing.isEdgeCreationMode) {
         // Populate the move target template dropdown (only in editing mode)
         populateMoveTargetTemplates(node);
     } else if (!isHierarchyMode) {
@@ -8190,7 +8311,7 @@ window.saveShelfEdit = function (nodeId) {
     const newShelfU = shelfUInput && shelfUInput.value ? parseInt(shelfUInput.value) : undefined;
 
     // Get the node to check for changes
-    const node = cy.getElementById(nodeId);
+    const node = state.cy.getElementById(nodeId);
     const oldHostname = node.data('hostname') || '';
     const oldHall = node.data('hall') || '';
     const oldAisle = node.data('aisle') || '';
@@ -8212,7 +8333,7 @@ window.saveShelfEdit = function (nodeId) {
     // Check if hostname already exists on another node (if hostname changed)
     if (hostnameChanged && newHostname) {
         let hostnameExists = false;
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.id() !== nodeId && n.data('hostname') === newHostname) {
                 hostnameExists = true;
             }
@@ -8289,7 +8410,7 @@ window.saveShelfEdit = function (nodeId) {
     if (rackChanged && currentRack !== undefined) {
         // Need to move this shelf to a different rack
         const newRackId = `rack_${currentRack.toString().padStart(2, '0')}`;
-        let newRackNode = cy.getElementById(newRackId);
+        let newRackNode = state.cy.getElementById(newRackId);
 
         // If the new rack doesn't exist, create it
         if (newRackNode.length === 0) {
@@ -8298,7 +8419,7 @@ window.saveShelfEdit = function (nodeId) {
             // Calculate position for new rack - place it relative to existing racks
             let newRackX = 0;
             let newRackY = 0;
-            const existingRacks = cy.nodes('[type="rack"]');
+            const existingRacks = state.cy.nodes('[type="rack"]');
 
             if (existingRacks.length > 0) {
                 // Position new rack to the right of the rightmost rack
@@ -8317,7 +8438,7 @@ window.saveShelfEdit = function (nodeId) {
                 newRackY = LAYOUT_CONSTANTS.NEW_RACK_DEFAULT_Y;
             }
 
-            cy.add({
+            state.cy.add({
                 group: 'nodes',
                 data: {
                     id: newRackId,
@@ -8333,7 +8454,7 @@ window.saveShelfEdit = function (nodeId) {
                     y: newRackY
                 }
             });
-            newRackNode = cy.getElementById(newRackId);
+            newRackNode = state.cy.getElementById(newRackId);
         } else {
             // Update existing rack's label and data
             if (currentHall && currentAisle) {
@@ -8397,7 +8518,7 @@ window.saveShelfEdit = function (nodeId) {
 window.cancelShelfEdit = function () {
     // Clear isEditing flag on all nodes
     if (cy) {
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.data('isEditing')) {
                 n.data('isEditing', false);
             }
@@ -8409,7 +8530,7 @@ window.cancelShelfEdit = function () {
 function enableGraphTemplateEditing(node, position) {
     // Clear isEditing flag from all other nodes first
     if (cy) {
-        cy.nodes().forEach(function (n) {
+        state.cy.nodes().forEach(function (n) {
             if (n.id() !== node.id() && n.data('isEditing')) {
                 n.data('isEditing', false);
             }
@@ -8440,7 +8561,7 @@ function enableGraphTemplateEditing(node, position) {
     }
 
     // Move to Template section (only in editing mode)
-    if (isEdgeCreationMode) {
+    if (state.editing.isEdgeCreationMode) {
         html += `<div style="margin-bottom: 15px; padding: 10px; background: #e7f3ff; border-radius: 4px;">`;
         html += `<strong>Move to Different Template:</strong><br>`;
         html += `<select id="moveTargetTemplateSelect" style="width: 200px; padding: 5px; margin-top: 5px;">`;
@@ -8468,7 +8589,7 @@ function enableGraphTemplateEditing(node, position) {
     node.data('isEditing', true);
 
     // Populate the move target dropdown (only in editing mode)
-    if (isEdgeCreationMode) {
+    if (state.editing.isEdgeCreationMode) {
         populateMoveTargetTemplates(node);
     }
 }
@@ -8478,7 +8599,7 @@ window.saveGraphTemplateEdit = function (nodeId) {
     const newTemplateName = templateNameInput.value.trim();
 
     // Get the node
-    const node = cy.getElementById(nodeId);
+    const node = state.cy.getElementById(nodeId);
     const oldTemplateName = node.data('template_name') || '';
 
     // Check if template name has changed
@@ -8496,7 +8617,7 @@ window.saveGraphTemplateEdit = function (nodeId) {
     // Find all nodes that use this template and update their template_name and labels
     let updatedCount = 0;
     const newColor = getTemplateColor(newTemplateName);
-    cy.nodes().forEach(function (n) {
+    state.cy.nodes().forEach(function (n) {
         if (n.data('template_name') === oldTemplateName) {
             // Update template_name
             n.data('template_name', newTemplateName);
@@ -8526,7 +8647,7 @@ window.saveGraphTemplateEdit = function (nodeId) {
 
     // Update edges that have the old template_name and their colors
     let updatedEdgeCount = 0;
-    cy.edges().forEach(function (edge) {
+    state.cy.edges().forEach(function (edge) {
         if (edge.data('template_name') === oldTemplateName) {
             edge.data('template_name', newTemplateName);
             // Update the color to match the new template name
@@ -8536,13 +8657,13 @@ window.saveGraphTemplateEdit = function (nodeId) {
     });
 
     // Force style update to apply new colors
-    cy.style().update();
+    state.cy.style().update();
 
-    // Update availableGraphTemplates if this template exists
-    if (availableGraphTemplates && availableGraphTemplates[oldTemplateName]) {
-        // Rename the template in availableGraphTemplates
-        availableGraphTemplates[newTemplateName] = availableGraphTemplates[oldTemplateName];
-        delete availableGraphTemplates[oldTemplateName];
+    // Update state.data.availableGraphTemplates if this template exists
+    if (state.data.availableGraphTemplates && state.data.availableGraphTemplates[oldTemplateName]) {
+        // Rename the template in state.data.availableGraphTemplates
+        state.data.availableGraphTemplates[newTemplateName] = state.data.availableGraphTemplates[oldTemplateName];
+        delete state.data.availableGraphTemplates[oldTemplateName];
 
         // Update the template dropdown if it exists
         const graphTemplateSelect = document.getElementById('graphTemplateSelect');
@@ -8551,7 +8672,7 @@ window.saveGraphTemplateEdit = function (nodeId) {
             const currentValue = graphTemplateSelect.value;
             graphTemplateSelect.innerHTML = '<option value="">-- Select a Template --</option>';
 
-            Object.keys(availableGraphTemplates).sort().forEach(templateName => {
+            Object.keys(state.data.availableGraphTemplates).sort().forEach(templateName => {
                 const option = document.createElement('option');
                 option.value = templateName;
                 option.textContent = templateName;
@@ -8567,15 +8688,15 @@ window.saveGraphTemplateEdit = function (nodeId) {
         }
     }
 
-    // Also update currentData.metadata.graph_templates for export
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates && currentData.metadata.graph_templates[oldTemplateName]) {
-        currentData.metadata.graph_templates[newTemplateName] = currentData.metadata.graph_templates[oldTemplateName];
-        delete currentData.metadata.graph_templates[oldTemplateName];
+    // Also update state.data.currentData.metadata.graph_templates for export
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates && state.data.currentData.metadata.graph_templates[oldTemplateName]) {
+        state.data.currentData.metadata.graph_templates[newTemplateName] = state.data.currentData.metadata.graph_templates[oldTemplateName];
+        delete state.data.currentData.metadata.graph_templates[oldTemplateName];
     }
 
     // Refresh the connection legend to reflect the new template name
-    if (currentData) {
-        updateConnectionLegend(currentData);
+    if (state.data.currentData) {
+        updateConnectionLegend(state.data.currentData);
     }
 
     // Clear editing flag
@@ -8590,7 +8711,7 @@ window.saveGraphTemplateEdit = function (nodeId) {
 
 window.cancelGraphTemplateEdit = function (nodeId) {
     // Get the node and clear editing flag
-    const node = cy.getElementById(nodeId);
+    const node = state.cy.getElementById(nodeId);
     if (node) {
         node.data('isEditing', false);
     }
@@ -8635,14 +8756,14 @@ function populateMoveTargetTemplates(node) {
  * Returns templates that:
  * - Are not descendants of this node (no circular dependencies)
  * - Are not the current parent
- * - Actually exist in availableGraphTemplates
+ * - Actually exist in state.data.availableGraphTemplates
  */
 function enumerateValidParentTemplates(node) {
     const validTemplates = [];
     const nodeType = node.data('type');
     const nodeTemplateName = node.data('template_name');
 
-    if (!availableGraphTemplates) return validTemplates;
+    if (!state.data.availableGraphTemplates) return validTemplates;
 
     // Get current parent template
     const currentParent = node.parent();
@@ -8660,7 +8781,7 @@ function enumerateValidParentTemplates(node) {
     }
 
     // Check each available template
-    Object.keys(availableGraphTemplates).forEach(templateName => {
+    Object.keys(state.data.availableGraphTemplates).forEach(templateName => {
         // Skip if this is the current parent
         if (templateName === currentParentTemplate) {
             return;
@@ -8677,7 +8798,7 @@ function enumerateValidParentTemplates(node) {
         }
 
         // Count instances of this template
-        const instanceCount = cy.nodes().filter(n =>
+        const instanceCount = state.cy.nodes().filter(n =>
             n.data('template_name') === templateName && n.data('type') === 'graph'
         ).length;
 
@@ -8698,12 +8819,12 @@ function enumerateValidParentTemplates(node) {
  */
 window.executeMoveToTemplate = function (nodeId) {
     // Check if we're in editing mode
-    if (!isEdgeCreationMode) {
+    if (!state.editing.isEdgeCreationMode) {
         showNotificationBanner('Move operation is only available in editing mode. Please enable editing mode first.', 'error');
         return;
     }
 
-    const node = cy.getElementById(nodeId);
+    const node = state.cy.getElementById(nodeId);
     const select = document.getElementById('moveTargetTemplateSelect');
     const targetTemplateName = select.value;
 
@@ -8758,24 +8879,24 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
     const nodeType = node.data('shelf_node_type');
 
     // Step 1: Remove from current parent template definition
-    if (currentParentTemplate && availableGraphTemplates[currentParentTemplate]) {
-        const template = availableGraphTemplates[currentParentTemplate];
+    if (currentParentTemplate && state.data.availableGraphTemplates[currentParentTemplate]) {
+        const template = state.data.availableGraphTemplates[currentParentTemplate];
         if (template.children) {
             template.children = template.children.filter(child => child.name !== childName);
         }
     }
 
-    // Also remove from currentData.metadata.graph_templates
-    if (currentParentTemplate && currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const metaTemplate = currentData.metadata.graph_templates[currentParentTemplate];
+    // Also remove from state.data.currentData.metadata.graph_templates
+    if (currentParentTemplate && state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const metaTemplate = state.data.currentData.metadata.graph_templates[currentParentTemplate];
         if (metaTemplate && metaTemplate.children) {
             metaTemplate.children = metaTemplate.children.filter(child => child.name !== childName);
         }
     }
 
     // Step 2: Add to target template definition
-    if (availableGraphTemplates[targetTemplateName]) {
-        const targetTemplate = availableGraphTemplates[targetTemplateName];
+    if (state.data.availableGraphTemplates[targetTemplateName]) {
+        const targetTemplate = state.data.availableGraphTemplates[targetTemplateName];
         if (!targetTemplate.children) {
             targetTemplate.children = [];
         }
@@ -8786,9 +8907,9 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
         });
     }
 
-    // Also add to currentData.metadata.graph_templates
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const metaTargetTemplate = currentData.metadata.graph_templates[targetTemplateName];
+    // Also add to state.data.currentData.metadata.graph_templates
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const metaTargetTemplate = state.data.currentData.metadata.graph_templates[targetTemplateName];
         if (metaTargetTemplate) {
             if (!metaTargetTemplate.children) {
                 metaTargetTemplate.children = [];
@@ -8803,7 +8924,7 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
 
     // Step 3: Remove the original node and from all instances of old parent template
     if (currentParentTemplate) {
-        const oldParentInstances = cy.nodes().filter(n =>
+        const oldParentInstances = state.cy.nodes().filter(n =>
             n.data('template_name') === currentParentTemplate && n.data('type') === 'graph'
         );
 
@@ -8821,7 +8942,7 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
     }
 
     // Step 4: Add to all instances of target template
-    const targetInstances = cy.nodes().filter(n =>
+    const targetInstances = state.cy.nodes().filter(n =>
         n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
     );
 
@@ -8836,13 +8957,13 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
         }
 
         const hostIndex = state.data.globalHostCounter++;
-        globalHostCounter = state.data.globalHostCounter;
+        state.data.globalHostCounter = state.data.globalHostCounter;
         // Use same ID pattern as template instantiation: ${graphId}_${child.name}
         const shelfId = `${targetInstance.id()}_${childName}`;
         const shelfLabel = `${childName} (host_${hostIndex})`;
 
         // Add shelf node
-        cy.add({
+        state.cy.add({
             group: 'nodes',
             data: {
                 id: shelfId,
@@ -8860,10 +8981,10 @@ function moveNodeToTemplate(node, targetTemplateName, currentParentTemplate) {
         // Create trays and ports
         const nodesToAdd = [];
         createTraysAndPorts(shelfId, childName, hostIndex, nodeType, config, 0, 0, nodesToAdd);
-        cy.add(nodesToAdd);
+        state.cy.add(nodesToAdd);
 
         // Arrange trays and ports
-        const addedShelf = cy.getElementById(shelfId);
+        const addedShelf = state.cy.getElementById(shelfId);
         common_arrangeTraysAndPorts(addedShelf);
     });
 
@@ -8879,24 +9000,24 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
     const graphTemplateName = node.data('template_name');
 
     // Step 1: Remove from current parent template definition
-    if (currentParentTemplate && availableGraphTemplates[currentParentTemplate]) {
-        const template = availableGraphTemplates[currentParentTemplate];
+    if (currentParentTemplate && state.data.availableGraphTemplates[currentParentTemplate]) {
+        const template = state.data.availableGraphTemplates[currentParentTemplate];
         if (template.children) {
             template.children = template.children.filter(child => child.name !== childName);
         }
     }
 
-    // Also remove from currentData.metadata.graph_templates
-    if (currentParentTemplate && currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const metaTemplate = currentData.metadata.graph_templates[currentParentTemplate];
+    // Also remove from state.data.currentData.metadata.graph_templates
+    if (currentParentTemplate && state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const metaTemplate = state.data.currentData.metadata.graph_templates[currentParentTemplate];
         if (metaTemplate && metaTemplate.children) {
             metaTemplate.children = metaTemplate.children.filter(child => child.name !== childName);
         }
     }
 
     // Step 2: Add to target template definition
-    if (availableGraphTemplates[targetTemplateName]) {
-        const targetTemplate = availableGraphTemplates[targetTemplateName];
+    if (state.data.availableGraphTemplates[targetTemplateName]) {
+        const targetTemplate = state.data.availableGraphTemplates[targetTemplateName];
         if (!targetTemplate.children) {
             targetTemplate.children = [];
         }
@@ -8907,9 +9028,9 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
         });
     }
 
-    // Also add to currentData.metadata.graph_templates
-    if (currentData && currentData.metadata && currentData.metadata.graph_templates) {
-        const metaTargetTemplate = currentData.metadata.graph_templates[targetTemplateName];
+    // Also add to state.data.currentData.metadata.graph_templates
+    if (state.data.currentData && state.data.currentData.metadata && state.data.currentData.metadata.graph_templates) {
+        const metaTargetTemplate = state.data.currentData.metadata.graph_templates[targetTemplateName];
         if (metaTargetTemplate) {
             if (!metaTargetTemplate.children) {
                 metaTargetTemplate.children = [];
@@ -8924,7 +9045,7 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
 
     // Step 3: Remove the original graph instance and from all instances of old parent template
     if (currentParentTemplate) {
-        const oldParentInstances = cy.nodes().filter(n =>
+        const oldParentInstances = state.cy.nodes().filter(n =>
             n.data('template_name') === currentParentTemplate && n.data('type') === 'graph'
         );
 
@@ -8944,11 +9065,11 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
     }
 
     // Step 4: Add to all instances of target template  
-    const targetInstances = cy.nodes().filter(n =>
+    const targetInstances = state.cy.nodes().filter(n =>
         n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
     );
 
-    const graphTemplate = availableGraphTemplates[graphTemplateName];
+    const graphTemplate = state.data.availableGraphTemplates[graphTemplateName];
     if (!graphTemplate) {
         throw new Error(`Template "${graphTemplateName}" not found`);
     }
@@ -8981,12 +9102,12 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
         );
 
         // Add nodes
-        cy.add(nodesToAdd);
+        state.cy.add(nodesToAdd);
 
         // Arrange trays and ports for newly added shelves
         nodesToAdd.forEach(nodeData => {
             if (nodeData.data && nodeData.data.type === 'shelf') {
-                const shelfNode = cy.getElementById(nodeData.data.id);
+                const shelfNode = state.cy.getElementById(nodeData.data.id);
                 if (shelfNode && shelfNode.length > 0) {
                     common_arrangeTraysAndPorts(shelfNode);
                 }
@@ -8995,7 +9116,7 @@ function moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemp
 
         // Process deferred connections
         processDeferredConnections(deferredConnections, edgesToAdd);
-        cy.add(edgesToAdd);
+        state.cy.add(edgesToAdd);
     });
 
     // Recalculate host indices
@@ -9090,7 +9211,7 @@ function applyConnectionRange() {
     }
 
     // Get all edges
-    const allEdges = cy.edges();
+    const allEdges = state.cy.edges();
     const totalConnections = allEdges.length;
 
     // Check if any requested connections exceed total
@@ -9195,7 +9316,7 @@ function clearConnectionRange() {
     }
 
     // Show all edges
-    const allEdges = cy.edges();
+    const allEdges = state.cy.edges();
     allEdges.forEach(function (edge) {
         edge.style('display', 'element');
     });
@@ -9215,7 +9336,7 @@ function clearConnectionRange() {
  */
 function validateHostnames() {
     const nodesWithoutHostname = [];
-    cy.nodes().forEach(function (node) {
+    state.cy.nodes().forEach(function (node) {
         const data = node.data();
         if (data.type === 'shelf' && (!data.hostname || data.hostname.trim() === '')) {
             nodesWithoutHostname.push(data.label || data.id);
@@ -9231,7 +9352,7 @@ async function exportCablingDescriptor() {
     }
 
     // Validate: Must have exactly one top-level root template
-    const topLevelGraphs = cy.nodes('[type="graph"]').filter(node => {
+    const topLevelGraphs = state.cy.nodes('[type="graph"]').filter(node => {
         const parent = node.parent();
         return parent.length === 0;
     });
@@ -9257,12 +9378,12 @@ async function exportCablingDescriptor() {
 
         // Get current cytoscape data with full metadata (including graph_templates)
         // Sanitize elements to remove circular references
-        const rawElements = cy.elements().jsons();
+        const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
         const cytoscapeData = {
             elements: sanitizedElements,
             metadata: {
-                ...(currentData && currentData.metadata ? currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
+                ...(state.data.currentData && state.data.currentData.metadata ? state.data.currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
                 visualization_mode: getVisualizationMode()  // Override/add current mode
             }
         };
@@ -9320,7 +9441,7 @@ async function exportDeploymentDescriptor() {
         showExportStatus('Generating DeploymentDescriptor...', 'info');
 
         // Debug: Check all shelf nodes for host_index
-        const allShelves = cy.nodes('[type="shelf"]');
+        const allShelves = state.cy.nodes('[type="shelf"]');
         const shelvesWithoutHostIndex = [];
         const shelfDataSamples = [];  // Collect samples for debugging
 
@@ -9368,7 +9489,7 @@ async function exportDeploymentDescriptor() {
         }
 
         // Get current cytoscape data and sanitize to remove circular references
-        const rawElements = cy.elements().jsons();
+        const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
         const cytoscapeData = {
             elements: sanitizedElements
@@ -9510,7 +9631,7 @@ async function generateCablingGuide() {
         showExportStatus('Generating cabling guide...', 'info');
 
         // Get current cytoscape data and sanitize to remove circular references
-        const rawElements = cy.elements().jsons();
+        const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
         const cytoscapeData = {
             elements: sanitizedElements
@@ -9573,7 +9694,7 @@ async function generateFSD() {
         showExportStatus('Generating FSD...', 'info');
 
         // Get current cytoscape data and sanitize to remove circular references
-        const rawElements = cy.elements().jsons();
+        const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
         const cytoscapeData = {
             elements: sanitizedElements
@@ -9708,10 +9829,10 @@ document.addEventListener('keydown', function (event) {
     // Backspace or Delete to delete selected connection or node (only in editing mode)
     if (event.key === 'Backspace' || event.key === 'Delete') {
         // Only delete if we're in editing mode and not typing in an input
-        if (isEdgeCreationMode && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        if (state.editing.isEdgeCreationMode && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
             // Check if there's something selected to delete
-            if ((selectedConnection && selectedConnection.length > 0) ||
-                (selectedNode && selectedNode.length > 0)) {
+            if ((state.editing.selectedConnection && state.editing.selectedConnection.length > 0) ||
+                (state.editing.selectedNode && state.editing.selectedNode.length > 0)) {
                 event.preventDefault();
                 deleteSelectedElement();
             }
@@ -10006,7 +10127,7 @@ function addExpandCollapseHandlers() {
     if (!cy) return;
 
     // Double-click to toggle collapse/expand
-    cy.on('dblclick', 'node:parent', function (evt) {
+    state.cy.on('dblclick', 'node:parent', function (evt) {
         const node = evt.target;
         toggleNodeCollapse(node);
     });
@@ -10016,6 +10137,298 @@ function addExpandCollapseHandlers() {
 
 // Initialize node configurations when the page loads
 initializeNodeConfigs();
+
+/**
+ * Setup all event listeners to replace inline onclick handlers
+ * This eliminates the need for functionsToExpose workaround
+ */
+function setupEventListeners() {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupEventListeners);
+        return;
+    }
+
+    // Notification banner close button
+    const notificationCloseBtn = document.getElementById('notificationCloseBtn');
+    if (notificationCloseBtn) {
+        notificationCloseBtn.addEventListener('click', () => {
+            if (typeof window.hideNotificationBanner === 'function') {
+                window.hideNotificationBanner();
+            }
+        });
+    }
+
+    // Tab navigation buttons
+    const locationTab = document.getElementById('locationTab');
+    if (locationTab) {
+        locationTab.addEventListener('click', () => {
+            if (typeof window.switchTab === 'function') {
+                window.switchTab('location');
+            }
+        });
+    }
+
+    const topologyTab = document.getElementById('topologyTab');
+    if (topologyTab) {
+        topologyTab.addEventListener('click', () => {
+            if (typeof window.switchTab === 'function') {
+                window.switchTab('topology');
+            }
+        });
+    }
+
+    // Upload buttons
+    const uploadBtnLocation = document.getElementById('uploadBtnLocation');
+    if (uploadBtnLocation) {
+        uploadBtnLocation.addEventListener('click', () => {
+            if (typeof window.uploadFileLocation === 'function') {
+                window.uploadFileLocation();
+            }
+        });
+    }
+
+    const uploadBtnTopology = document.getElementById('uploadBtnTopology');
+    if (uploadBtnTopology) {
+        uploadBtnTopology.addEventListener('click', () => {
+            if (typeof window.uploadFileTopology === 'function') {
+                window.uploadFileTopology();
+            }
+        });
+    }
+
+    // Empty visualization buttons
+    const emptyVisualizationBtnLocation = document.getElementById('emptyVisualizationBtnLocation');
+    if (emptyVisualizationBtnLocation) {
+        emptyVisualizationBtnLocation.addEventListener('click', () => {
+            if (typeof window.createEmptyVisualizationLocation === 'function') {
+                window.createEmptyVisualizationLocation();
+            }
+        });
+    }
+
+    const emptyVisualizationBtnTopology = document.getElementById('emptyVisualizationBtnTopology');
+    if (emptyVisualizationBtnTopology) {
+        emptyVisualizationBtnTopology.addEventListener('click', () => {
+            if (typeof window.createEmptyVisualizationTopology === 'function') {
+                window.createEmptyVisualizationTopology();
+            }
+        });
+    }
+
+    // Control buttons
+    const toggleModeButton = document.getElementById('toggleModeButton');
+    if (toggleModeButton) {
+        toggleModeButton.addEventListener('click', () => {
+            if (typeof window.toggleVisualizationMode === 'function') {
+                window.toggleVisualizationMode();
+            }
+        });
+    }
+
+    const resetLayoutBtn = document.getElementById('resetLayoutBtn');
+    if (resetLayoutBtn) {
+        resetLayoutBtn.addEventListener('click', () => {
+            if (typeof window.resetLayout === 'function') {
+                window.resetLayout();
+            }
+        });
+    }
+
+    const expandOneLevelBtn = document.getElementById('expandOneLevelBtn');
+    if (expandOneLevelBtn) {
+        expandOneLevelBtn.addEventListener('click', () => {
+            if (typeof window.expandOneLevel === 'function') {
+                window.expandOneLevel();
+            }
+        });
+    }
+
+    const collapseOneLevelBtn = document.getElementById('collapseOneLevelBtn');
+    if (collapseOneLevelBtn) {
+        collapseOneLevelBtn.addEventListener('click', () => {
+            if (typeof window.collapseOneLevel === 'function') {
+                window.collapseOneLevel();
+            }
+        });
+    }
+
+    // Connection range filter buttons
+    const applyRangeBtn = document.getElementById('applyRangeBtn');
+    if (applyRangeBtn) {
+        applyRangeBtn.addEventListener('click', () => {
+            if (typeof window.applyConnectionRange === 'function') {
+                window.applyConnectionRange();
+            }
+        });
+    }
+
+    const clearRangeBtn = document.getElementById('clearRangeBtn');
+    if (clearRangeBtn) {
+        clearRangeBtn.addEventListener('click', () => {
+            if (typeof window.clearConnectionRange === 'function') {
+                window.clearConnectionRange();
+            }
+        });
+    }
+
+    // Cabling editor buttons
+    const toggleEdgeHandlesBtn = document.getElementById('toggleEdgeHandlesBtn');
+    if (toggleEdgeHandlesBtn) {
+        toggleEdgeHandlesBtn.addEventListener('click', () => {
+            if (typeof window.toggleEdgeHandles === 'function') {
+                window.toggleEdgeHandles();
+            }
+        });
+    }
+
+    const deleteElementBtn = document.getElementById('deleteElementBtn');
+    if (deleteElementBtn) {
+        deleteElementBtn.addEventListener('click', () => {
+            if (typeof window.deleteSelectedElement === 'function') {
+                window.deleteSelectedElement();
+            }
+        });
+    }
+
+    // Node/graph editing buttons
+    const addNodeBtn = document.getElementById('addNodeBtn');
+    if (addNodeBtn) {
+        addNodeBtn.addEventListener('click', () => {
+            if (typeof window.addNewNode === 'function') {
+                window.addNewNode();
+            }
+        });
+    }
+
+    const addGraphBtn = document.getElementById('addGraphBtn');
+    if (addGraphBtn) {
+        addGraphBtn.addEventListener('click', () => {
+            if (typeof window.addNewGraph === 'function') {
+                window.addNewGraph();
+            }
+        });
+    }
+
+    const createTemplateBtn = document.getElementById('createTemplateBtn');
+    if (createTemplateBtn) {
+        createTemplateBtn.addEventListener('click', () => {
+            if (typeof window.createNewTemplate === 'function') {
+                window.createNewTemplate();
+            }
+        });
+    }
+
+    // Export buttons
+    const exportCablingBtn = document.getElementById('exportCablingBtn');
+    if (exportCablingBtn) {
+        exportCablingBtn.addEventListener('click', () => {
+            if (typeof window.exportCablingDescriptor === 'function') {
+                window.exportCablingDescriptor();
+            }
+        });
+    }
+
+    const exportDeploymentBtn = document.getElementById('exportDeploymentBtn');
+    if (exportDeploymentBtn) {
+        exportDeploymentBtn.addEventListener('click', () => {
+            if (typeof window.exportDeploymentDescriptor === 'function') {
+                window.exportDeploymentDescriptor();
+            }
+        });
+    }
+
+    const generateCablingGuideBtn = document.getElementById('generateCablingGuideBtn');
+    if (generateCablingGuideBtn) {
+        generateCablingGuideBtn.addEventListener('click', () => {
+            if (typeof window.generateCablingGuide === 'function') {
+                window.generateCablingGuide();
+            }
+        });
+    }
+
+    const generateFSDBtn = document.getElementById('generateFSDBtn');
+    if (generateFSDBtn) {
+        generateFSDBtn.addEventListener('click', () => {
+            if (typeof window.generateFSD === 'function') {
+                window.generateFSD();
+            }
+        });
+    }
+
+    // Modal buttons
+    const cancelConnectionPlacementBtn = document.getElementById('cancelConnectionPlacementBtn');
+    if (cancelConnectionPlacementBtn) {
+        cancelConnectionPlacementBtn.addEventListener('click', () => {
+            if (typeof window.cancelConnectionPlacement === 'function') {
+                window.cancelConnectionPlacement();
+            }
+        });
+    }
+
+    const manualLayoutTab = document.getElementById('manualLayoutTab');
+    if (manualLayoutTab) {
+        manualLayoutTab.addEventListener('click', () => {
+            if (typeof window.switchLayoutTab === 'function') {
+                window.switchLayoutTab('manual');
+            }
+        });
+    }
+
+    const uploadLayoutTab = document.getElementById('uploadLayoutTab');
+    if (uploadLayoutTab) {
+        uploadLayoutTab.addEventListener('click', () => {
+            if (typeof window.switchLayoutTab === 'function') {
+                window.switchLayoutTab('upload');
+            }
+        });
+    }
+
+    const cancelPhysicalLayoutModalBtn = document.getElementById('cancelPhysicalLayoutModalBtn');
+    if (cancelPhysicalLayoutModalBtn) {
+        cancelPhysicalLayoutModalBtn.addEventListener('click', () => {
+            if (typeof window.cancelPhysicalLayoutModal === 'function') {
+                window.cancelPhysicalLayoutModal();
+            }
+        });
+    }
+
+    const applyLayoutBtn = document.getElementById('applyLayoutBtn');
+    if (applyLayoutBtn) {
+        applyLayoutBtn.addEventListener('click', () => {
+            if (typeof window.applyPhysicalLayout === 'function') {
+                window.applyPhysicalLayout();
+            }
+        });
+    }
+
+    const applyUploadBtn = document.getElementById('applyUploadBtn');
+    if (applyUploadBtn) {
+        applyUploadBtn.addEventListener('click', () => {
+            if (typeof window.applyDeploymentDescriptorFromModal === 'function') {
+                window.applyDeploymentDescriptorFromModal();
+            }
+        });
+    }
+
+    // Collapsible headers (these use toggleCollapsible which is in HTML inline script)
+    const collapsibleHeaders = document.querySelectorAll('.collapsible-header[data-section]');
+    collapsibleHeaders.forEach(header => {
+        const sectionId = header.getAttribute('data-section');
+        if (sectionId) {
+            header.addEventListener('click', () => {
+                if (typeof window.toggleCollapsible === 'function') {
+                    window.toggleCollapsible(sectionId);
+                }
+            });
+        }
+    });
+
+    console.log('[EventListeners] All event listeners set up');
+}
+
+// Setup event listeners when DOM is ready
+setupEventListeners();
 
 // Tab-specific empty visualization functions
 function createEmptyVisualizationLocation() {
@@ -10077,45 +10490,13 @@ document.getElementById('graphTemplateSelect').addEventListener('change', functi
 // Label input event listener removed - instance names are now auto-generated as {template_name}_{index}
 
 // ===== Expose Functions to Global Scope =====
-// Since visualizer.js is loaded as a module, functions need to be explicitly exposed
-// to the window object to be accessible from inline onclick handlers in HTML
+// Phase 8 Complete: All inline onclick handlers have been replaced with event listeners.
+// Functions are still exposed for:
+//   1. HTML inline scripts that call them (e.g., uploadFileLocation, applyDeploymentDescriptorFromModal)
+//   2. Event listeners that check for function existence (defensive programming)
 //
-// TODO: REFACTORING - Module Scoping Issues
-// ==========================================
-// PROBLEM: When visualizer.js was converted to a module (type="module"), all functions
-// became module-scoped and are no longer accessible from inline onclick handlers in HTML.
-// This has caused multiple scoping errors:
-//   - uploadFile is not defined
-//   - currentData is not defined
-//   - initialVisualizationData is not defined
-//   - location_switchMode is not defined
-//   - updateModeIndicator is not defined
-//   - showExportStatus is not defined
-//   - etc.
-//
-// CURRENT WORKAROUND: Expose all functions to window object manually. This works but:
-//   - Requires maintaining a list of functions to expose
-//   - Pollutes global namespace
-//   - Easy to miss functions when adding new ones
-//   - HTML must use window.functionName() or typeof checks
-//
-// LONG-TERM SOLUTION (Phase 6.4 in refactoring plan):
-//   1. Replace all inline onclick handlers with event listeners
-//   2. Create EventManager class to centralize event handling
-//   3. Initialize all event listeners in a single function
-//   4. This eliminates the need to expose functions globally
-//
-// Example refactoring:
-//   OLD: <button onclick="uploadFile()">
-//   NEW: document.getElementById('uploadBtn').addEventListener('click', uploadFile);
-//
-// Benefits:
-//   - No global namespace pollution
-//   - Better code organization
-//   - Easier to test
-//   - Type safety (no runtime "is not defined" errors)
-//
-// For now, we expose all functions that might be called from HTML:
+// Note: Most button clicks are now handled by setupEventListeners() in visualizer.js.
+// Only functions called from HTML inline scripts need to remain exposed.
 const functionsToExpose = {
     // Core visualization functions
     initVisualization,

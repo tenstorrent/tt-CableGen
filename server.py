@@ -10,6 +10,7 @@ import tempfile
 import argparse
 import time
 import threading
+import json
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response
 import traceback
 
@@ -94,8 +95,15 @@ def upload_csv():
                 # Parse cabling descriptor textproto
                 visualizer.file_format = "descriptor"  # Set format before parsing
                 
-                if not visualizer.parse_cabling_descriptor(tmp_file_path):
-                    return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
+                try:
+                    if not visualizer.parse_cabling_descriptor(tmp_file_path):
+                        return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
+                except ValueError as e:
+                    # Catch validation errors (e.g., missing host_id mappings)
+                    return jsonify({"success": False, "error": str(e)})
+                except Exception as e:
+                    # Catch any other parsing errors
+                    return jsonify({"success": False, "error": f"Error parsing cabling descriptor: {str(e)}"})
                 
                 # Get node types from hierarchy and initialize configs
                 if visualizer.graph_hierarchy:
@@ -188,6 +196,12 @@ def export_cabling_descriptor():
         if not cytoscape_data or "elements" not in cytoscape_data:
             return jsonify({"success": False, "error": "Invalid cytoscape data"}), 400
 
+        # Debug: Check if edges are present
+        elements = cytoscape_data.get("elements", [])
+        nodes = [el for el in elements if "source" not in el.get("data", {})]
+        edges = [el for el in elements if "source" in el.get("data", {})]
+        print(f"[EXPORT_CABLING] Received {len(nodes)} nodes and {len(edges)} edges")
+        
         # Generate textproto content (based on hierarchy information only)
         textproto_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
 
@@ -223,6 +237,179 @@ def export_deployment_descriptor():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/apply_deployment_descriptor", methods=["POST"])
+def apply_deployment_descriptor():
+    """Apply deployment descriptor to existing visualization (add physical location info)
+    
+    This endpoint is used when:
+    1. User has already loaded a cabling descriptor (logical topology) in the Topology tab
+    2. User wants to add physical location information by uploading a deployment descriptor
+    
+    IMPORTANT: The cabling descriptor and deployment descriptor are tightly coupled by index:
+    - Cabling descriptor assigns host_id (0, 1, 2, ...) to each host via child_mappings
+    - Deployment descriptor lists hosts in array order: hosts[0], hosts[1], hosts[2], ...
+    - host_id N in cabling descriptor MUST correspond to hosts[N] in deployment descriptor
+    
+    This function:
+    1. Parses deployment descriptor and builds map: host_id -> location info (indexed by array position)
+    2. Matches shelf nodes by their host_index/host_id field (set during cabling descriptor import)
+    3. Updates shelf nodes with physical location fields (hall, aisle, rack_num, shelf_u)
+    4. Validates that hostnames match between descriptors (warning only, uses host_id for mapping)
+    """
+    if not EXPORT_AVAILABLE:
+        return jsonify({"success": False, "error": "Export functionality not available. Missing dependencies."}), 500
+    
+    try:
+        # Check if file was uploaded
+        if "deployment_file" not in request.files:
+            return jsonify({"success": False, "error": "No deployment descriptor file uploaded"})
+        
+        file = request.files["deployment_file"]
+        
+        if file.filename == "":
+            return jsonify({"success": False, "error": "No file selected"})
+        
+        if not file.filename.lower().endswith(".textproto"):
+            return jsonify({"success": False, "error": "File must be a textproto file"})
+        
+        # Get the current cytoscape data from the form
+        cytoscape_json = request.form.get("cytoscape_data")
+        if not cytoscape_json:
+            return jsonify({"success": False, "error": "No cytoscape data provided"}), 400
+        
+        cytoscape_data = json.loads(cytoscape_json)
+        if not cytoscape_data or "elements" not in cytoscape_data:
+            return jsonify({"success": False, "error": "Invalid cytoscape data"}), 400
+        
+        # Save uploaded file to temporary location
+        prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".textproto", delete=False, prefix=prefix) as tmp_file:
+            file.save(tmp_file.name)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Parse deployment descriptor
+            from export_descriptors import deployment_pb2
+            from google.protobuf import text_format
+            
+            with open(tmp_file_path, 'r') as f:
+                textproto_content = f.read()
+            
+            deployment_desc = deployment_pb2.DeploymentDescriptor()
+            text_format.Parse(textproto_content, deployment_desc)
+            
+            # CRITICAL: Build a map of host_id -> location info
+            # The deployment descriptor hosts list is indexed: hosts[0], hosts[1], hosts[2], etc.
+            # These indices MUST correspond to the host_id values in the cabling descriptor
+            # i.e., host_id=0 in cabling descriptor → hosts[0] in deployment descriptor
+            location_map = {}
+            hostname_map = {}  # Also track by hostname for validation/warnings
+            
+            for host_id, host in enumerate(deployment_desc.hosts):
+                hostname = host.host.strip() if host.host else ""
+                location_info = {
+                    "hall": host.hall if host.hall else "",
+                    "aisle": host.aisle if host.aisle else "",
+                    "rack_num": host.rack if host.rack else 0,
+                    "shelf_u": host.shelf_u if host.shelf_u else 0,
+                    "hostname": hostname,  # Store hostname for validation
+                }
+                
+                # Map by host_id (index in deployment descriptor)
+                location_map[host_id] = location_info
+                
+                # Also track by hostname for validation
+                if hostname:
+                    hostname_map[hostname] = host_id
+            
+            # Update shelf nodes in cytoscape data with location information
+            # Match by host_index/host_id field (from cabling descriptor import)
+            updated_count = 0
+            mismatches = []  # Track hostname mismatches for validation
+            missing_host_ids = []  # Track host_ids not found in deployment descriptor
+            
+            for element in cytoscape_data.get("elements", []):
+                # Skip edges
+                if "source" in element.get("data", {}):
+                    continue
+                
+                node_data = element.get("data", {})
+                node_type = node_data.get("type")
+                
+                # Only update shelf nodes
+                if node_type == "shelf":
+                    # Get host_id from shelf node (set during cabling descriptor import)
+                    # Try both field names for compatibility
+                    host_id = node_data.get("host_index")
+                    if host_id is None:
+                        host_id = node_data.get("host_id")
+                    
+                    if host_id is not None and host_id in location_map:
+                        # Update ALL physical/deployment fields using the indexed mapping
+                        location = location_map[host_id]
+                        
+                        # Physical location fields
+                        node_data["hall"] = location["hall"]
+                        node_data["aisle"] = location["aisle"]
+                        node_data["rack_num"] = location["rack_num"]
+                        node_data["shelf_u"] = location["shelf_u"]
+                        
+                        # Hostname (CRITICAL: hostname is a deployment property, not logical)
+                        # The cabling descriptor should NOT set hostnames - they come from deployment descriptor
+                        deploy_hostname = location["hostname"]
+                        if deploy_hostname:
+                            viz_hostname = node_data.get("hostname", "").strip()
+                            if viz_hostname and viz_hostname != deploy_hostname:
+                                # Track mismatch for warning (but still apply the deployment descriptor hostname)
+                                mismatches.append({
+                                    "host_id": host_id,
+                                    "viz_hostname": viz_hostname,
+                                    "deploy_hostname": deploy_hostname
+                                })
+                            # Always use hostname from deployment descriptor
+                            node_data["hostname"] = deploy_hostname
+                        
+                        updated_count += 1
+                    elif host_id is not None:
+                        missing_host_ids.append(host_id)
+            
+            # Prepare response message with validation info
+            message = f"Successfully applied deployment descriptor to {updated_count} hosts"
+            warnings = []
+            
+            if missing_host_ids:
+                warnings.append(f"{len(missing_host_ids)} host_id(s) from visualization not found in deployment descriptor: {missing_host_ids[:5]}")
+            
+            if mismatches:
+                warnings.append(f"{len(mismatches)} hostname mismatches detected (host_id mapping used, but hostnames differ)")
+                for mismatch in mismatches[:3]:  # Show first 3 mismatches
+                    warnings.append(f"  host_id={mismatch['host_id']}: viz='{mismatch['viz_hostname']}' vs deploy='{mismatch['deploy_hostname']}'")
+            
+            if warnings:
+                message += "<br><strong>⚠️ Warnings:</strong><br>" + "<br>".join(warnings)
+            
+            return jsonify({
+                "success": True,
+                "data": cytoscape_data,
+                "message": message,
+                "updated_count": updated_count,
+                "mismatches": mismatches,
+                "missing_host_ids": missing_host_ids,
+            })
+        
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_file_path)
+            except OSError:
+                pass
+    
+    except Exception as e:
+        error_msg = f"Error applying deployment descriptor: {str(e)}"
+        traceback.print_exc()
+        return jsonify({"success": False, "error": error_msg}), 500
 
 
 def _validate_shelf_hostnames(cytoscape_data):

@@ -188,3 +188,21 @@ If you encounter issues, check:
 3. Factory usage (only in specific locations)
 4. Module imports (ensure paths are correct)
 
+---
+
+## Future Tasks
+
+### Phase 8: Backward Compatibility Cleanup
+- [ ] **TODO**: Review and remove all backward compatibility marked changes
+  - Audit all functions marked with "backward compatibility" comments
+  - Remove legacy global variable sync (syncLegacyGlobals, state observers for globals)
+  - Remove wrapper functions that delegate to modules (replace direct calls)
+  - Remove unused template color globals (TEMPLATE_COLORS, nextColorIndex)
+  - Update all call sites to use new module APIs directly
+  - Remove temporary compatibility shims
+  - Verify no functionality breaks after removal
+  - Update documentation to reflect final API
+
+**Estimated Time:** 1-2 days  
+**Risk:** Medium - Requires thorough testing to ensure no regressions
+
