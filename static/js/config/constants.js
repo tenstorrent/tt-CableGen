@@ -44,6 +44,39 @@ export const LAYOUT = {
 };
 
 /**
+ * Location mode layout constants
+ */
+export const LAYOUT_CONSTANTS = {
+    // Location mode constants (for rack-based layout)
+    DEFAULT_RACK_WIDTH: 450,
+    MIN_START_X: 350,
+    MIN_START_Y: 450,
+    RACK_X_OFFSET: 100,
+    RACK_Y_OFFSET: 150,
+    NEW_RACK_DEFAULT_X: 250,
+    NEW_RACK_DEFAULT_Y: 300,
+    RACK_SPACING_BUFFER: 1.35,  // 35% extra space
+
+    // Hierarchy mode constants (percentage-based spacing)
+    // These are multipliers applied to node dimensions
+    GRAPH_VERTICAL_SPACING_FACTOR: 1.05,   // 5% extra space below each graph (tight)
+    GRAPH_PADDING_TOP_FACTOR: 0.05,        // 5% of parent height as top padding
+
+    // Shelf node spacing (percentage-based)
+    SHELF_HORIZONTAL_SPACING_FACTOR: 1.03, // 3% extra space between shelves (tight)
+    SHELF_PADDING_LEFT_FACTOR: 0.03,       // 3% of parent width as left padding
+    SHELF_PADDING_TOP_FACTOR: 0.08,        // 8% of parent height as top padding
+
+    // Starting positions for top-level nodes
+    TOP_LEVEL_START_X: 200,
+    TOP_LEVEL_START_Y: 200,
+
+    // Fallback dimensions when node size cannot be determined
+    FALLBACK_GRAPH_HEIGHT: 450,
+    FALLBACK_SHELF_WIDTH: 200
+};
+
+/**
  * Animation and timing constants
  */
 export const ANIMATION = {
@@ -161,6 +194,14 @@ export const VISUAL = {
     // Node styles
     NODE_BORDER_WIDTH: 2,
     SELECTED_NODE_BORDER_WIDTH: 4
+};
+
+/**
+ * Connection color constants for physical view
+ */
+export const CONNECTION_COLORS = {
+    INTRA_NODE: '#4CAF50',  // Green for same node/shelf
+    INTER_NODE: '#2196F3'   // Blue for different nodes/shelves
 };
 
 /**

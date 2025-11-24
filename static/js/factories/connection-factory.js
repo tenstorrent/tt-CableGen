@@ -70,7 +70,7 @@ export class ConnectionFactory {
      * Get template color (helper method)
      * @private
      */
-    _getTemplateColor(templateName) {
+    _getTemplateColor(_templateName) {
         // This will be replaced with actual template color logic
         // For now, return null to use default
         return null;

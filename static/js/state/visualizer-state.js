@@ -6,10 +6,10 @@ export class VisualizerState {
     constructor() {
         // Cytoscape instance
         this.cy = null;
-        
+
         // Current mode: 'location' or 'hierarchy'
         this.mode = 'location';
-        
+
         // Editing state
         this.editing = {
             isEdgeCreationMode: false,
@@ -19,7 +19,7 @@ export class VisualizerState {
             selectedNode: null,
             currentConnectionNumber: 0
         };
-        
+
         // Data state
         this.data = {
             currentData: null,
@@ -29,27 +29,28 @@ export class VisualizerState {
             availableGraphTemplates: {}, // Store graph templates from loaded textproto
             nodeConfigs: {} // Will be populated from config module
         };
-        
+
         // UI state
         this.ui = {
             modalsOpen: new Set(),
             notificationsVisible: false,
             notificationTimer: null,
             expandedGraphs: new Set(),
-            collapsedGraphs: new Set()
+            collapsedGraphs: new Set(),
+            edgeRerouting: new Map() // Maps collapsed node ID -> { edges: [...], originalSources: [...], originalTargets: [...] }
         };
-        
+
         // History for undo/redo
         this.history = {
             stack: [],
             currentIndex: -1,
             maxSize: 50
         };
-        
+
         // Debug mode
         this.debug = false;
     }
-    
+
     /**
      * Reset state to initial values
      */
@@ -71,13 +72,13 @@ export class VisualizerState {
         this.ui.expandedGraphs.clear();
         this.ui.collapsedGraphs.clear();
         this.clearHistory();
-        
+
         if (this.ui.notificationTimer) {
             clearTimeout(this.ui.notificationTimer);
             this.ui.notificationTimer = null;
         }
     }
-    
+
     /**
      * Create a snapshot of current state for undo/redo
      * @returns {Object} State snapshot
@@ -90,28 +91,28 @@ export class VisualizerState {
             cytoscapeData: this.cy ? this.cy.json() : null
         };
     }
-    
+
     /**
      * Save current state to history
      */
     saveToHistory() {
         // Remove any states after current index (for redo after undo)
         this.history.stack = this.history.stack.slice(0, this.history.currentIndex + 1);
-        
+
         // Add new snapshot
         const snapshot = this.createSnapshot();
         this.history.stack.push(snapshot);
-        
+
         // Limit history size
         if (this.history.stack.length > this.history.maxSize) {
             this.history.stack.shift();
         } else {
             this.history.currentIndex++;
         }
-        
+
         this.log('State saved to history', { index: this.history.currentIndex, total: this.history.stack.length });
     }
-    
+
     /**
      * Restore state from snapshot
      * @param {Object} snapshot - State snapshot to restore
@@ -119,14 +120,14 @@ export class VisualizerState {
     restoreSnapshot(snapshot) {
         this.mode = snapshot.mode;
         this.data.globalHostCounter = snapshot.globalHostCounter;
-        
+
         if (this.cy && snapshot.cytoscapeData) {
             this.cy.json(snapshot.cytoscapeData);
         }
-        
+
         this.log('State restored from history', { timestamp: snapshot.timestamp });
     }
-    
+
     /**
      * Undo last action
      * @returns {boolean} True if undo was successful, false if nothing to undo
@@ -140,7 +141,7 @@ export class VisualizerState {
         }
         return false;
     }
-    
+
     /**
      * Redo last undone action
      * @returns {boolean} True if redo was successful, false if nothing to redo
@@ -154,7 +155,7 @@ export class VisualizerState {
         }
         return false;
     }
-    
+
     /**
      * Clear history
      */
@@ -162,7 +163,7 @@ export class VisualizerState {
         this.history.stack = [];
         this.history.currentIndex = -1;
     }
-    
+
     /**
      * Get next connection number
      * @returns {number} Next connection number
@@ -170,7 +171,7 @@ export class VisualizerState {
     getNextConnectionNumber() {
         return this.editing.currentConnectionNumber++;
     }
-    
+
     /**
      * Check if in edit mode
      * @returns {boolean} True if edge creation mode is enabled
@@ -178,25 +179,33 @@ export class VisualizerState {
     isEditMode() {
         return this.editing.isEdgeCreationMode;
     }
-    
+
     /**
      * Enable edit mode
      */
     enableEditMode() {
         this.editing.isEdgeCreationMode = true;
         this.clearSelections();
+        // Clear Cytoscape selections
+        if (this.cy) {
+            this.cy.elements().unselect();
+        }
         this.log('Edit mode enabled');
     }
-    
+
     /**
      * Disable edit mode
      */
     disableEditMode() {
         this.editing.isEdgeCreationMode = false;
         this.clearSelections();
+        // Clear Cytoscape selections
+        if (this.cy) {
+            this.cy.elements().unselect();
+        }
         this.log('Edit mode disabled');
     }
-    
+
     /**
      * Clear all selections
      */
@@ -206,7 +215,7 @@ export class VisualizerState {
         this.editing.selectedConnection = null;
         this.editing.selectedNode = null;
     }
-    
+
     /**
      * Set mode
      * @param {string} mode - 'location' or 'hierarchy'
@@ -217,10 +226,18 @@ export class VisualizerState {
             return;
         }
         const oldMode = this.mode;
+        // Clear selections when switching modes
+        if (oldMode !== mode) {
+            this.clearSelections();
+            // Clear Cytoscape selections
+            if (this.cy) {
+                this.cy.elements().unselect();
+            }
+        }
         this.mode = mode;
         this.log(`Mode changed: ${oldMode} -> ${mode}`);
     }
-    
+
     /**
      * Check if in location mode
      * @returns {boolean} True if in location mode
@@ -228,7 +245,7 @@ export class VisualizerState {
     isLocationMode() {
         return this.mode === 'location';
     }
-    
+
     /**
      * Check if in hierarchy mode
      * @returns {boolean} True if in hierarchy mode
@@ -236,7 +253,7 @@ export class VisualizerState {
     isHierarchyMode() {
         return this.mode === 'hierarchy';
     }
-    
+
     /**
      * Log state change (if debug enabled)
      * @param {string} message - Log message
@@ -247,7 +264,7 @@ export class VisualizerState {
             console.log(`[State] ${message}`, data || '');
         }
     }
-    
+
     /**
      * Enable debug mode
      */
@@ -255,7 +272,7 @@ export class VisualizerState {
         this.debug = true;
         console.log('[State] Debug mode enabled');
     }
-    
+
     /**
      * Disable debug mode
      */

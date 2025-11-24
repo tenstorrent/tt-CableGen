@@ -2,7 +2,7 @@
  * Factory for creating Cytoscape nodes with consistent structure
  * Eliminates duplicate node creation logic throughout the codebase
  */
-import { getNodeConfig, isValidNodeType } from '../config/node-types.js';
+import { getNodeConfig } from '../config/node-types.js';
 
 export class NodeFactory {
     constructor(state) {

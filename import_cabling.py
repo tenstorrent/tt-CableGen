@@ -649,6 +649,10 @@ class NetworkCablingCytoscapeVisualizer:
                     "This indicates malformed child_mappings in the descriptor."
                 )
             
+            # Validate that host_ids are assigned in order (0, 1, 2, 3, ...)
+            if self.graph_hierarchy:
+                self._validate_host_id_ordering()
+            
             # Parse connections
             self.descriptor_connections = self._parse_descriptor_connections()
             
@@ -707,8 +711,70 @@ class NetworkCablingCytoscapeVisualizer:
         
         return True
     
+    def _validate_host_id_ordering(self):
+        """Validate that host_id values are assigned in sequential order (0, 1, 2, 3, ...)
+        
+        This ensures that host_id assignments match the indexed relationship expected
+        between cabling and deployment descriptors (host_id N must correspond to hosts[N]).
+        
+        Raises:
+            ValueError: If host_ids are not sequential, with details about the issue
+        """
+        if not self.graph_hierarchy:
+            return
+        
+        # Extract all host_id values
+        host_ids = [node['host_id'] for node in self.graph_hierarchy if 'host_id' in node]
+        
+        if not host_ids:
+            raise ValueError(
+                "Invalid cabling descriptor: No host_id values found in hierarchy. "
+                "This indicates the descriptor has no leaf nodes with host_id assignments."
+            )
+        
+        # Check for duplicates
+        if len(host_ids) != len(set(host_ids)):
+            duplicates = []
+            seen = set()
+            for host_id in host_ids:
+                if host_id in seen:
+                    duplicates.append(host_id)
+                seen.add(host_id)
+            raise ValueError(
+                f"Invalid cabling descriptor: Duplicate host_id values found: {sorted(set(duplicates))}. "
+                f"Each host_id must be unique. Found {len(host_ids)} nodes but only {len(set(host_ids))} unique host_ids."
+            )
+        
+        # Sort host_ids to check ordering
+        sorted_host_ids = sorted(host_ids)
+        expected_host_ids = list(range(len(host_ids)))
+        
+        # Check if they form a consecutive sequence starting from 0
+        if sorted_host_ids != expected_host_ids:
+            # Find gaps or out-of-order values
+            missing = [i for i in expected_host_ids if i not in sorted_host_ids]
+            extra = [h for h in sorted_host_ids if h not in expected_host_ids]
+            
+            error_parts = []
+            if missing:
+                error_parts.append(f"Missing host_ids: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+            if extra:
+                error_parts.append(f"Unexpected host_ids: {extra[:10]}{'...' if len(extra) > 10 else ''}")
+            
+            error_msg = (
+                f"Invalid cabling descriptor: host_id values must be assigned in sequential order "
+                f"starting from 0 (0, 1, 2, 3, ..., {len(host_ids)-1}). "
+                f"Found {len(host_ids)} nodes with host_ids: {sorted_host_ids[:20]}{'...' if len(sorted_host_ids) > 20 else ''}. "
+            )
+            if error_parts:
+                error_msg += " " + ". ".join(error_parts)
+            
+            raise ValueError(error_msg)
+    
     def _validate_host_ids_recursive(self, instance, template_name, current_path, missing_nodes):
         """Recursively validate that all leaf nodes have host_id
+        
+        Processes children in template.children order for consistency.
         
         Args:
             instance: GraphInstance to validate
@@ -720,15 +786,17 @@ class NetworkCablingCytoscapeVisualizer:
             return
         
         template = self.cluster_descriptor.graph_templates[template_name]
+        child_mappings_dict = dict(instance.child_mappings)  # Convert to dict for lookup
         
-        for child_name, child_mapping in instance.child_mappings.items():
-            # Find the corresponding child in the template
-            child_instance = self._find_child_in_template(template, child_name)
+        # Process children in template order (not child_mappings order)
+        for child_instance in template.children:
+            child_name = child_instance.name
             
-            if not child_instance:
-                # Child not found in template - skip (will be warned elsewhere)
+            if child_name not in child_mappings_dict:
+                # Child in template but not in child_mappings - skip (will be warned elsewhere)
                 continue
             
+            child_mapping = child_mappings_dict[child_name]
             child_path = current_path + [child_name]
             
             # Check if this should be a leaf node (has node_ref in template)
@@ -897,21 +965,33 @@ class NetworkCablingCytoscapeVisualizer:
             return connections
         
         def _parse_recursive(self, instance, template_name, path, connections, depth):
-            """Recursively parse connections from a GraphInstance"""
+            """Recursively parse connections from a GraphInstance
+            
+            IMPORTANT: Processes children in template.children order (via _traverse_hierarchy)
+            to ensure consistent path resolution. Template connection paths are relative to
+            the template and must match child names in the instance.
+            """
             if template_name not in self.parent.cluster_descriptor.graph_templates:
                 return
             
             template = self.parent.cluster_descriptor.graph_templates[template_name]
             
             # Parse internal connections at this level
+            # These connections are defined in the template with relative paths
+            # and need to be resolved to absolute paths using the instance's child mappings
             for cable_type, port_connections in template.internal_connections.items():
                 for conn in port_connections.connections:
+                    # Build absolute paths by prepending instance path to template relative paths
+                    # Template paths are relative (e.g., ["node1"] or ["pod1", "node1"])
+                    # Instance path is absolute (e.g., ["root", "superpod1"])
                     port_a_path = list(path) + list(conn.port_a.path)
                     port_a_host_id = self.hierarchy_resolver.path_to_host_id(port_a_path)
                     
                     port_b_path = list(path) + list(conn.port_b.path)
                     port_b_host_id = self.hierarchy_resolver.path_to_host_id(port_b_path)
                     
+                    # Only add connection if both paths resolve to valid host_ids
+                    # This ensures connections are only created for valid leaf nodes
                     if port_a_host_id is not None and port_b_host_id is not None:
                         connections.append({
                             'port_a': {
@@ -931,6 +1011,28 @@ class NetworkCablingCytoscapeVisualizer:
                             'template_name': template_name,
                             'instance_path': '/'.join(path) if path else 'root'
                         })
+                    else:
+                        # Log warning if path resolution fails
+                        if port_a_host_id is None:
+                            self.parent._log_warning(
+                                f"Failed to resolve port_a path: {'/'.join(port_a_path)}",
+                                {
+                                    "template": template_name,
+                                    "instance_path": '/'.join(path) if path else 'root',
+                                    "relative_path": '/'.join(conn.port_a.path),
+                                    "absolute_path": '/'.join(port_a_path)
+                                }
+                            )
+                        if port_b_host_id is None:
+                            self.parent._log_warning(
+                                f"Failed to resolve port_b path: {'/'.join(port_b_path)}",
+                                {
+                                    "template": template_name,
+                                    "instance_path": '/'.join(path) if path else 'root',
+                                    "relative_path": '/'.join(conn.port_b.path),
+                                    "absolute_path": '/'.join(port_b_path)
+                                }
+                            )
             
             # Recurse into nested graphs
             def subgraph_callback(child_name, child_mapping, child_instance, nested_template_name, path, depth):
@@ -989,12 +1091,76 @@ class NetworkCablingCytoscapeVisualizer:
                 return child
         return None
     
+    def _validate_child_mappings_order(self, instance, template_name, path):
+        """Validate that child_mappings order matches template.children order
+        
+        Args:
+            instance: GraphInstance to validate
+            template_name: Name of the template this instance uses
+            path: Current path from root (for error reporting)
+            
+        Returns:
+            List of (child_instance, child_mapping) tuples in template order
+            None if validation fails
+        """
+        if template_name not in self.cluster_descriptor.graph_templates:
+            return None
+        
+        template = self.cluster_descriptor.graph_templates[template_name]
+        
+        # Build ordered list: process children in template order
+        ordered_children = []
+        child_mappings_dict = dict(instance.child_mappings)  # Convert to dict for lookup
+        
+        # Process children in template order
+        for child_instance in template.children:
+            child_name = child_instance.name
+            if child_name not in child_mappings_dict:
+                self._log_warning(
+                    f"Child '{child_name}' in template but not in child_mappings",
+                    {"template": template_name, "path": '/'.join(path) if path else 'root'}
+                )
+                continue
+            
+            child_mapping = child_mappings_dict[child_name]
+            ordered_children.append((child_instance, child_mapping, child_name))
+        
+        # Check for extra children in child_mappings not in template
+        template_child_names = {child.name for child in template.children}
+        extra_children = set(child_mappings_dict.keys()) - template_child_names
+        if extra_children:
+            self._log_warning(
+                f"Children in child_mappings but not in template: {extra_children}",
+                {"template": template_name, "path": '/'.join(path) if path else 'root'}
+            )
+        
+        # Validate order matches (warn if different, but still use template order)
+        child_mappings_order = list(instance.child_mappings.keys())
+        template_order = [child.name for child in template.children]
+        
+        if child_mappings_order != template_order:
+            self._log_warning(
+                f"child_mappings order does not match template.children order",
+                {
+                    "template": template_name,
+                    "path": '/'.join(path) if path else 'root',
+                    "child_mappings_order": child_mappings_order,
+                    "template_order": template_order,
+                    "note": "Using template order for consistency"
+                }
+            )
+        
+        return ordered_children
+    
     def _traverse_hierarchy(self, instance, template_name, path, depth, 
                            node_callback=None, subgraph_callback=None):
         """Generic hierarchy traversal with callbacks for nodes and subgraphs
         
         This extracts the common pattern from _resolve_instance_recursive and 
         _parse_connections_recursive to reduce code duplication.
+        
+        IMPORTANT: Processes children in template.children order, not child_mappings order.
+        This ensures consistent ordering regardless of how child_mappings is structured.
         
         Args:
             instance: GraphInstance to traverse
@@ -1014,16 +1180,13 @@ class NetworkCablingCytoscapeVisualizer:
         
         template = self.cluster_descriptor.graph_templates[template_name]
         
-        # Process each child mapping
-        for child_name, child_mapping in instance.child_mappings.items():
-            # Find the corresponding ChildInstance in the template
-            child_instance = self._find_child_in_template(template, child_name)
-            
-            if not child_instance:
-                self._log_warning(f"Child not found in template", 
-                                {"child": child_name, "template": template_name})
-                continue
-            
+        # Validate and get ordered children (in template.children order)
+        ordered_children = self._validate_child_mappings_order(instance, template_name, path)
+        if ordered_children is None:
+            return
+        
+        # Process children in template order
+        for child_instance, child_mapping, child_name in ordered_children:
             # Check if this is a leaf node (has host_id) or nested graph (has sub_instance)
             if child_mapping.HasField('host_id'):
                 # Leaf node
@@ -1032,7 +1195,7 @@ class NetworkCablingCytoscapeVisualizer:
                         node_callback(child_name, child_mapping, child_instance, path, depth)
                 else:
                     self._log_warning(f"Leaf child has host_id but no node_ref", 
-                                    {"child": child_name})
+                                    {"child": child_name, "template": template_name})
             
             elif child_mapping.HasField('sub_instance'):
                 # Nested graph
@@ -1043,7 +1206,7 @@ class NetworkCablingCytoscapeVisualizer:
                                         nested_template_name, path, depth)
                 else:
                     self._log_warning(f"Nested child has sub_instance but no graph_ref", 
-                                    {"child": child_name})
+                                    {"child": child_name, "template": template_name})
     
     def _resolve_instance_recursive(self, instance, template_name, path, hierarchy, depth):
         """Recursively resolve a Graph Instance to extract leaf devices (host nodes)
@@ -1950,6 +2113,9 @@ class NetworkCablingCytoscapeVisualizer:
         This ensures paths are collected in parent-first order, guaranteeing
         that when we create nodes, parents always exist before children.
         
+        IMPORTANT: Processes children in template.children order (not child_mappings order)
+        to ensure consistent ordering that matches template definition.
+        
         Args:
             instance: Current GraphInstance from the descriptor
             current_path: List representing the path to this instance
@@ -1958,23 +2124,53 @@ class NetworkCablingCytoscapeVisualizer:
         # Add current path (root is empty list)
         collected_paths.append(list(current_path))
         
-        # Recursively process children
-        # child_mappings is a map/dict where key is child_name and value is the mapping
-        if hasattr(instance, 'child_mappings'):
-            for child_name, child_mapping in instance.child_mappings.items():
-                # Check if this is a sub-graph (not a leaf node)
-                if child_mapping.HasField('sub_instance'):
-                    child_instance = child_mapping.sub_instance
+        # Get template name for this instance
+        template_name = None
+        if hasattr(instance, 'template_name'):
+            template_name = instance.template_name
+        
+        # Process children in template order (if template available)
+        if template_name and template_name in self.cluster_descriptor.graph_templates:
+            template = self.cluster_descriptor.graph_templates[template_name]
+            child_mappings_dict = dict(instance.child_mappings) if hasattr(instance, 'child_mappings') else {}
+            
+            # Process children in template.children order
+            for child_instance in template.children:
+                child_name = child_instance.name
+                
+                # Only process graph children (not leaf nodes)
+                if child_instance.HasField('graph_ref') and child_name in child_mappings_dict:
+                    child_mapping = child_mappings_dict[child_name]
                     
-                    # Build child path
-                    child_path = current_path + [child_name]
-                    
-                    # Recursively collect from this child
-                    self._collect_graph_paths_from_root(
-                        child_instance,
-                        child_path,
-                        collected_paths
-                    )
+                    if child_mapping.HasField('sub_instance'):
+                        child_graph_instance = child_mapping.sub_instance
+                        
+                        # Build child path
+                        child_path = current_path + [child_name]
+                        
+                        # Recursively collect from this child
+                        self._collect_graph_paths_from_root(
+                            child_graph_instance,
+                            child_path,
+                            collected_paths
+                        )
+        else:
+            # Fallback: process in child_mappings order if no template available
+            if hasattr(instance, 'child_mappings'):
+                for child_name, child_mapping in instance.child_mappings.items():
+                    # Check if this is a sub-graph (not a leaf node)
+                    if child_mapping.HasField('sub_instance'):
+                        child_instance = child_mapping.sub_instance
+                        
+                        # Build child path
+                        child_path = current_path + [child_name]
+                        
+                        # Recursively collect from this child
+                        self._collect_graph_paths_from_root(
+                            child_instance,
+                            child_path,
+                            collected_paths
+                        )
     
     def _normalize_instance_names(self, sorted_graph_paths):
         """Normalize instance names to {template_name}_{index} format
@@ -2022,6 +2218,11 @@ class NetworkCablingCytoscapeVisualizer:
         
         Groups nodes by their parent path and enumerates them sequentially.
         For example: "node1", "node2", "node3" -> "node_0", "node_1", "node_2"
+        
+        IMPORTANT: Preserves template.children order (not alphabetical order) to ensure
+        consistent numbering that matches template definition. This ensures that nodes
+        are numbered in the same order they appear in the template, regardless of
+        their original names.
         """
         # Group nodes by parent path
         nodes_by_parent = {}
@@ -2036,8 +2237,33 @@ class NetworkCablingCytoscapeVisualizer:
         
         # Enumerate nodes within each parent
         for parent_path, nodes in nodes_by_parent.items():
-            # Sort for consistent ordering
-            nodes.sort(key=lambda x: x[1])  # Sort by original child name
+            # Get template for parent to preserve template.children order
+            parent_template_name = None
+            if self._hierarchy_resolver:
+                parent_template_name = self._hierarchy_resolver.get_template_for_path(list(parent_path))
+            
+            if parent_template_name and parent_template_name in self.cluster_descriptor.graph_templates:
+                # Use template.children order
+                template = self.cluster_descriptor.graph_templates[parent_template_name]
+                nodes_by_name = {name: (dev, name) for dev, name in nodes}
+                ordered_nodes = []
+                
+                # Process in template.children order
+                for child_instance in template.children:
+                    child_name = child_instance.name
+                    if child_name in nodes_by_name:
+                        ordered_nodes.append(nodes_by_name[child_name])
+                
+                # Add any nodes not found in template (shouldn't happen, but handle gracefully)
+                for dev, name in nodes:
+                    if name not in {n[1] for n in ordered_nodes}:
+                        ordered_nodes.append((dev, name))
+                
+                nodes = ordered_nodes
+            else:
+                # Fallback: sort alphabetically if no template available
+                # Note: This will fail for "node10" < "node2" alphabetically
+                nodes.sort(key=lambda x: x[1])  # Sort by original child name
             
             for index, (device_info, original_child_name) in enumerate(nodes):
                 normalized_name = f"node_{index}"
@@ -2718,7 +2944,8 @@ class NetworkCablingCytoscapeVisualizer:
                     "connection_number": i,
                     "color": color,
                     "depth": depth,
-                    "template_name": template_name,
+                    "template_name": template_name,  # Template where connection is defined
+                    "containerTemplate": template_name,  # Also set containerTemplate for consistency with JS-created connections
                     "source_info": f"Host {src_host_id} ({src_node_name}) T{src_tray}P{src_port}",
                     "destination_info": f"Host {dst_host_id} ({dst_node_name}) T{dst_tray}P{dst_port}",
                     # Use template-relative child names (node1, node2) for template export compatibility
@@ -2838,8 +3065,47 @@ class NetworkCablingCytoscapeVisualizer:
             metadata["initialRootTemplate"] = root_template_name
             
             # Extract template names and their full structure from the cluster descriptor
+            # Process templates bottom-up: start with leaf templates (only node_ref children),
+            # then build up to templates that reference other templates
             template_data = {}
+            
+            # Build dependency graph: template -> set of templates it depends on
+            template_dependencies = {}
+            all_template_names = set(self.cluster_descriptor.graph_templates.keys())
+            
             for template_name, template_proto in self.cluster_descriptor.graph_templates.items():
+                dependencies = set()
+                for child in template_proto.children:
+                    if child.HasField("graph_ref"):
+                        dependencies.add(child.graph_ref.graph_template)
+                template_dependencies[template_name] = dependencies
+            
+            # Topological sort: process templates bottom-up (leaf templates first)
+            # Templates with no dependencies (only node_ref children) come first
+            processed_templates = set()
+            template_order = []
+            
+            def process_template(template_name):
+                """Process a template and its dependencies recursively"""
+                if template_name in processed_templates:
+                    return
+                
+                # Process dependencies first
+                for dep_template in template_dependencies.get(template_name, set()):
+                    if dep_template in all_template_names:
+                        process_template(dep_template)
+                
+                # Now process this template
+                template_order.append(template_name)
+                processed_templates.add(template_name)
+            
+            # Process all templates in dependency order
+            for template_name in all_template_names:
+                process_template(template_name)
+            
+            # Process templates in bottom-up order
+            for template_name in template_order:
+                template_proto = self.cluster_descriptor.graph_templates[template_name]
                 # Store the template structure for instantiation in the UI
                 template_info = {
                     "name": template_name,
@@ -2866,30 +3132,28 @@ class NetworkCablingCytoscapeVisualizer:
                     
                     template = self.cluster_descriptor.graph_templates[template_name]
                     
-                    # Group graph children by template type for enumeration
-                    graph_children_by_template = {}
+                    # Process children in original order to preserve template structure
+                    # This ensures that subgraphs appear in the same order as in the textproto
                     node_index = 0
+                    graph_template_counters = {}  # Track enumeration index per template type
                     
+                    # Process children in the exact order they appear in template.children
                     for child in template.children:
                         if child.HasField("graph_ref"):
                             child_template = child.graph_ref.graph_template
-                            if child_template not in graph_children_by_template:
-                                graph_children_by_template[child_template] = []
-                            graph_children_by_template[child_template].append(child)
-                    
-                    # Enumerate graph children
-                    for child_template, children in graph_children_by_template.items():
-                        for idx, child in enumerate(children):
-                            normalized_name = f"{child_template}_{idx}"
+                            # Get enumeration index for this template type
+                            if child_template not in graph_template_counters:
+                                graph_template_counters[child_template] = 0
+                            enum_idx = graph_template_counters[child_template]
+                            graph_template_counters[child_template] += 1
+                            
+                            normalized_name = f"{child_template}_{enum_idx}"
                             child_path = parent_path_tuple + (child.name,)
                             path_mapping[child_path] = normalized_name
                             
                             # Recurse into this child template
                             build_path_mappings_recursive(child_path, child_template, depth + 1)
-                    
-                    # Enumerate node children
-                    for child in template.children:
-                        if child.HasField("node_ref"):
+                        elif child.HasField("node_ref"):
                             normalized_name = f"node_{node_index}"
                             child_path = parent_path_tuple + (child.name,)
                             path_mapping[child_path] = normalized_name

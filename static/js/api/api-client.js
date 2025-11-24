@@ -2,7 +2,7 @@
  * API Client - Centralized API request handling
  * Extracted from visualizer.js to separate API logic from UI logic
  */
-import { API_ENDPOINTS, API_DEFAULTS, HTTP_STATUS, getStatusMessage, isSuccessStatus } from '../config/api.js';
+import { API_ENDPOINTS, API_DEFAULTS, getStatusMessage, isSuccessStatus } from '../config/api.js';
 
 /**
  * Safely stringify JSON, handling circular references

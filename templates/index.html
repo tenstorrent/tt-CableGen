@@ -4,9 +4,9 @@
 <head>
     <meta charset="utf-8">
     <title>Network Cabling Visualizer</title>
+    <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
-    <script src="https://unpkg.com/cytoscape-expand-collapse@4.1.1/cytoscape-expand-collapse.js"></script>
     <!-- fcose layout for overlap avoidance in hierarchical graphs -->
     <script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
     <script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
@@ -277,15 +277,6 @@
             font-weight: bold;
         }
 
-        .range-filter-section button:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-
-        .range-filter-section button:active {
-            transform: translateY(0);
-        }
-
         .info-panel {
             background-color: #e9ecef;
             border-radius: 5px;
@@ -375,6 +366,56 @@
             color: #333333 !important;
             z-index: 1500 !important;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+        }
+
+        /* Ensure expand-collapse cue buttons are on top and clickable */
+        .cy-expand-collapse-cue,
+        [class*="cy-expand-collapse"],
+        [class*="expand-collapse-cue"] {
+            z-index: 9999 !important;
+            pointer-events: auto !important;
+            cursor: pointer !important;
+        }
+
+        /* Hide cues on tray and port nodes - use more aggressive selectors */
+        /* The extension renders cues as SVG elements, so we need to target them via Cytoscape's node data */
+        svg g[data-node-type="tray"] [class*="expand-collapse"],
+        svg g[data-node-type="port"] [class*="expand-collapse"],
+        svg g[class*="cy-node-tray"] [class*="expand-collapse"],
+        svg g[class*="cy-node-port"] [class*="expand-collapse"],
+        svg g[data-node-type="tray"] g[class*="expand-collapse"],
+        svg g[data-node-type="port"] g[class*="expand-collapse"],
+        svg g[class*="cy-node-tray"] g[class*="expand-collapse"],
+        svg g[class*="cy-node-port"] g[class*="expand-collapse"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        /* Alternative: Hide cues based on node ID pattern (if tray nodes have specific IDs) */
+        svg g[id*="tray"] [class*="expand-collapse"],
+        svg g[id*="port"] [class*="expand-collapse"],
+        svg g[id*="tray"] g[class*="expand-collapse"],
+        svg g[id*="port"] g[class*="expand-collapse"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        /* Hide any SVG groups that look like cues near tray/port nodes */
+        svg g[class*="expand-collapse-cue"] {
+            pointer-events: auto !important;
+        }
+
+        /* But hide them if they're associated with tray/port nodes */
+        svg g[data-node-type="tray"]~g[class*="expand-collapse-cue"],
+        svg g[data-node-type="port"]~g[class*="expand-collapse-cue"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         /* Selected edge labels on top */
@@ -824,8 +865,7 @@
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnTopology"
-                                style="flex: 1;">
+                            <button class="upload-btn" id="uploadBtnTopology" style="flex: 1;">
                                 📊 Load Textproto
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnTopology"
@@ -946,21 +986,11 @@
                 </div>
 
                 <div class="collapsible-header" data-section="connectionRangeFilter">
-                    <h3 style="margin: 0; color: #333;">Connection Range Filter</h3>
+                    <h3 style="margin: 0; color: #333;">Connection Filters</h3>
                     <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>
                 </div>
                 <div class="collapsible-content collapsed" id="connectionRangeFilter">
                     <div class="range-filter-section">
-                        <div style="margin-bottom: 15px;">
-                            <label for="connectionRangeString"
-                                style="display: block; margin-bottom: 5px; font-weight: bold;">Connection Range:</label>
-                            <input type="text" id="connectionRangeString" placeholder="e.g., 1-3,5,7-10"
-                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; font-family: monospace;">
-                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                                Format: ranges (1-5), individual numbers (7), or combinations (1-3,5,7-10)
-                            </div>
-                        </div>
-
                         <div style="margin-bottom: 15px;">
                             <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types:</div>
                             <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -995,23 +1025,29 @@
                             </div>
                         </div>
 
-                        <div style="margin-bottom: 15px;">
-                            <button id="applyRangeBtn"
-                                style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                                Apply Range Filter
-                            </button>
-                        </div>
-
-                        <div style="margin-bottom: 15px;">
-                            <button id="clearRangeBtn"
-                                style="width: 100%; padding: 10px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
-                                Show All Connections
-                            </button>
+                        <div class="hierarchy-mode-only" style="margin-bottom: 15px;">
+                            <label for="templateFilterSelect"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Filter by
+                                Template:</label>
+                            <select id="templateFilterSelect"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background-color: white; color: #333333;">
+                                <option value="">Show all templates</option>
+                            </select>
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Select a template to show only its connections
+                            </div>
                         </div>
 
                         <div id="rangeStatus"
                             style="font-size: 12px; color: #666; text-align: center; margin-top: 10px;">
                             Showing all connections
+                        </div>
+
+                        <div style="margin-top: 15px; text-align: center;">
+                            <button id="resetFiltersBtn"
+                                style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                                🔄 Reset Filters
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1041,7 +1077,7 @@
                             Select connections or nodes (shelf, rack, or graph) to delete, then click to delete
                             (or
                             press Backspace/Delete).<br>
-                            Use Ctrl+Click (Cmd+Click on Mac) to select multiple items.<br>
+                            Use Shift+Click to select multiple items.<br>
                             Compound nodes will delete all children.
                         </div>
                     </div>
@@ -1289,7 +1325,6 @@
 
                     <strong>Layout & Filtering:</strong><br>
                     • <u>Reset Layout:</u> Recalculates all positions (racks by number, shelves by U)<br>
-                    • <u>Range Filter:</u> Show specific connections (e.g., "1-10", "5,8,12", "20-30,45")<br><br>
 
                     <strong>Export:</strong><br>
                     • Export topology as CablingDescriptor, DeploymentDescriptor, or Cabling Guide CSV<br>
@@ -1405,7 +1440,8 @@
                 <div class="modal-footer">
                     <button class="modal-btn modal-btn-secondary" id="cancelPhysicalLayoutModalBtn">Cancel</button>
                     <button class="modal-btn modal-btn-primary" id="applyLayoutBtn">Apply Layout</button>
-                    <button class="modal-btn modal-btn-primary" id="applyUploadBtn" style="display: none;">Upload & Apply</button>
+                    <button class="modal-btn modal-btn-primary" id="applyUploadBtn" style="display: none;">Upload &
+                        Apply</button>
                 </div>
             </div>
         </div>
@@ -1535,12 +1571,44 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    // Update the current visualization with new location data
-                    window.currentData = result.data;
-
-                    // Re-initialize the visualization
+                    // Update shelf nodes in place with location data (preserves connections and positions)
+                    if (window.locationModule && typeof window.locationModule.updateShelfLocations === 'function') {
+                        const updatedCount = window.locationModule.updateShelfLocations(result.data);
+                        console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
+                        
+                        // Update currentData to reflect location changes (for export)
+                        if (window.currentData && window.currentData.elements && result.data && result.data.elements) {
+                            const locationUpdateMap = new Map();
+                            result.data.elements.forEach(element => {
+                                if (element.data && element.data.type === 'shelf') {
+                                    locationUpdateMap.set(element.data.id, {
+                                        hall: element.data.hall || '',
+                                        aisle: element.data.aisle || '',
+                                        rack_num: element.data.rack_num || 0,
+                                        shelf_u: element.data.shelf_u || 0,
+                                        hostname: element.data.hostname || ''
+                                    });
+                                }
+                            });
+                            
+                            window.currentData.elements.forEach(element => {
+                                if (element.data && element.data.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
+                                    const locationData = locationUpdateMap.get(element.data.id);
+                                    element.data.hall = locationData.hall;
+                                    element.data.aisle = locationData.aisle;
+                                    element.data.rack_num = locationData.rack_num;
+                                    element.data.shelf_u = locationData.shelf_u;
+                                    if (locationData.hostname) {
+                                        element.data.hostname = locationData.hostname;
+                                    }
+                                }
+                            });
+                        }
+                    } else {
+                        console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                     if (typeof window.initVisualization === 'function') {
                         window.initVisualization(result.data);
+                        }
                     }
 
                     // Use the detailed message from backend (includes validation warnings)
@@ -1667,10 +1735,51 @@
                         console.log('✓ All shelves have host_index or host_id');
                     }
 
-                    // IMPORTANT: Re-initialize the cytoscape graph with updated data first
-                    // This ensures shelf nodes have the physical location data before switching modes
+                    // Update shelf nodes in place with location data (preserves connections and positions)
+                    // This is much more efficient than reinitializing the entire graph
+                    if (window.locationModule && typeof window.locationModule.updateShelfLocations === 'function') {
+                        const updatedCount = window.locationModule.updateShelfLocations(result.data);
+                        console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
+                        
+                        // Update currentData to reflect location changes (for export)
+                        // Since result.data already has updated location fields, we can sync directly
+                        if (window.currentData && window.currentData.elements && result.data && result.data.elements) {
+                            // Build a map of shelf IDs to updated location data from result.data
+                            const locationUpdateMap = new Map();
+                            result.data.elements.forEach(element => {
+                                if (element.data && element.data.type === 'shelf') {
+                                    locationUpdateMap.set(element.data.id, {
+                                        hall: element.data.hall || '',
+                                        aisle: element.data.aisle || '',
+                                        rack_num: element.data.rack_num || 0,
+                                        shelf_u: element.data.shelf_u || 0,
+                                        hostname: element.data.hostname || ''
+                                    });
+                                }
+                            });
+                            
+                            // Update currentData elements with location data
+                            window.currentData.elements.forEach(element => {
+                                if (element.data && element.data.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
+                                    const locationData = locationUpdateMap.get(element.data.id);
+                                    element.data.hall = locationData.hall;
+                                    element.data.aisle = locationData.aisle;
+                                    element.data.rack_num = locationData.rack_num;
+                                    element.data.shelf_u = locationData.shelf_u;
+                                    if (locationData.hostname) {
+                                        element.data.hostname = locationData.hostname;
+                                    }
+                                }
+                            });
+                            
+                            console.log(`[applyDeploymentDescriptor] Synced location data to currentData for export`);
+                        }
+                    } else {
+                        console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
+                        // Fallback: use initVisualization if updateShelfLocations is not available
                     if (typeof window.initVisualization === 'function') {
                         window.initVisualization(result.data);
+                        }
                     }
 
                     // Close modal

@@ -687,6 +687,12 @@ def generate_cabling_guide():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """Serve favicon"""
+    return send_from_directory("static/img", "favicon.ico")
+
+
 @app.route("/static/<path:filename>")
 def static_files(filename):
     """Serve static files if needed"""
