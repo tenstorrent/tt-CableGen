@@ -51,14 +51,17 @@ The parser auto-detects file format and node types, making it easy to work with 
 
 #### 1. Cabling Descriptor Export
 Exports the current visualization as a `CablingDescriptor` textproto file:
-- Preserves hierarchical graph structure (in hierarchy mode)
-- Exports flat structure with all hosts at root level (in location mode)
+- **Based ONLY on hierarchy/topology information** (hostname, node_type, connections, logical structure)
+- **Physical location fields (Hall/Aisle/Rack/Shelf) are NEVER used**
+- Preserves hierarchical graph structure (when logical topology is present)
+- Exports flat structure with all hosts at root level (when no logical topology)
 - Includes all node configurations, connections, and metadata
 - Can be re-imported for round-trip editing
 
 #### 2. Deployment Descriptor Export
 Exports a `DeploymentDescriptor` textproto file:
-- Lists all hosts with their physical locations (Hall/Aisle/Rack/Shelf)
+- **Uses physical location information** (Hall/Aisle/Rack/Shelf) when available
+- Lists all hosts with their physical deployment locations
 - Used in conjunction with CablingDescriptor for complete system definition
 - Required input for cabling guide generation
 
@@ -254,12 +257,14 @@ Open your browser to `http://localhost:5000`
 1. Optionally enter a custom **Filename Prefix**
 2. Click **"Export Cabling Descriptor"**
 3. Downloads a `.textproto` file with complete topology definition
-4. Can be re-imported for further editing
+4. **Note**: This export is based ONLY on hierarchy/topology information (hostname, node_type, connections). Physical location fields (Hall/Aisle/Rack/Shelf) are not included in the cabling descriptor.
+5. Can be re-imported for further editing
 
 #### Export Deployment Descriptor
 1. Ensure all nodes have location information (Hall/Aisle/Rack/Shelf)
 2. Click **"Export Deployment Descriptor"**
 3. Downloads a `.textproto` file with deployment configuration
+4. **Note**: This export uses physical location fields (Hall/Aisle/Rack/Shelf) for datacenter deployment planning
 
 #### Generate Cabling Guide
 1. **Prerequisites**:
@@ -267,8 +272,11 @@ Open your browser to `http://localhost:5000`
    - Cabling generator built at `$TT_METAL_HOME/build/tools/scaleout/run_cabling_generator`
 2. Click **"Generate Cabling Guide"**
 3. Downloads a CSV file with detailed cabling instructions
-4. Format automatically selected:
-   - **Detailed**: If all nodes have location information
+4. **Important**: The cabling guide uses:
+   - **Cabling Descriptor**: Based ONLY on hierarchy/topology (hostname, node_type, connections)
+   - **Deployment Descriptor**: Uses physical location when available (Hall/Aisle/Rack/Shelf)
+5. Output format automatically selected:
+   - **Detailed**: If all nodes have location information in deployment descriptor
    - **Simple**: If any nodes lack location information
 
 #### Generate Factory System Descriptor
