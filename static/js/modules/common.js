@@ -2341,5 +2341,97 @@ export class CommonModule {
         }
     }
 
+    /**
+     * Filter cytoscape data to include only fields needed for export operations
+     * This significantly reduces payload size by removing visual properties and unused data
+     * 
+     * Fields clarification:
+     * - logical_path: Self-defined field set by application during cabling descriptor import or node creation
+     * - template_name: Self-defined field set by application when creating graph nodes
+     * - parent: Self-defined field set by application to establish hierarchy
+     * All are custom data fields stored in Cytoscape node/edge data, not native Cytoscape properties.
+     * 
+     * @param {Object} cytoscapeData - Full cytoscape data from state.cy.elements().jsons()
+     * @param {string} exportType - Type of export: 'cabling' or 'deployment'
+     * @returns {Object} Filtered cytoscape data with only necessary fields
+     */
+    filterCytoscapeDataForExport(cytoscapeData, exportType = 'cabling') {
+        const elements = cytoscapeData.elements || [];
+        const metadata = cytoscapeData.metadata || {};
+        
+        // Define fields needed for each export type
+        // These are all self-defined fields stored in Cytoscape data, not native Cytoscape properties
+        const nodeFieldsForCabling = new Set([
+            'id', 'type', 'hostname', 'logical_path', 'template_name', 'parent',
+            'shelf_id', 'tray_id', 'port_id', 'node_type', 'host_id', 'host_index',
+            'shelf_node_type', 'child_name', 'label', 'node_descriptor_type'
+        ]);
+        
+        const nodeFieldsForDeployment = new Set([
+            'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
+            'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
+        ]);
+        
+        const edgeFieldsForCabling = new Set([
+            'source', 'target', 'source_hostname', 'destination_hostname',
+            'depth', 'template_name', 'instance_path'
+        ]);
+        
+        const edgeFieldsForDeployment = new Set([
+            'source', 'target'  // Only need source/target for connection extraction
+        ]);
+        
+        // Select appropriate field sets based on export type
+        const nodeFields = exportType === 'deployment' ? nodeFieldsForDeployment : nodeFieldsForCabling;
+        const edgeFields = exportType === 'deployment' ? edgeFieldsForDeployment : edgeFieldsForCabling;
+        
+        // Filter elements
+        const filteredElements = elements.map(element => {
+            const elementData = element.data || {};
+            const isEdge = 'source' in elementData;
+            const fieldsToKeep = isEdge ? edgeFields : nodeFields;
+            
+            // Filter data object to only include needed fields
+            const filteredData = {};
+            for (const field of fieldsToKeep) {
+                if (field in elementData) {
+                    filteredData[field] = elementData[field];
+                }
+            }
+            
+            // Return minimal element structure (only data field, no visual properties)
+            return {
+                data: filteredData
+            };
+        });
+        
+        // Filter metadata - only include what's needed
+        const filteredMetadata = {};
+        if (exportType === 'cabling') {
+            // For cabling export, we need graph_templates and some tracking fields
+            if (metadata.graph_templates) {
+                filteredMetadata.graph_templates = metadata.graph_templates;
+            }
+            if (metadata.visualization_mode !== undefined) {
+                filteredMetadata.visualization_mode = metadata.visualization_mode;
+            }
+            if (metadata.hasTopLevelAdditions !== undefined) {
+                filteredMetadata.hasTopLevelAdditions = metadata.hasTopLevelAdditions;
+            }
+            if (metadata.initialRootTemplate) {
+                filteredMetadata.initialRootTemplate = metadata.initialRootTemplate;
+            }
+            if (metadata.initialRootId) {
+                filteredMetadata.initialRootId = metadata.initialRootId;
+            }
+        }
+        // For deployment export, metadata is not needed
+        
+        return {
+            elements: filteredElements,
+            ...(Object.keys(filteredMetadata).length > 0 ? { metadata: filteredMetadata } : {})
+        };
+    }
+
 }
 

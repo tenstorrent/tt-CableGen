@@ -250,15 +250,6 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
     def extract_connections(self) -> List[Dict]:
         """Extract connection information from edges"""
         connections = []
-        
-        print(f"[PARSER] Starting to extract connections. Found {len(self.edges)} edges in visualization.")
-        
-        # Sample the first few edges to debug
-        if self.edges:
-            print(f"[PARSER] Sample edge IDs (first 3):")
-            for i, edge in enumerate(self.edges[:3]):
-                edge_data = edge.get("data", {})
-                print(f"  Edge {i}: source='{edge_data.get('source')}', target='{edge_data.get('target')}'")
 
         for edge in self.edges:
             edge_data = edge.get("data", {})
@@ -266,17 +257,11 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
             target_id = edge_data.get("target")
 
             if not source_id or not target_id:
-                print(f"[PARSER] Skipping edge with missing source/target: {edge_data.get('id')}")
                 continue
 
             # Extract hierarchy info for both endpoints
             source_info = self.extract_hierarchy_info(source_id)
             target_info = self.extract_hierarchy_info(target_id)
-
-            if not source_info:
-                print(f"[PARSER] Could not extract hierarchy info for source: '{source_id}'")
-            if not target_info:
-                print(f"[PARSER] Could not extract hierarchy info for target: '{target_id}'")
 
             if not source_info or not target_info:
                 continue
@@ -1052,6 +1037,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     built_templates = set()
     
     # Build templates for all top-level nodes and their children
+    empty_root_templates = []
     for root_node in root_graph_nodes:
         root_data = root_node.get("data", {})
         template_name = root_data.get("template_name")
@@ -1063,7 +1049,14 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             if template and len(template.children) > 0:
                 cluster_desc.graph_templates[template_name].CopyFrom(template)
             elif template and len(template.children) == 0:
-                print(f"Skipping empty root template '{template_name}'")
+                empty_root_templates.append(template_name)
+    
+    # Error if any root template is empty
+    if empty_root_templates:
+        raise ValueError(
+            f"Cannot export CablingDescriptor: Empty root template(s) found: {', '.join(empty_root_templates)}. "
+            f"Root templates must contain at least one child node or graph reference."
+        )
     
     # Create root instance using tracking flag for efficiency
     # Check if we can use the original imported root template (no top-level changes)
@@ -1143,6 +1136,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
         # Create a synthetic root template that contains all top-level nodes
         synthetic_root_template = cluster_config_pb2.GraphTemplate()
         
+        empty_root_templates = []
         for root_node in root_graph_nodes:
             root_data = root_node.get("data", {})
             root_label = root_data.get("label", root_data.get("id", "node"))
@@ -1156,7 +1150,21 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
                 child.graph_ref.graph_template = root_template_name
                 print(f"  Adding graph_ref: {root_label} -> {root_template_name}")
             elif root_template_name:
-                print(f"  Skipping empty template reference: {root_label} -> {root_template_name}")
+                empty_root_templates.append(root_template_name)
+        
+        # Error if any root template is empty
+        if empty_root_templates:
+            raise ValueError(
+                f"Cannot export CablingDescriptor: Empty root template(s) found: {', '.join(empty_root_templates)}. "
+                f"Root templates must contain at least one child node or graph reference."
+            )
+        
+        # Error if synthetic root template itself is empty (no valid root templates)
+        if len(synthetic_root_template.children) == 0:
+            raise ValueError(
+                "Cannot export CablingDescriptor: No valid root templates found. "
+                "All root templates are empty. Root templates must contain at least one child node or graph reference."
+            )
         
         # Add the synthetic root template
         synthetic_root_name = "synthetic_root"
@@ -1728,10 +1736,6 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     # Get connections for building the topology (after host indices are assigned)
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
-    
-    print(f"[FLAT_EXPORT] Extracted {len(connections)} connections from visualization")
-    if len(connections) == 0:
-        print(f"[FLAT_EXPORT] WARNING: No connections found! This will result in an empty topology.")
     
     # Flat export requires hostnames as identifiers
     if not sorted_hosts or all(not hostname for hostname, _ in sorted_hosts):

@@ -1091,17 +1091,17 @@ class NetworkCablingCytoscapeVisualizer:
                 return child
         return None
     
-    def _validate_child_mappings_order(self, instance, template_name, path):
-        """Validate that child_mappings order matches template.children order
+    def _get_ordered_children(self, instance, template_name, path):
+        """Get children from child_mappings in template order
         
         Args:
-            instance: GraphInstance to validate
+            instance: GraphInstance to process
             template_name: Name of the template this instance uses
-            path: Current path from root (for error reporting)
+            path: Current path from root (unused, kept for compatibility)
             
         Returns:
-            List of (child_instance, child_mapping) tuples in template order
-            None if validation fails
+            List of (child_instance, child_mapping, child_name) tuples in template order
+            None if template not found
         """
         if template_name not in self.cluster_descriptor.graph_templates:
             return None
@@ -1116,39 +1116,10 @@ class NetworkCablingCytoscapeVisualizer:
         for child_instance in template.children:
             child_name = child_instance.name
             if child_name not in child_mappings_dict:
-                self._log_warning(
-                    f"Child '{child_name}' in template but not in child_mappings",
-                    {"template": template_name, "path": '/'.join(path) if path else 'root'}
-                )
                 continue
             
             child_mapping = child_mappings_dict[child_name]
             ordered_children.append((child_instance, child_mapping, child_name))
-        
-        # Check for extra children in child_mappings not in template
-        template_child_names = {child.name for child in template.children}
-        extra_children = set(child_mappings_dict.keys()) - template_child_names
-        if extra_children:
-            self._log_warning(
-                f"Children in child_mappings but not in template: {extra_children}",
-                {"template": template_name, "path": '/'.join(path) if path else 'root'}
-            )
-        
-        # Validate order matches (warn if different, but still use template order)
-        child_mappings_order = list(instance.child_mappings.keys())
-        template_order = [child.name for child in template.children]
-        
-        if child_mappings_order != template_order:
-            self._log_warning(
-                f"child_mappings order does not match template.children order",
-                {
-                    "template": template_name,
-                    "path": '/'.join(path) if path else 'root',
-                    "child_mappings_order": child_mappings_order,
-                    "template_order": template_order,
-                    "note": "Using template order for consistency"
-                }
-            )
         
         return ordered_children
     
@@ -1180,8 +1151,8 @@ class NetworkCablingCytoscapeVisualizer:
         
         template = self.cluster_descriptor.graph_templates[template_name]
         
-        # Validate and get ordered children (in template.children order)
-        ordered_children = self._validate_child_mappings_order(instance, template_name, path)
+        # Get ordered children (in template.children order)
+        ordered_children = self._get_ordered_children(instance, template_name, path)
         if ordered_children is None:
             return
         
@@ -2097,10 +2068,7 @@ class NetworkCablingCytoscapeVisualizer:
         # Process in the order collected (parent before children)
         graph_node_map = {}  # path tuple -> Cytoscape visual element ID
         
-        print(f"Creating {len(graph_paths)} graph nodes in parent-first order")
         for i, graph_path in enumerate(graph_paths):
-            path_str = '/'.join(graph_path) if graph_path else '<root>'
-            print(f"  [{i}] Creating graph node: {path_str} (depth {len(graph_path)})")
             self._create_graph_compound_node(graph_path, graph_node_map)
         
         # Create Host Device visual elements (leaf devices with host_ids)
@@ -2333,12 +2301,10 @@ class NetworkCablingCytoscapeVisualizer:
                 # Top-level nodes (superpods) are children of root
                 parent_path_tuple = ()
                 parent_id = graph_node_map.get(parent_path_tuple)
-                print(f"    Looking for parent at path {parent_path_tuple}: found={parent_id}")
             else:
                 # Nested nodes have their parent in the hierarchy
                 parent_path_tuple = tuple(graph_path[:-1])
                 parent_id = graph_node_map.get(parent_path_tuple)
-                print(f"    Looking for parent at path {parent_path_tuple}: found={parent_id}")
         
         # Calculate position using alternating layout based on depth
         # Position type alternates at each depth level
@@ -2409,8 +2375,6 @@ class NetworkCablingCytoscapeVisualizer:
         self.nodes.append(graph_node)
         graph_node_map[graph_path_tuple] = graph_id
         
-        print(f"    Added to graph_node_map: {graph_path_tuple} -> {graph_id}")
-        print(f"    Total nodes in self.nodes: {len(self.nodes)}")
     
     def _create_node_instance(self, node_info, graph_node_map):
         """Create a shelf (host device) directly under its parent graph

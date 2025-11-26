@@ -855,7 +855,8 @@
                         <div style="margin: 10px 0; color: #666;">or</div>
 
                         <div class="file-input">
-                            <input type="file" id="csvFileTopology" accept=".textproto" />
+                            <input type="file" id="csvFileTopology" accept=".textproto" disabled
+                                style="cursor: not-allowed; opacity: 0.6;" />
                         </div>
 
                         <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
@@ -865,11 +866,12 @@
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnTopology" style="flex: 1;">
+                            <button class="upload-btn" id="uploadBtnTopology"
+                                style="flex: 1; background: #6c757d; cursor: not-allowed; opacity: 0.6;" disabled>
                                 📊 Load Textproto
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnTopology"
-                                style="flex: 1; background: #28a745;">
+                                style="flex: 1; background: #6c757d; cursor: not-allowed; opacity: 0.6;" disabled>
                                 📋 Empty Canvas
                             </button>
                         </div>
@@ -900,7 +902,8 @@
                         </div>
                         <div>
                             <button id="toggleModeButton"
-                                style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
+                                style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: not-allowed; font-size: 13px; font-weight: bold; opacity: 0.6;"
+                                disabled>
                                 Switch Mode
                             </button>
                         </div>
@@ -1575,7 +1578,7 @@
                     if (window.locationModule && typeof window.locationModule.updateShelfLocations === 'function') {
                         const updatedCount = window.locationModule.updateShelfLocations(result.data);
                         console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
-                        
+
                         // Update currentData to reflect location changes (for export)
                         if (window.currentData && window.currentData.elements && result.data && result.data.elements) {
                             const locationUpdateMap = new Map();
@@ -1590,7 +1593,7 @@
                                     });
                                 }
                             });
-                            
+
                             window.currentData.elements.forEach(element => {
                                 if (element.data && element.data.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
                                     const locationData = locationUpdateMap.get(element.data.id);
@@ -1606,8 +1609,8 @@
                         }
                     } else {
                         console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
-                    if (typeof window.initVisualization === 'function') {
-                        window.initVisualization(result.data);
+                        if (typeof window.initVisualization === 'function') {
+                            window.initVisualization(result.data);
                         }
                     }
 
@@ -1740,7 +1743,7 @@
                     if (window.locationModule && typeof window.locationModule.updateShelfLocations === 'function') {
                         const updatedCount = window.locationModule.updateShelfLocations(result.data);
                         console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
-                        
+
                         // Update currentData to reflect location changes (for export)
                         // Since result.data already has updated location fields, we can sync directly
                         if (window.currentData && window.currentData.elements && result.data && result.data.elements) {
@@ -1757,7 +1760,7 @@
                                     });
                                 }
                             });
-                            
+
                             // Update currentData elements with location data
                             window.currentData.elements.forEach(element => {
                                 if (element.data && element.data.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
@@ -1771,14 +1774,14 @@
                                     }
                                 }
                             });
-                            
+
                             console.log(`[applyDeploymentDescriptor] Synced location data to currentData for export`);
                         }
                     } else {
                         console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                         // Fallback: use initVisualization if updateShelfLocations is not available
-                    if (typeof window.initVisualization === 'function') {
-                        window.initVisualization(result.data);
+                        if (typeof window.initVisualization === 'function') {
+                            window.initVisualization(result.data);
                         }
                     }
 

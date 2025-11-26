@@ -3734,6 +3734,15 @@ async function exportCablingDescriptor() {
         return;
     }
 
+    // Validate: Root template must not be empty (must have children)
+    const rootGraph = topLevelGraphs[0];
+    const rootChildren = rootGraph.children();
+    if (rootChildren.length === 0) {
+        const templateName = rootGraph.data('template_name') || rootGraph.data('label');
+        showNotificationBanner(`❌ Cannot export CablingDescriptor: Root template "${templateName}" is empty. Root templates must contain at least one child node or graph reference.`, 'error');
+        return;
+    }
+
     const exportBtn = document.getElementById('exportCablingBtn');
     const originalText = exportBtn.textContent;
 
@@ -3746,13 +3755,16 @@ async function exportCablingDescriptor() {
         // Sanitize elements to remove circular references
         const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
-        const cytoscapeData = {
+        const fullCytoscapeData = {
             elements: sanitizedElements,
             metadata: {
                 ...(state.data.currentData && state.data.currentData.metadata ? state.data.currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
                 visualization_mode: getVisualizationMode()  // Override/add current mode
             }
         };
+
+        // Filter to only include fields needed for export (reduces payload size)
+        const cytoscapeData = commonModule.filterCytoscapeDataForExport(fullCytoscapeData, 'cabling');
 
         // Debug logging
         if (cytoscapeData.metadata && cytoscapeData.metadata.graph_templates) {
@@ -3857,9 +3869,12 @@ async function exportDeploymentDescriptor() {
         // Get current cytoscape data and sanitize to remove circular references
         const rawElements = state.cy.elements().jsons();
         const sanitizedElements = sanitizeForJSON(rawElements);
-        const cytoscapeData = {
+        const fullCytoscapeData = {
             elements: sanitizedElements
         };
+
+        // Filter to only include fields needed for export (reduces payload size)
+        const cytoscapeData = commonModule.filterCytoscapeDataForExport(fullCytoscapeData, 'deployment');
 
         // Debug: Check if host_index is in the serialized data
         const serializedShelves = cytoscapeData.elements.filter(el => el.data && el.data.type === 'shelf');
@@ -3980,6 +3995,91 @@ function sanitizeForJSON(obj, seen = new WeakSet()) {
         // Note: We don't remove from seen set here because we want to detect
         // circular references even after returning from nested calls
     }
+}
+
+/**
+ * Filter cytoscape data to include only fields needed for export operations
+ * This significantly reduces payload size by removing visual properties and unused data
+ * 
+ * @param {Object} cytoscapeData - Full cytoscape data from state.cy.elements().jsons()
+ * @param {string} exportType - Type of export: 'cabling' or 'deployment'
+ * @returns {Object} Filtered cytoscape data with only necessary fields
+ */
+function filterCytoscapeDataForExport(cytoscapeData, exportType = 'cabling') {
+    const elements = cytoscapeData.elements || [];
+    const metadata = cytoscapeData.metadata || {};
+
+    // Define fields needed for each export type
+    const nodeFieldsForCabling = new Set([
+        'id', 'type', 'hostname', 'logical_path', 'template_name', 'parent',
+        'shelf_id', 'tray_id', 'port_id', 'node_type', 'host_id', 'host_index',
+        'shelf_node_type', 'child_name', 'label', 'node_descriptor_type'
+    ]);
+
+    const nodeFieldsForDeployment = new Set([
+        'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
+        'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
+    ]);
+
+    const edgeFieldsForCabling = new Set([
+        'source', 'target', 'source_hostname', 'destination_hostname',
+        'depth', 'template_name', 'instance_path'
+    ]);
+
+    const edgeFieldsForDeployment = new Set([
+        'source', 'target'  // Only need source/target for connection extraction
+    ]);
+
+    // Select appropriate field sets based on export type
+    const nodeFields = exportType === 'deployment' ? nodeFieldsForDeployment : nodeFieldsForCabling;
+    const edgeFields = exportType === 'deployment' ? edgeFieldsForDeployment : edgeFieldsForCabling;
+
+    // Filter elements
+    const filteredElements = elements.map(element => {
+        const elementData = element.data || {};
+        const isEdge = 'source' in elementData;
+        const fieldsToKeep = isEdge ? edgeFields : nodeFields;
+
+        // Filter data object to only include needed fields
+        const filteredData = {};
+        for (const field of fieldsToKeep) {
+            if (field in elementData) {
+                filteredData[field] = elementData[field];
+            }
+        }
+
+        // Return minimal element structure (only data field, no visual properties)
+        return {
+            data: filteredData
+        };
+    });
+
+    // Filter metadata - only include what's needed
+    const filteredMetadata = {};
+    if (exportType === 'cabling') {
+        // For cabling export, we need graph_templates and some tracking fields
+        if (metadata.graph_templates) {
+            filteredMetadata.graph_templates = metadata.graph_templates;
+        }
+        if (metadata.visualization_mode !== undefined) {
+            filteredMetadata.visualization_mode = metadata.visualization_mode;
+        }
+        if (metadata.hasTopLevelAdditions !== undefined) {
+            filteredMetadata.hasTopLevelAdditions = metadata.hasTopLevelAdditions;
+        }
+        if (metadata.initialRootTemplate) {
+            filteredMetadata.initialRootTemplate = metadata.initialRootTemplate;
+        }
+        if (metadata.initialRootId) {
+            filteredMetadata.initialRootId = metadata.initialRootId;
+        }
+    }
+    // For deployment export, metadata is not needed
+
+    return {
+        elements: filteredElements,
+        ...(Object.keys(filteredMetadata).length > 0 ? { metadata: filteredMetadata } : {})
+    };
 }
 
 async function generateCablingGuide() {
@@ -4698,3 +4798,53 @@ const functionsToExpose = {
 Object.keys(functionsToExpose).forEach(key => {
     window[key] = functionsToExpose[key];
 });
+
+/**
+ * Enable hierarchical topology features (for console use)
+ * Call this from the browser console: enableHierarchicalTopology()
+ */
+function enableHierarchicalTopology() {
+    // Enable Load Textproto button
+    const uploadBtnTopology = document.getElementById('uploadBtnTopology');
+    if (uploadBtnTopology) {
+        uploadBtnTopology.disabled = false;
+        uploadBtnTopology.style.background = '';
+        uploadBtnTopology.style.cursor = '';
+        uploadBtnTopology.style.opacity = '';
+        console.log('✓ Enabled Load Textproto button');
+    }
+
+    // Enable Empty Canvas button (Topology)
+    const emptyVisualizationBtnTopology = document.getElementById('emptyVisualizationBtnTopology');
+    if (emptyVisualizationBtnTopology) {
+        emptyVisualizationBtnTopology.disabled = false;
+        emptyVisualizationBtnTopology.style.background = '#28a745';
+        emptyVisualizationBtnTopology.style.cursor = '';
+        emptyVisualizationBtnTopology.style.opacity = '';
+        console.log('✓ Enabled Empty Canvas button (Topology)');
+    }
+
+    // Enable file input
+    const csvFileTopology = document.getElementById('csvFileTopology');
+    if (csvFileTopology) {
+        csvFileTopology.disabled = false;
+        csvFileTopology.style.cursor = '';
+        csvFileTopology.style.opacity = '';
+        console.log('✓ Enabled file input');
+    }
+
+    // Enable Switch Mode button
+    const toggleModeButton = document.getElementById('toggleModeButton');
+    if (toggleModeButton) {
+        toggleModeButton.disabled = false;
+        toggleModeButton.style.background = '#2196F3';
+        toggleModeButton.style.cursor = '';
+        toggleModeButton.style.opacity = '';
+        console.log('✓ Enabled Switch Mode button');
+    }
+
+    console.log('✓ All hierarchical topology features enabled');
+}
+
+// Expose enable function to window
+window.enableHierarchicalTopology = enableHierarchicalTopology;

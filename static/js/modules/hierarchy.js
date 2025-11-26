@@ -762,7 +762,7 @@ export class HierarchyModule {
         if (this.common && typeof this.common.clearAllSelections === 'function') {
             this.common.clearAllSelections();
         }
-        
+
         if (!this.state.data.hierarchyModeState || !this.state.data.hierarchyModeState.elements) {
             alert('Cannot restore logical topology - no saved state available. Please switch to location mode first or re-upload your file.');
             return;
@@ -1710,7 +1710,7 @@ export class HierarchyModule {
 
                 // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
                 this.recalculateHostIndicesForTemplates();
-                
+
                 // Rename graph instances to ensure proper numbering at each level
                 this.renameGraphInstances();
 
@@ -2099,7 +2099,7 @@ export class HierarchyModule {
 
             // Force render
             this.state.cy.forceRender();
-            
+
             // Rename graph instances to ensure proper numbering at each level
             this.renameGraphInstances();
 
@@ -2472,7 +2472,7 @@ export class HierarchyModule {
             console.log(`${indent}Processing level (parent: ${parentLabel})`);
 
             // Get all direct graph children of this parent
-            const directGraphChildren = parentNode 
+            const directGraphChildren = parentNode
                 ? parentNode.children('[type="graph"]')
                 : this.state.cy.nodes('[type="graph"]').filter(node => {
                     const parent = node.parent();
@@ -2545,8 +2545,8 @@ export class HierarchyModule {
                     const parentNode = firstInstance.parent();
                     if (parentNode && parentNode.length > 0) {
                         parentTemplateName = parentNode.data('template_name');
-                        if (parentTemplateName && this.state.data.currentData && 
-                            this.state.data.currentData.metadata && 
+                        if (parentTemplateName && this.state.data.currentData &&
+                            this.state.data.currentData.metadata &&
                             this.state.data.currentData.metadata.graph_templates) {
                             parentTemplateMeta = this.state.data.currentData.metadata.graph_templates[parentTemplateName];
                             if (parentTemplateMeta && parentTemplateMeta.children) {
@@ -2564,12 +2564,12 @@ export class HierarchyModule {
                     const oldLabel = graphNode.data('label') || graphNode.id();
                     const oldChildName = graphNode.data('child_name') || oldLabel;
                     const newLabel = `${templateName}_${index}`;
-                    
+
                     if (oldLabel !== newLabel || oldChildName !== newLabel) {
                         console.log(`${indent}  Renaming "${oldLabel}" (child_name: "${oldChildName}") -> "${newLabel}"`);
                         graphNode.data('label', newLabel);
                         graphNode.data('child_name', newLabel);
-                        
+
                         // Update template metadata if this instance is a child of a template
                         // Match by index position, not by name, to avoid conflicts
                         if (parentTemplateMetaChildren && index < parentTemplateMetaChildren.length) {
@@ -2578,17 +2578,17 @@ export class HierarchyModule {
                                 const oldMetaName = childEntry.name;
                                 childEntry.name = newLabel;
                                 console.log(`${indent}    Updated metadata: ${parentTemplateName}.children[${index}] "${oldMetaName}" -> "${newLabel}"`);
-                                
+
                                 // Also update connections that reference the old child name
                                 // Only update if the child still exists in the template (i.e., it's being renamed, not moved)
                                 if (parentTemplateMeta.connections && parentTemplateMeta.connections.length > 0) {
                                     // Check if this child still exists in the template (by verifying the childEntry was found and updated)
                                     const childStillExists = parentTemplateMeta.children.some(
-                                        child => child.name === newLabel && 
-                                                 child.type === 'graph' && 
-                                                 child.graph_template === templateName
+                                        child => child.name === newLabel &&
+                                            child.type === 'graph' &&
+                                            child.graph_template === templateName
                                     );
-                                    
+
                                     if (childStillExists) {
                                         parentTemplateMeta.connections.forEach(conn => {
                                             // Update port_a path if it references the old child name
@@ -2614,9 +2614,9 @@ export class HierarchyModule {
                                 }
                             }
                         }
-                        
+
                         // Also update availableGraphTemplates structure
-                        if (parentTemplateName && this.state.data.availableGraphTemplates && 
+                        if (parentTemplateName && this.state.data.availableGraphTemplates &&
                             this.state.data.availableGraphTemplates[parentTemplateName]) {
                             const parentTemplate = this.state.data.availableGraphTemplates[parentTemplateName];
                             if (parentTemplate && parentTemplate.children) {
@@ -3083,7 +3083,7 @@ export class HierarchyModule {
             if (template.children) {
                 template.children = template.children.filter(child => child.name !== childName);
             }
-            
+
             // Remove connections that reference the moved node
             if (template.connections && template.connections.length > 0) {
                 const originalConnectionCount = template.connections.length;
@@ -3112,7 +3112,7 @@ export class HierarchyModule {
             if (metaTemplate && metaTemplate.children) {
                 metaTemplate.children = metaTemplate.children.filter(child => child.name !== childName);
             }
-            
+
             // Remove connections that reference the moved node from metadata
             if (metaTemplate && metaTemplate.connections && metaTemplate.connections.length > 0) {
                 const originalConnectionCount = metaTemplate.connections.length;
@@ -3230,7 +3230,7 @@ export class HierarchyModule {
 
         // Recalculate host indices
         this.recalculateHostIndicesForTemplates();
-        
+
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();
     }
@@ -3251,7 +3251,7 @@ export class HierarchyModule {
             if (template.children) {
                 template.children = template.children.filter(child => child.name !== childName);
             }
-            
+
             // Remove connections that reference the moved child
             if (template.connections && template.connections.length > 0) {
                 const originalConnectionCount = template.connections.length;
@@ -3280,7 +3280,7 @@ export class HierarchyModule {
             if (metaTemplate && metaTemplate.children) {
                 metaTemplate.children = metaTemplate.children.filter(child => child.name !== childName);
             }
-            
+
             // Remove connections that reference the moved child from metadata
             if (metaTemplate && metaTemplate.connections && metaTemplate.connections.length > 0) {
                 const originalConnectionCount = metaTemplate.connections.length;
@@ -3409,7 +3409,7 @@ export class HierarchyModule {
 
         // Recalculate host indices
         this.recalculateHostIndicesForTemplates();
-        
+
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();
     }

@@ -712,17 +712,6 @@ export class LocationModule {
                             }
                             shelfData.label = displayLabel;
 
-                            // Log preservation for debugging
-                            if (index === 0) {
-                                console.log('First shelf in rack - preserved fields:', {
-                                    id: shelfData.id,
-                                    host_index: shelfData.host_index,
-                                    child_name: shelfData.child_name,
-                                    hostname: shelfData.hostname,
-                                    label: shelfData.label
-                                });
-                            }
-
                             newElements.push({
                                 data: shelfData,
                                 classes: shelfInfo.classes,
