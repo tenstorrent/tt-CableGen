@@ -377,10 +377,12 @@ export class ExpandCollapseModule {
 
         // Apply curve styles to all edges (including rerouted ones) - ensures consistent styling
         // regardless of collapsed state
+        // Use a longer delay to ensure all edge operations are complete
         if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
             setTimeout(() => {
+                console.log('[recalculateAllEdgeRouting] Calling forceApplyCurveStyles after rerouting');
                 window.forceApplyCurveStyles();
-            }, 10);
+            }, 100);
         }
     }
 

@@ -3340,6 +3340,10 @@ function initVisualization(data) {
             // Use a small delay to ensure layout is complete and elements are rendered
             setTimeout(() => {
                 addCytoscapeEventHandlers();
+                // Apply curve styles after layout is complete
+                if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
+                    window.forceApplyCurveStyles();
+                }
             }, 50);
         } else {
             // Create new Cytoscape instance
@@ -3371,7 +3375,8 @@ function initVisualization(data) {
                 wheelSensitivity: 0.2,
                 autoungrabify: false,
                 autounselectify: false,
-                autolock: false
+                autolock: false,
+                hideEdgesOnViewport: true
             });
 
             // Sync legacy global variable immediately

@@ -339,15 +339,15 @@ export class CommonModule {
     getCytoscapeStyles() {
         return [
             // Basic edge styles - high z-index to ensure above all nodes
+            // Default to bezier - forceApplyCurveStyles will set specific styles per edge
             {
                 selector: 'edge',
                 style: {
                     'width': 3,
                     'line-color': 'data(color)',
                     'line-opacity': 1,
-                    'curve-style': 'unbundled-bezier',
-                    'control-point-distances': ['100px'],
-                    'control-point-weights': [0.5],
+                    'curve-style': 'bezier',
+                    'control-point-step-size': 40,
                     'z-index': 1000,
                     'z-compound-depth': 'top'
                 }
@@ -365,11 +365,13 @@ export class CommonModule {
                 }
             },
 
-            // Rerouted edges (crossing collapsed nodes) - use straight curves
+            // Rerouted edges (crossing collapsed nodes) - use bezier like regular edges
+            // forceApplyCurveStyles will handle the actual styling
             {
                 selector: 'edge.rerouted-edge',
                 style: {
-                    'curve-style': 'straight'
+                    'curve-style': 'bezier',
+                    'control-point-step-size': 40
                 }
             },
 
@@ -1997,7 +1999,42 @@ export class CommonModule {
     }
 
     /**
+     * Get template name for a node by traversing up to find a graph node with template_name
+     * @param {Object} node - Cytoscape node (port, tray, shelf, or graph)
+     * @returns {string|null} Template name or null if not found
+     */
+    getTemplateNameForNode(node) {
+        if (!node || !node.length) return null;
+
+        // Check if this node itself has template_name (graph nodes)
+        const templateName = node.data('template_name');
+        if (templateName) {
+            return templateName;
+        }
+
+        // Traverse up the parent hierarchy to find a graph node with template_name
+        let currentNode = node;
+        for (let i = 0; i < 10; i++) { // Limit traversal depth
+            const parent = currentNode.parent();
+            if (!parent || !parent.length) {
+                break;
+            }
+            
+            const parentTemplateName = parent.data('template_name');
+            if (parentTemplateName) {
+                return parentTemplateName;
+            }
+            
+            currentNode = parent;
+        }
+
+        return null;
+    }
+
+    /**
      * Force apply curve styles to all edges based on whether they're on the same shelf
+     * or have the same template type (for collapsed graph nodes in hierarchy mode)
+     * Uses bezier curve style which automatically separates multiple edges between the same nodes
      */
     forceApplyCurveStyles() {
         if (!this.state.cy) return;
@@ -2006,58 +2043,85 @@ export class CommonModule {
         const viewport = this.state.cy.extent();
         const viewportWidth = viewport.w;
         const viewportHeight = viewport.h;
-        const baseDistance = Math.min(viewportWidth, viewportHeight) * 0.05; // 5% of smaller viewport dimension
+        // Calculate control-point-step-size based on viewport for better separation
+        const controlPointStepSize = Math.min(viewportWidth, viewportHeight) * 0.03; // 3% of smaller viewport dimension
+
+        console.log(`[forceApplyCurveStyles] Applying curve styles to ${edges.length} edges, control-point-step-size: ${controlPointStepSize.toFixed(2)}px`);
 
         this.state.cy.startBatch();
 
         edges.forEach((edge) => {
-            // Rerouted edges (crossing collapsed nodes) should use straight curves
-            if (edge.data('isRerouted')) {
-                edge.style({
-                    'curve-style': 'straight',
-                    'control-point-distances': undefined,
-                    'control-point-weights': undefined
-                });
-                return;
-            }
+            let sourceNode, targetNode;
+            let isSameTemplate = false;
+            let isSameShelf = false;
+            const isRerouted = edge.data('isRerouted');
 
-            const sourceNode = edge.source();
-            const targetNode = edge.target();
-            const sourcePos = sourceNode.position();
-            const targetPos = targetNode.position();
-
-            const sourceId = sourceNode.id();
-            const targetId = targetNode.id();
-            const isSameShelf = this.checkSameShelf(sourceId, targetId);
-
-            if (isSameShelf) {
-                // Same shelf - use bezier curves with viewport-based distance
-                const dx = targetPos.x - sourcePos.x;
-                const dy = targetPos.y - sourcePos.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                // Scale curve distance based on connection length and viewport
-                const curveMultiplier = (Math.sqrt(distance) * 0.05);
-
-                const curveDistance = `${Math.round(baseDistance * curveMultiplier)}px`;
-
-                edge.style({
-                    'curve-style': 'unbundled-bezier',
-                    'control-point-distances': [curveDistance],
-                    'control-point-weights': [0.5]
-                });
+            // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
+            if (isRerouted) {
+                // Rerouted edges connect collapsed graph nodes - check their template_name directly
+                sourceNode = edge.source();
+                targetNode = edge.target();
+                
+                // Check if both endpoints are graph nodes with the same template_name
+                const sourceTemplateName = sourceNode.data('template_name');
+                const targetTemplateName = targetNode.data('template_name');
+                const sourceIsGraph = sourceNode.data('type') === 'graph';
+                const targetIsGraph = targetNode.data('type') === 'graph';
+                
+                if (sourceIsGraph && targetIsGraph && sourceTemplateName && targetTemplateName) {
+                    isSameTemplate = sourceTemplateName === targetTemplateName;
+                }
+                // For rerouted edges, don't check same shelf (graph nodes don't have shelves - shelves are children of graphs)
             } else {
-                // Different shelf - use haystack edges
-                edge.style({
-                    'curve-style': 'haystack'
-                });
+                // Regular edges - get original endpoints (ports)
+                const endpoints = this.getOriginalEdgeEndpoints(edge);
+                sourceNode = endpoints.sourceNode;
+                targetNode = endpoints.targetNode;
+                
+                // For regular port-to-port edges, check if they're on the same shelf
+                const sourceId = sourceNode.id();
+                const targetId = targetNode.id();
+                isSameShelf = this.checkSameShelf(sourceId, targetId);
+                
+                // Debug: Log why same shelf check failed
+                if (!isSameShelf) {
+                    const sourceShelfId = this.extractShelfIdFromNodeId(sourceId);
+                    const targetShelfId = this.extractShelfIdFromNodeId(targetId);
+                    console.log(`[forceApplyCurveStyles] Same shelf check failed for ${sourceId} -> ${targetId}: sourceShelf=${sourceShelfId}, targetShelf=${targetShelfId}`);
+                }
+                // Don't check template for regular port-to-port edges
             }
+
+            // Apply bezier for all edges - automatically separates multiple edges between the same nodes
+            // bezier provides better visual separation than haystack for parallel edges
+            let curveStyle = 'bezier';
+            let styleProps = {
+                'curve-style': 'bezier',
+                'control-point-step-size': controlPointStepSize
+            };
+
+            // Apply style directly to edge - this overrides stylesheet rules
+            edge.style(styleProps);
+
+            // Debug log for each edge
+            const edgeId = edge.id();
+            const sourceLabel = sourceNode.data('label') || sourceNode.id();
+            const targetLabel = targetNode.data('label') || targetNode.id();
+            const reroutedFlag = isRerouted ? ' [REROUTED]' : '';
+            const templateInfo = isSameTemplate ? ` [SAME_TEMPLATE: ${sourceNode.data('template_name')}]` : '';
+            const shelfInfo = isSameShelf ? ' [SAME_SHELF]' : '';
+            
+            console.log(`[forceApplyCurveStyles] Edge ${edgeId}: ${sourceLabel} -> ${targetLabel} | Style: ${curveStyle}${reroutedFlag}${templateInfo}${shelfInfo}`);
         });
 
         this.state.cy.endBatch();
 
-        // Force render to ensure z-index changes take effect
+        // Force style recalculation and render to ensure changes take effect
+        // This ensures programmatic style changes override stylesheet rules
+        this.state.cy.style().update();
         this.state.cy.forceRender();
+        
+        console.log(`[forceApplyCurveStyles] Completed applying curve styles to ${edges.length} edges`);
     }
 
     /**
@@ -2073,6 +2137,7 @@ export class CommonModule {
         const targetNode = this.state.cy.getElementById(targetId);
 
         if (!sourceNode.length || !targetNode.length) {
+            console.log(`[checkSameShelf] Node not found: source=${sourceId} (${sourceNode.length}), target=${targetId} (${targetNode.length})`);
             return false;
         }
 
@@ -2089,7 +2154,15 @@ export class CommonModule {
             targetShelf = this.getParentShelfNode(targetNode);
         }
 
-        return sourceShelf && targetShelf && sourceShelf.length && targetShelf.length && sourceShelf.id() === targetShelf.id();
+        const result = sourceShelf && targetShelf && sourceShelf.length && targetShelf.length && sourceShelf.id() === targetShelf.id();
+        
+        if (!result) {
+            const sourceShelfId = sourceShelf && sourceShelf.length ? sourceShelf.id() : 'null';
+            const targetShelfId = targetShelf && targetShelf.length ? targetShelf.id() : 'null';
+            console.log(`[checkSameShelf] Different shelves: source=${sourceId} -> shelf=${sourceShelfId}, target=${targetId} -> shelf=${targetShelfId}`);
+        }
+        
+        return result;
     }
 
     /**
@@ -2100,17 +2173,69 @@ export class CommonModule {
      * @returns {String} Formatted location string
      */
     getPortLocationInfo(portNode, locationModule = null) {
+        const portId = portNode.id();
         const portLabel = portNode.data('label');
-        const trayNode = portNode.parent();
-        const shelfNode = trayNode.parent();
+        
+        // Get tray and port numbers from port node data (always available regardless of collapse state)
+        const trayNum = portNode.data('tray');
+        const portNum = portNode.data('port');
+        
+        // Try to get tray node (may fail if collapsed, but we have tray number from data)
+        let trayNode = portNode.parent();
+        if (!trayNode || !trayNode.length) {
+            // If parent() fails (collapsed), try to get tray by ID
+            // Port ID format: {shelfId}:t{trayNum}:p{portNum} or {trayId}:p{portNum}
+            const portIdParts = portId.split(':');
+            if (portIdParts.length >= 2) {
+                const trayId = portIdParts.slice(0, -1).join(':'); // Everything except last part
+                trayNode = this.state.cy.getElementById(trayId);
+            }
+        }
+        
+        // Get shelf node - use robust method that works even when collapsed
+        let shelfNode = null;
+        if (trayNode && trayNode.length) {
+            shelfNode = trayNode.parent();
+        }
+        
+        // If parent() fails, extract shelf ID from port ID and get shelf directly
+        if (!shelfNode || !shelfNode.length) {
+            const shelfId = this.extractShelfIdFromNodeId(portId);
+            if (shelfId) {
+                shelfNode = this.state.cy.getElementById(shelfId);
+            }
+        }
+        
+        // Fallback: use getParentShelfNode helper
+        if (!shelfNode || !shelfNode.length) {
+            shelfNode = this.getParentShelfNode(portNode);
+        }
 
-        // Get location data from the hierarchy
-        const hostname = shelfNode.data('hostname') || '';
-        const hall = shelfNode.data('hall') || '';
-        const aisle = shelfNode.data('aisle') || '';
-        const rackNum = shelfNode.data('rack_num');
-        const shelfU = shelfNode.data('shelf_u');
-        const trayLabel = trayNode.data('label');
+        // Get location data from shelf node (if available)
+        let hostname = '';
+        let hall = '';
+        let aisle = '';
+        let rackNum = undefined;
+        let shelfU = undefined;
+        let hostIndex = undefined;
+        
+        if (shelfNode && shelfNode.length) {
+            hostname = shelfNode.data('hostname') || '';
+            hall = shelfNode.data('hall') || '';
+            aisle = shelfNode.data('aisle') || '';
+            rackNum = shelfNode.data('rack_num');
+            shelfU = shelfNode.data('shelf_u');
+            hostIndex = shelfNode.data('host_index');
+        } else {
+            // If we can't get shelf node, try to extract host_index from port ID
+            // Port ID might be in format: {shelfId}:t{trayNum}:p{portNum} where shelfId is host_index
+            const shelfId = this.extractShelfIdFromNodeId(portId);
+            if (shelfId && /^\d+$/.test(shelfId)) {
+                hostIndex = parseInt(shelfId, 10);
+            }
+        }
+        
+        const trayLabel = trayNode && trayNode.length ? trayNode.data('label') : (trayNum !== undefined ? `T${trayNum}` : 'Tray');
 
         // Build location string
         const locationParts = [];
@@ -2129,14 +2254,31 @@ export class CommonModule {
         } else if (hostname) {
             // Fallback to hostname if location info is unavailable
             locationParts.push(hostname);
-        } else if (shelfNode.data('label')) {
+        } else if (shelfNode && shelfNode.length && shelfNode.data('label')) {
             // Final fallback to shelf label
             locationParts.push(shelfNode.data('label'));
         }
 
-        // Always add tray and port info - do NOT simplify based on collapsed state
-        locationParts.push(trayLabel);
-        locationParts.push(portLabel);
+        // Always add host_index, tray, and port at the end - regardless of collapse/expand state
+        // Format: ... › host_{hostIndex} › T{trayNum} › P{portNum}
+        // This ensures consistent endpoint description that doesn't change with collapse/expand
+        if (hostIndex !== undefined && hostIndex !== null) {
+            locationParts.push(`host_${hostIndex}`);
+        }
+        
+        // Add tray info (use tray number if available, otherwise tray label)
+        if (trayNum !== undefined && trayNum !== null) {
+            locationParts.push(`T${trayNum}`);
+        } else if (trayLabel) {
+            locationParts.push(trayLabel);
+        }
+        
+        // Add port info (use port number if available, otherwise port label)
+        if (portNum !== undefined && portNum !== null) {
+            locationParts.push(`P${portNum}`);
+        } else if (portLabel) {
+            locationParts.push(portLabel);
+        }
 
         return locationParts.join(' › ');
     }
