@@ -530,13 +530,35 @@ export class HierarchyModule {
      * @param {string|null} childName - Optional child name for template-level operations
      * @param {number} parentDepth - Depth of parent node (-1 for root)
      */
-    instantiateTemplate(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping, deferredConnections, childName = null, parentDepth = -1) {
+    instantiateTemplate(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping, deferredConnections, childName = null, parentDepth = -1, parentLogicalPath = null) {
         // Create the graph container node
         // Calculate depth for hierarchy tracking
         const depth = parentDepth + 1;
 
         // Get template-based color
         const templateColor = this.common.getTemplateColor(templateName);
+
+        // Build logical_path for this graph instance
+        // Use parentLogicalPath if provided (for nested calls), otherwise get from cytoscape
+        let logicalPath = [];
+        if (parentLogicalPath !== null && Array.isArray(parentLogicalPath)) {
+            // Use provided parent logical_path (already includes parent's label)
+            logicalPath = [...parentLogicalPath];
+        } else if (parentId) {
+            // Try to get logical_path from parent node in cytoscape
+            const parentNode = this.state.cy.getElementById(parentId);
+            if (parentNode && parentNode.length > 0) {
+                const parentLogicalPathFromNode = parentNode.data('logical_path');
+                if (parentLogicalPathFromNode && Array.isArray(parentLogicalPathFromNode)) {
+                    logicalPath = [...parentLogicalPathFromNode];
+                }
+                // Add parent's label to logical_path
+                const parentLabel = parentNode.data('label');
+                if (parentLabel) {
+                    logicalPath.push(parentLabel);
+                }
+            }
+        }
 
         const graphNode = {
             data: {
@@ -548,7 +570,8 @@ export class HierarchyModule {
                 depth: depth,  // Keep depth for hierarchy tracking
                 graphType: graphType,  // Also store as graphType for compatibility
                 child_name: childName || graphLabel,  // Store child_name for template-level operations
-                templateColor: templateColor  // Store template color for explicit styling
+                templateColor: templateColor,  // Store template color for explicit styling
+                logical_path: logicalPath  // Set logical_path for export
             },
             position: { x: baseX, y: baseY },
             classes: 'graph'
@@ -611,6 +634,9 @@ export class HierarchyModule {
                     // Format label as "node_X (host_Y)"
                     const displayLabel = `${child.name} (host_${hostIndex})`;
 
+                    // Build logical_path for shelf node: parent graph's logical_path + parent graph's label
+                    const shelfLogicalPath = [...logicalPath, graphLabel];
+
                     const shelfNode = {
                         data: {
                             id: childId,
@@ -621,7 +647,8 @@ export class HierarchyModule {
                             hostname: child.name,  // Set to child.name (not displayed in logical view)
                             shelf_node_type: nodeType,
                             child_name: child.name,  // Template-local name (node_0, node_1, etc.) for export
-                            original_name: child.original_name || child.name  // Store original name for path resolution
+                            original_name: child.original_name || child.name,  // Store original name for path resolution
+                            logical_path: shelfLogicalPath  // Set logical_path for export
                         },
                         position: { x: childX, y: childY },
                         classes: 'shelf'
@@ -669,6 +696,10 @@ export class HierarchyModule {
                     // Create a new path mapping for the nested scope
                     const nestedPathMapping = {};
 
+                    // Build logical_path for nested graph: current graph's logical_path + current graph's label
+                    // Pass this to the nested call since the parent graph isn't in cytoscape yet
+                    const nestedLogicalPath = [...logicalPath, graphLabel];
+
                     this.instantiateTemplate(
                         nestedTemplate,
                         child.graph_template,
@@ -683,7 +714,8 @@ export class HierarchyModule {
                         nestedPathMapping,
                         deferredConnections,
                         child.name,  // Pass child_name for template-level operations
-                        depth  // Pass current depth as parent depth for nested children
+                        depth,  // Pass current depth as parent depth for nested children
+                        nestedLogicalPath  // Pass logical_path since parent isn't in cytoscape yet
                     );
 
                     // Merge nested path mapping into current scope with prefix
@@ -3242,7 +3274,7 @@ export class HierarchyModule {
      * @param {string} currentParentTemplate - The current parent template name
      */
     moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemplate) {
-        const childName = node.data('child_name');
+        const childName = node.data('child_name') || node.data('label');
         const graphTemplateName = node.data('template_name');
 
         // Step 1: Remove from current parent template definition
@@ -3350,6 +3382,26 @@ export class HierarchyModule {
                     childGraph.remove(); // This will also remove all descendants
                 });
             });
+        } else {
+            // Handle root-level instances: currentParentTemplate is null, so we're moving a root-level instance
+            // Find all root-level instances (no parent) that match the template being moved
+            // Use child_name if available, otherwise fall back to label for matching
+            const rootLevelInstancesToRemove = this.state.cy.nodes().filter(n => {
+                if (n.data('type') !== 'graph' || n.parent().length !== 0) {
+                    return false;
+                }
+                if (n.data('template_name') !== graphTemplateName) {
+                    return false;
+                }
+                // Match by child_name if available, otherwise by label
+                const nodeChildName = n.data('child_name') || n.data('label');
+                return nodeChildName === childName;
+            });
+
+            rootLevelInstancesToRemove.forEach(rootInstance => {
+                console.log(`Removing root-level graph instance "${rootInstance.data('label')}" (ID: ${rootInstance.id()})`);
+                rootInstance.remove(); // This will also remove all descendants
+            });
         }
 
         // Step 4: Add to all instances of target template  
@@ -3371,6 +3423,20 @@ export class HierarchyModule {
             const childGraphLabel = childName;
             const parentDepth = targetInstance.data('depth') || 0;
 
+            // Build logical_path for the new instance: parent's logical_path + parent's label
+            let parentLogicalPath = null;
+            const parentNode = this.state.cy.getElementById(targetInstance.id());
+            if (parentNode && parentNode.length > 0) {
+                const parentPath = parentNode.data('logical_path');
+                if (parentPath && Array.isArray(parentPath)) {
+                    parentLogicalPath = [...parentPath];
+                    const parentLabel = parentNode.data('label');
+                    if (parentLabel) {
+                        parentLogicalPath.push(parentLabel);
+                    }
+                }
+            }
+
             // Instantiate the template recursively
             this.instantiateTemplate(
                 graphTemplate,
@@ -3386,7 +3452,8 @@ export class HierarchyModule {
                 {},
                 deferredConnections,
                 childName,
-                parentDepth
+                parentDepth,
+                parentLogicalPath  // Pass parent's logical_path
             );
 
             // Add nodes

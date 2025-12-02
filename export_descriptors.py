@@ -250,7 +250,7 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
     def extract_connections(self) -> List[Dict]:
         """Extract connection information from edges"""
         connections = []
-
+        
         for edge in self.edges:
             edge_data = edge.get("data", {})
             source_id = edge_data.get("source")

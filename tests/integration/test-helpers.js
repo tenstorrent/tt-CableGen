@@ -51,7 +51,7 @@ export function getTestDataFiles(extension) {
 export function callPythonImport(filePath) {
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(TEST_DATA_DIR, filePath);
     const tempScript = path.join(PROJECT_ROOT, '.test_import_script.py');
-    
+
     const pythonScript = `import sys
 import json
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
@@ -90,18 +90,18 @@ visualization_data = visualizer.generate_visualization_data()
 visualization_data['metadata']['connection_count'] = connection_count
 
 print(json.dumps(visualization_data))`;
-    
+
     try {
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
-        
+
         // Execute Python script
-        const result = execSync(`python3 "${tempScript}"`, { 
+        const result = execSync(`python3 "${tempScript}"`, {
             encoding: 'utf-8',
             cwd: PROJECT_ROOT,
             maxBuffer: 10 * 1024 * 1024
         });
-        
+
         return JSON.parse(result.trim());
     } catch (error) {
         throw new Error(`Python import failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
@@ -122,11 +122,11 @@ print(json.dumps(visualization_data))`;
 export function callPythonExport(cytoscapeData) {
     const tempDataFile = path.join(PROJECT_ROOT, '.test_export_data.json');
     const tempScript = path.join(PROJECT_ROOT, '.test_export_script.py');
-    
+
     try {
         // Write cytoscape data to temp file
         fs.writeFileSync(tempDataFile, JSON.stringify(cytoscapeData));
-        
+
         const pythonScript = `import sys
 import json
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
@@ -138,17 +138,17 @@ with open(r'${tempDataFile.replace(/\\/g, '/')}', 'r') as f:
 
 result = export_cabling_descriptor_for_visualizer(cytoscape_data)
 print(result)`;
-        
+
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
-        
+
         // Execute Python script
         const result = execSync(`python3 "${tempScript}"`, {
             encoding: 'utf-8',
             cwd: PROJECT_ROOT,
             maxBuffer: 10 * 1024 * 1024
         });
-        
+
         return result.trim();
     } catch (error) {
         throw new Error(`Python export failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
@@ -172,7 +172,7 @@ export function countShelfNodes(cytoscapeData) {
     if (!cytoscapeData || !cytoscapeData.elements) {
         return 0;
     }
-    return cytoscapeData.elements.filter(el => 
+    return cytoscapeData.elements.filter(el =>
         el.data && el.data.type === 'shelf'
     ).length;
 }
@@ -186,7 +186,7 @@ export function countConnections(cytoscapeData) {
     if (!cytoscapeData || !cytoscapeData.elements) {
         return 0;
     }
-    return cytoscapeData.elements.filter(el => 
+    return cytoscapeData.elements.filter(el =>
         el.data && el.data.source && el.data.target
     ).length;
 }
@@ -200,11 +200,11 @@ export function countConnections(cytoscapeData) {
 export function callPythonExportDeployment(cytoscapeData) {
     const tempDataFile = path.join(PROJECT_ROOT, '.test_export_deployment_data.json');
     const tempScript = path.join(PROJECT_ROOT, '.test_export_deployment_script.py');
-    
+
     try {
         // Write cytoscape data to temp file
         fs.writeFileSync(tempDataFile, JSON.stringify(cytoscapeData));
-        
+
         const pythonScript = `import sys
 import json
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
@@ -216,17 +216,17 @@ with open(r'${tempDataFile.replace(/\\/g, '/')}', 'r') as f:
 
 result = export_deployment_descriptor_for_visualizer(cytoscape_data)
 print(result)`;
-        
+
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
-        
+
         // Execute Python script
         const result = execSync(`python3 "${tempScript}"`, {
             encoding: 'utf-8',
             cwd: PROJECT_ROOT,
             maxBuffer: 10 * 1024 * 1024
         });
-        
+
         return result.trim();
     } catch (error) {
         throw new Error(`Python deployment export failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
@@ -268,11 +268,11 @@ export function extractHostnames(cytoscapeData) {
 export function callPythonExportCSV(cytoscapeData) {
     const tempDataFile = path.join(PROJECT_ROOT, '.test_export_csv_data.json');
     const tempScript = path.join(PROJECT_ROOT, '.test_export_csv_script.py');
-    
+
     try {
         // Write cytoscape data to temp file
         fs.writeFileSync(tempDataFile, JSON.stringify(cytoscapeData));
-        
+
         const pythonScript = `import sys
 import json
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
@@ -362,17 +362,17 @@ for conn in connections:
 
 result = "\\n".join(csv_lines)
 print(result)`;
-        
+
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
-        
+
         // Execute Python script
         const result = execSync(`python3 "${tempScript}"`, {
             encoding: 'utf-8',
             cwd: PROJECT_ROOT,
             maxBuffer: 10 * 1024 * 1024
         });
-        
+
         return result.trim();
     } catch (error) {
         throw new Error(`Python CSV export failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
@@ -398,25 +398,25 @@ export function saveTestArtifact(testName, content, extension = 'textproto') {
     const debugDir = path.join(process.cwd(), 'tests', 'integration', 'debug_output');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const testDir = path.join(debugDir, `testflow_${timestamp}`);
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(testDir)) {
         fs.mkdirSync(testDir, { recursive: true });
     }
-    
+
     // Sanitize test name for filename
     const sanitizedName = testName
         .replace(/[^a-zA-Z0-9]/g, '_')
         .toLowerCase()
         .slice(0, 50); // Limit length
-    
+
     const filename = `${sanitizedName}.${extension}`;
     const filePath = path.join(testDir, filename);
-    
+
     fs.writeFileSync(filePath, content, 'utf-8');
-    
+
     console.log(`\n🐛 DEBUG: Saved artifact to: ${filePath}`);
-    
+
     return filePath;
 }
 
@@ -429,10 +429,10 @@ export function parseDeploymentDescriptorHostnames(textprotoContent) {
     // Parse deployment descriptor using Python (more reliable than regex)
     const tempTextproto = path.join(PROJECT_ROOT, '.test_deployment_descriptor.textproto');
     const tempScript = path.join(PROJECT_ROOT, '.test_parse_deployment.py');
-    
+
     // Write textproto content to temp file
     fs.writeFileSync(tempTextproto, textprotoContent, 'utf-8');
-    
+
     const pythonScript = `import sys
 import json
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
@@ -460,14 +460,14 @@ except Exception as e:
     print(json.dumps([]))
     sys.stderr.write(f"Error parsing deployment descriptor: {e}\\n")
     sys.exit(1)`;
-    
+
     try {
         fs.writeFileSync(tempScript, pythonScript);
-        const result = execSync(`python3 "${tempScript}"`, { 
+        const result = execSync(`python3 "${tempScript}"`, {
             encoding: 'utf-8',
             stdio: ['pipe', 'pipe', 'pipe']
         });
-        
+
         const hostnameArray = JSON.parse(result.trim());
         return new Set(hostnameArray);
     } catch (error) {
