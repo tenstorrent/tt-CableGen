@@ -282,6 +282,7 @@ export class ExpandCollapseModule {
     /**
      * Recalculate all edge routing in the graph based on current collapse state
      * This is called after every collapse/expand operation
+     * Reroutes edges when child nodes are collapsed, but applies same styling as regular edges
      */
     recalculateAllEdgeRouting() {
         const collapsedNodeIds = new Set(this.state.ui.collapsedGraphs);
@@ -363,6 +364,9 @@ export class ExpandCollapseModule {
                     const reroutedEdge = this.state.cy.add(reroutedEdgeData);
                     // Explicitly set display to element to ensure visibility
                     reroutedEdge.style('display', 'element');
+                    
+                    // Apply same curve styles as regular edges (no special styling for collapsed state)
+                    // The forceApplyCurveStyles function will be called separately to style all edges uniformly
                 } else {
                     // No rerouting needed, show original edge and remove any rerouted version
                     edge.style('display', 'element');
@@ -370,6 +374,14 @@ export class ExpandCollapseModule {
                 }
             }
         });
+        
+        // Apply curve styles to all edges (including rerouted ones) - ensures consistent styling
+        // regardless of collapsed state
+        if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
+            setTimeout(() => {
+                window.forceApplyCurveStyles();
+            }, 10);
+        }
     }
 
     /**

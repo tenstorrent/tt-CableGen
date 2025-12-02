@@ -4697,22 +4697,25 @@ function uploadFileTopology() {
 
 // Add event listener for graph template dropdown to enable/disable button
 // Instance names are now auto-generated, so we only check for template selection
-document.getElementById('graphTemplateSelect').addEventListener('change', function () {
-    const addGraphBtn = document.getElementById('addGraphBtn');
-    const hasTemplate = this.value && this.value !== '';
+const graphTemplateSelect = document.getElementById('graphTemplateSelect');
+if (graphTemplateSelect) {
+    graphTemplateSelect.addEventListener('change', function () {
+        const addGraphBtn = document.getElementById('addGraphBtn');
+        const hasTemplate = this.value && this.value !== '';
 
-    if (cy && hasTemplate) {
-        addGraphBtn.disabled = false;
-        addGraphBtn.style.cursor = 'pointer';
-        addGraphBtn.style.background = '#007bff';
-        addGraphBtn.style.opacity = '1';
-    } else {
-        addGraphBtn.disabled = true;
-        addGraphBtn.style.cursor = 'not-allowed';
-        addGraphBtn.style.background = '#6c757d';
-        addGraphBtn.style.opacity = '0.6';
-    }
-});
+        if (cy && hasTemplate) {
+            addGraphBtn.disabled = false;
+            addGraphBtn.style.cursor = 'pointer';
+            addGraphBtn.style.background = '#007bff';
+            addGraphBtn.style.opacity = '1';
+        } else {
+            addGraphBtn.disabled = true;
+            addGraphBtn.style.cursor = 'not-allowed';
+            addGraphBtn.style.background = '#6c757d';
+            addGraphBtn.style.opacity = '0.6';
+        }
+    });
+}
 
 // Label input event listener removed - instance names are now auto-generated as {template_name}_{index}
 
@@ -4799,52 +4802,3 @@ Object.keys(functionsToExpose).forEach(key => {
     window[key] = functionsToExpose[key];
 });
 
-/**
- * Enable hierarchical topology features (for console use)
- * Call this from the browser console: enableHierarchicalTopology()
- */
-function enableHierarchicalTopology() {
-    // Enable Load Textproto button
-    const uploadBtnTopology = document.getElementById('uploadBtnTopology');
-    if (uploadBtnTopology) {
-        uploadBtnTopology.disabled = false;
-        uploadBtnTopology.style.background = '';
-        uploadBtnTopology.style.cursor = '';
-        uploadBtnTopology.style.opacity = '';
-        console.log('✓ Enabled Load Textproto button');
-    }
-
-    // Enable Empty Canvas button (Topology)
-    const emptyVisualizationBtnTopology = document.getElementById('emptyVisualizationBtnTopology');
-    if (emptyVisualizationBtnTopology) {
-        emptyVisualizationBtnTopology.disabled = false;
-        emptyVisualizationBtnTopology.style.background = '#28a745';
-        emptyVisualizationBtnTopology.style.cursor = '';
-        emptyVisualizationBtnTopology.style.opacity = '';
-        console.log('✓ Enabled Empty Canvas button (Topology)');
-    }
-
-    // Enable file input
-    const csvFileTopology = document.getElementById('csvFileTopology');
-    if (csvFileTopology) {
-        csvFileTopology.disabled = false;
-        csvFileTopology.style.cursor = '';
-        csvFileTopology.style.opacity = '';
-        console.log('✓ Enabled file input');
-    }
-
-    // Enable Switch Mode button
-    const toggleModeButton = document.getElementById('toggleModeButton');
-    if (toggleModeButton) {
-        toggleModeButton.disabled = false;
-        toggleModeButton.style.background = '#2196F3';
-        toggleModeButton.style.cursor = '';
-        toggleModeButton.style.opacity = '';
-        console.log('✓ Enabled Switch Mode button');
-    }
-
-    console.log('✓ All hierarchical topology features enabled');
-}
-
-// Expose enable function to window
-window.enableHierarchicalTopology = enableHierarchicalTopology;

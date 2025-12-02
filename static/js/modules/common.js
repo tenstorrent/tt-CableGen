@@ -365,6 +365,14 @@ export class CommonModule {
                 }
             },
 
+            // Rerouted edges (crossing collapsed nodes) - use straight curves
+            {
+                selector: 'edge.rerouted-edge',
+                style: {
+                    'curve-style': 'straight'
+                }
+            },
+
             // Style for new connections being created
             {
                 selector: '.new-connection',
@@ -2003,6 +2011,16 @@ export class CommonModule {
         this.state.cy.startBatch();
 
         edges.forEach((edge) => {
+            // Rerouted edges (crossing collapsed nodes) should use straight curves
+            if (edge.data('isRerouted')) {
+                edge.style({
+                    'curve-style': 'straight',
+                    'control-point-distances': undefined,
+                    'control-point-weights': undefined
+                });
+                return;
+            }
+
             const sourceNode = edge.source();
             const targetNode = edge.target();
             const sourcePos = sourceNode.position();
@@ -2029,9 +2047,9 @@ export class CommonModule {
                     'control-point-weights': [0.5]
                 });
             } else {
-                // Different shelf - use straight edges
+                // Different shelf - use haystack edges
                 edge.style({
-                    'curve-style': 'straight'
+                    'curve-style': 'haystack'
                 });
             }
         });
@@ -2358,7 +2376,7 @@ export class CommonModule {
     filterCytoscapeDataForExport(cytoscapeData, exportType = 'cabling') {
         const elements = cytoscapeData.elements || [];
         const metadata = cytoscapeData.metadata || {};
-        
+
         // Define fields needed for each export type
         // These are all self-defined fields stored in Cytoscape data, not native Cytoscape properties
         const nodeFieldsForCabling = new Set([
@@ -2366,31 +2384,31 @@ export class CommonModule {
             'shelf_id', 'tray_id', 'port_id', 'node_type', 'host_id', 'host_index',
             'shelf_node_type', 'child_name', 'label', 'node_descriptor_type'
         ]);
-        
+
         const nodeFieldsForDeployment = new Set([
             'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
             'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
         ]);
-        
+
         const edgeFieldsForCabling = new Set([
             'source', 'target', 'source_hostname', 'destination_hostname',
             'depth', 'template_name', 'instance_path'
         ]);
-        
+
         const edgeFieldsForDeployment = new Set([
             'source', 'target'  // Only need source/target for connection extraction
         ]);
-        
+
         // Select appropriate field sets based on export type
         const nodeFields = exportType === 'deployment' ? nodeFieldsForDeployment : nodeFieldsForCabling;
         const edgeFields = exportType === 'deployment' ? edgeFieldsForDeployment : edgeFieldsForCabling;
-        
+
         // Filter elements
         const filteredElements = elements.map(element => {
             const elementData = element.data || {};
             const isEdge = 'source' in elementData;
             const fieldsToKeep = isEdge ? edgeFields : nodeFields;
-            
+
             // Filter data object to only include needed fields
             const filteredData = {};
             for (const field of fieldsToKeep) {
@@ -2398,13 +2416,13 @@ export class CommonModule {
                     filteredData[field] = elementData[field];
                 }
             }
-            
+
             // Return minimal element structure (only data field, no visual properties)
             return {
                 data: filteredData
             };
         });
-        
+
         // Filter metadata - only include what's needed
         const filteredMetadata = {};
         if (exportType === 'cabling') {
@@ -2426,7 +2444,7 @@ export class CommonModule {
             }
         }
         // For deployment export, metadata is not needed
-        
+
         return {
             elements: filteredElements,
             ...(Object.keys(filteredMetadata).length > 0 ? { metadata: filteredMetadata } : {})

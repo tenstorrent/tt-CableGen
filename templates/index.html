@@ -855,8 +855,7 @@
                         <div style="margin: 10px 0; color: #666;">or</div>
 
                         <div class="file-input">
-                            <input type="file" id="csvFileTopology" accept=".textproto" disabled
-                                style="cursor: not-allowed; opacity: 0.6;" />
+                            <input type="file" id="csvFileTopology" accept=".textproto" />
                         </div>
 
                         <p style="font-size: 14px; color: #6c757d; margin-top: 10px;">
@@ -866,12 +865,11 @@
                         </p>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <button class="upload-btn" id="uploadBtnTopology"
-                                style="flex: 1; background: #6c757d; cursor: not-allowed; opacity: 0.6;" disabled>
+                            <button class="upload-btn" id="uploadBtnTopology" style="flex: 1;">
                                 📊 Load Textproto
                             </button>
                             <button class="upload-btn" id="emptyVisualizationBtnTopology"
-                                style="flex: 1; background: #6c757d; cursor: not-allowed; opacity: 0.6;" disabled>
+                                style="flex: 1; background: #28a745;">
                                 📋 Empty Canvas
                             </button>
                         </div>
@@ -902,8 +900,7 @@
                         </div>
                         <div>
                             <button id="toggleModeButton"
-                                style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: not-allowed; font-size: 13px; font-weight: bold; opacity: 0.6;"
-                                disabled>
+                                style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">
                                 Switch Mode
                             </button>
                         </div>
@@ -1068,6 +1065,16 @@
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
                             Click ports to create connections (2-click process)<br>
                             <span style="color: #cc0000;">⚠️ Each port can only have one connection</span>
+                        </div>
+                    </div>
+
+                    <div
+                        style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-left: 3px solid #0066cc; border-radius: 4px;">
+                        <div style="font-size: 12px; color: #333; font-weight: bold; margin-bottom: 5px;">
+                            ✏️ Node Properties Editing:
+                        </div>
+                        <div style="font-size: 11px; color: #555;">
+                            Right-click on any node to edit its properties (hostname, location, node type, etc.)
                         </div>
                     </div>
 
