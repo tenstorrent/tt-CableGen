@@ -2471,7 +2471,6 @@ class NetworkCablingCytoscapeVisualizer:
             hostname="",  # Empty - hostname is a PHYSICAL property from deployment descriptor
             # Logical topology fields for descriptor imports
             logical_path=logical_path,  # Array of enumerated instance names
-            logical_child_name=child_name,  # Normalized child name (e.g., "node_0")
             is_synthetic_root_child=False  # These nodes have proper logical topology
         )
         
@@ -2648,7 +2647,6 @@ class NetworkCablingCytoscapeVisualizer:
                             aisle=location_info.get("aisle", aisle),  # Use actual aisle if not in location_info
                             # Logical topology fields for CSV imports (no logical topology)
                             logical_path=[],  # Empty - no logical topology from CSV
-                            logical_child_name=None,  # No normalized child name
                             is_synthetic_root_child=True  # CSV imports have no logical topology
                         )
                         self.nodes.append(shelf_node)
@@ -2715,7 +2713,6 @@ class NetworkCablingCytoscapeVisualizer:
                 shelf_node_type=shelf_node_type,
                 # Logical topology fields for CSV imports (no logical topology)
                 logical_path=[],  # Empty - no logical topology from CSV
-                logical_child_name=None,  # No normalized child name
                 is_synthetic_root_child=True  # CSV imports have no logical topology
             )
             self.nodes.append(shelf_node)

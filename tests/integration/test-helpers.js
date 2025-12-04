@@ -31,14 +31,22 @@ export function loadTestDataFile(filename) {
 /**
  * Get all test data files matching an extension
  * @param {string} extension - File extension (e.g., '.csv', '.textproto')
- * @returns {string[]} Array of filenames
+ * @param {string} subdirectory - Optional subdirectory to search (e.g., 'cabling-guides', 'deployment-descriptors')
+ * @returns {string[]} Array of filenames (with full paths relative to TEST_DATA_DIR)
  */
-export function getTestDataFiles(extension) {
+export function getTestDataFiles(extension, subdirectory = null) {
     if (!fs.existsSync(TEST_DATA_DIR)) {
         return [];
     }
-    return fs.readdirSync(TEST_DATA_DIR)
+    
+    const searchDir = subdirectory ? path.join(TEST_DATA_DIR, subdirectory) : TEST_DATA_DIR;
+    if (!fs.existsSync(searchDir)) {
+        return [];
+    }
+    
+    return fs.readdirSync(searchDir)
         .filter(file => file.endsWith(extension))
+        .map(file => subdirectory ? path.join(subdirectory, file) : file)
         .sort();
 }
 
@@ -484,3 +492,80 @@ except Exception as e:
     }
 }
 
+
+/**
+ * Parse deployment descriptor textproto file and convert to format expected by updateShelfLocations
+ * @param {string} filePath - Path to deployment descriptor textproto file (relative to test-data/deployment-descriptors/)
+ * @returns {Object} Deployment data in format expected by updateShelfLocations
+ */
+export function parseDeploymentDescriptor(filePath) {
+    const deploymentDir = path.join(TEST_DATA_DIR, 'deployment-descriptors');
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(deploymentDir, filePath);
+    const content = fs.readFileSync(absPath, 'utf-8');
+    
+    // Parse deployment descriptor textproto format
+    // Format: hosts: { hall: "...", aisle: "...", rack: N, shelf_u: N, host: "..." }
+    const hosts = [];
+    const hostRegex = /hosts:\s*\{([^}]+)\}/g;
+    let match;
+    
+    while ((match = hostRegex.exec(content)) !== null) {
+        const hostBlock = match[1];
+        const host = {
+            hall: '',
+            aisle: '',
+            rack: 0,
+            shelf_u: 0,
+            host: ''
+        };
+        
+        // Extract fields from host block
+        const hallMatch = hostBlock.match(/hall:\s*"([^"]+)"/);
+        if (hallMatch) host.hall = hallMatch[1];
+        
+        const aisleMatch = hostBlock.match(/aisle:\s*"([^"]+)"/);
+        if (aisleMatch) host.aisle = aisleMatch[1];
+        
+        const rackMatch = hostBlock.match(/rack:\s*(\d+)/);
+        if (rackMatch) host.rack = parseInt(rackMatch[1]);
+        
+        const shelfUMatch = hostBlock.match(/shelf_u:\s*(\d+)/);
+        if (shelfUMatch) host.shelf_u = parseInt(shelfUMatch[1]);
+        
+        const hostMatch = hostBlock.match(/host:\s*"([^"]+)"/);
+        if (hostMatch) host.host = hostMatch[1];
+        
+        hosts.push(host);
+    }
+    
+    // Convert to format expected by updateShelfLocations
+    // Elements array with shelf nodes indexed by host_id
+    const elements = hosts.map((host, hostIndex) => ({
+        data: {
+            type: 'shelf',
+            host_index: hostIndex,
+            host_id: hostIndex,
+            hall: host.hall,
+            aisle: host.aisle,
+            rack_num: host.rack,
+            shelf_u: host.shelf_u,
+            hostname: host.host
+        }
+    }));
+    
+    return { elements };
+}
+
+/**
+ * Load expected output file (CSV or textproto)
+ * @param {string} filePath - Path to expected output file (relative to test-data/expected-outputs/)
+ * @returns {string} File contents
+ */
+export function loadExpectedOutput(filePath) {
+    const expectedDir = path.join(TEST_DATA_DIR, 'expected-outputs');
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(expectedDir, filePath);
+    if (!fs.existsSync(absPath)) {
+        throw new Error(`Expected output file not found: ${absPath}`);
+    }
+    return fs.readFileSync(absPath, 'utf-8');
+}

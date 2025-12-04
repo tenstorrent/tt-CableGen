@@ -167,7 +167,7 @@ export class HierarchyModule {
 
         // Walk up the hierarchy until we reach the placement level
         while (current && current.length > 0 && current.id() !== placementLevel.id()) {
-            const nodeName = current.data('child_name') || current.data('logical_child_name') || current.data('label');
+            const nodeName = current.data('child_name') || current.data('label');
             if (nodeName) {
                 path.unshift(nodeName); // Add to beginning to maintain top-down order
             }
@@ -209,7 +209,7 @@ export class HierarchyModule {
             // Find child with matching name
             const children = current.children();
             const matchingChild = children.filter(child => {
-                const childName = child.data('child_name') || child.data('logical_child_name') || child.data('label');
+                const childName = child.data('child_name') || child.data('label');
                 return childName === nodeName;
             });
 
@@ -530,35 +530,13 @@ export class HierarchyModule {
      * @param {string|null} childName - Optional child name for template-level operations
      * @param {number} parentDepth - Depth of parent node (-1 for root)
      */
-    instantiateTemplate(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping, deferredConnections, childName = null, parentDepth = -1, parentLogicalPath = null) {
+    instantiateTemplate(template, templateName, graphId, graphLabel, graphType, parentId, baseX, baseY, nodesToAdd, edgesToAdd, pathMapping, deferredConnections, childName = null, parentDepth = -1) {
         // Create the graph container node
         // Calculate depth for hierarchy tracking
         const depth = parentDepth + 1;
 
         // Get template-based color
         const templateColor = this.common.getTemplateColor(templateName);
-
-        // Build logical_path for this graph instance
-        // Use parentLogicalPath if provided (for nested calls), otherwise get from cytoscape
-        let logicalPath = [];
-        if (parentLogicalPath !== null && Array.isArray(parentLogicalPath)) {
-            // Use provided parent logical_path (already includes parent's label)
-            logicalPath = [...parentLogicalPath];
-        } else if (parentId) {
-            // Try to get logical_path from parent node in cytoscape
-            const parentNode = this.state.cy.getElementById(parentId);
-            if (parentNode && parentNode.length > 0) {
-                const parentLogicalPathFromNode = parentNode.data('logical_path');
-                if (parentLogicalPathFromNode && Array.isArray(parentLogicalPathFromNode)) {
-                    logicalPath = [...parentLogicalPathFromNode];
-                }
-                // Add parent's label to logical_path
-                const parentLabel = parentNode.data('label');
-                if (parentLabel) {
-                    logicalPath.push(parentLabel);
-                }
-            }
-        }
 
         const graphNode = {
             data: {
@@ -568,10 +546,8 @@ export class HierarchyModule {
                 template_name: templateName,
                 parent: parentId,
                 depth: depth,  // Keep depth for hierarchy tracking
-                graphType: graphType,  // Also store as graphType for compatibility
                 child_name: childName || graphLabel,  // Store child_name for template-level operations
-                templateColor: templateColor,  // Store template color for explicit styling
-                logical_path: logicalPath  // Set logical_path for export
+                templateColor: templateColor  // Store template color for explicit styling
             },
             position: { x: baseX, y: baseY },
             classes: 'graph'
@@ -634,8 +610,27 @@ export class HierarchyModule {
                     // Format label as "node_X (host_Y)"
                     const displayLabel = `${child.name} (host_${hostIndex})`;
 
-                    // Build logical_path for shelf node: parent graph's logical_path + parent graph's label
-                    const shelfLogicalPath = [...logicalPath, graphLabel];
+                    // Build logical_path from parent graph hierarchy
+                    let logicalPath = [];
+                    const parentGraphNode = this.state.cy.getElementById(graphId);
+                    if (parentGraphNode && parentGraphNode.length > 0) {
+                        // Build logical_path by traversing up the graph hierarchy
+                        const pathParts = [];
+                        let current = parentGraphNode;
+                        while (current && current.length > 0) {
+                            const childName = current.data('child_name') || current.data('label');
+                            if (childName) {
+                                pathParts.unshift(childName);
+                            }
+                            const parent = current.parent();
+                            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                                current = parent;
+                            } else {
+                                break;
+                            }
+                        }
+                        logicalPath = pathParts;
+                    }
 
                     const shelfNode = {
                         data: {
@@ -648,7 +643,7 @@ export class HierarchyModule {
                             shelf_node_type: nodeType,
                             child_name: child.name,  // Template-local name (node_0, node_1, etc.) for export
                             original_name: child.original_name || child.name,  // Store original name for path resolution
-                            logical_path: shelfLogicalPath  // Set logical_path for export
+                            logical_path: logicalPath  // Set logical_path for export detection
                         },
                         position: { x: childX, y: childY },
                         classes: 'shelf'
@@ -696,10 +691,6 @@ export class HierarchyModule {
                     // Create a new path mapping for the nested scope
                     const nestedPathMapping = {};
 
-                    // Build logical_path for nested graph: current graph's logical_path + current graph's label
-                    // Pass this to the nested call since the parent graph isn't in cytoscape yet
-                    const nestedLogicalPath = [...logicalPath, graphLabel];
-
                     this.instantiateTemplate(
                         nestedTemplate,
                         child.graph_template,
@@ -714,8 +705,7 @@ export class HierarchyModule {
                         nestedPathMapping,
                         deferredConnections,
                         child.name,  // Pass child_name for template-level operations
-                        depth,  // Pass current depth as parent depth for nested children
-                        nestedLogicalPath  // Pass logical_path since parent isn't in cytoscape yet
+                        depth  // Pass current depth as parent depth for nested children
                     );
 
                     // Merge nested path mapping into current scope with prefix
@@ -1280,8 +1270,7 @@ export class HierarchyModule {
                     host_index: hostIndex,
                     shelf_node_type: nodeType,
                     child_name: autoNodeName,
-                    logical_path: [],
-                    logical_child_name: autoNodeName
+                    logical_path: []
                 },
                 classes: 'shelf',
                 position: { x: 0, y: 0 }
@@ -1320,10 +1309,32 @@ export class HierarchyModule {
                 const shelfLabel = `${autoNodeName} (host_${hostIndex})`;
 
                 // Determine logical_path based on parent
+                // For graph nodes, build logical_path from the graph hierarchy (child_name chain)
+                // For shelf nodes, use their existing logical_path
                 let logicalPath = [];
                 if (targetParent.data('logical_path')) {
+                    // Parent is a shelf node with logical_path
                     logicalPath = [...targetParent.data('logical_path'), targetParent.data('label')];
+                } else if (targetParent.data('type') === 'graph') {
+                    // Parent is a graph node - build logical_path from graph hierarchy
+                    const pathParts = [];
+                    let current = targetParent;
+                    while (current && current.length > 0) {
+                        const childName = current.data('child_name') || current.data('label');
+                        if (childName) {
+                            pathParts.unshift(childName);
+                        }
+                        const parent = current.parent();
+                        if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                            current = parent;
+                        } else {
+                            break;
+                        }
+                    }
+                    logicalPath = pathParts;
                 }
+                
+                console.log(`[instantiateTemplate] Setting logical_path for shelf "${shelfLabel}": [${logicalPath.join(', ')}]`);
 
                 // Add shelf node
                 this.state.cy.add({
@@ -1336,8 +1347,7 @@ export class HierarchyModule {
                         host_index: hostIndex,
                         shelf_node_type: nodeType,
                         child_name: autoNodeName,
-                        logical_path: logicalPath,
-                        logical_child_name: autoNodeName
+                        logical_path: logicalPath
                     },
                     classes: 'shelf',
                     position: { x: 0, y: 0 }
@@ -1832,9 +1842,17 @@ export class HierarchyModule {
                 console.log(`Processing ${deferredConnections.length} deferred connection groups`);
                 this.processDeferredConnections(deferredConnections, edgesToAdd);
 
+                // Batch all graph modifications for better performance
+                this.state.cy.startBatch();
+
                 // Add all edges
                 console.log(`Adding ${edgesToAdd.length} edges to Cytoscape`);
                 this.state.cy.add(edgesToAdd);
+
+                // Explicitly apply graph class to ensure styling works
+                this.state.cy.getElementById(graphId).addClass('graph');
+
+                this.state.cy.endBatch();
 
                 // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
                 if (this.state.mode === 'hierarchy') {
@@ -1845,9 +1863,6 @@ export class HierarchyModule {
 
                 // Apply drag restrictions
                 this.common.applyDragRestrictions();
-
-                // Explicitly apply graph class to ensure styling works
-                this.state.cy.getElementById(graphId).addClass('graph');
 
                 // Force complete style recalculation and redraw
                 this.state.cy.style().update();
@@ -2093,7 +2108,6 @@ export class HierarchyModule {
                                 template_name: newTemplateName,
                                 parent: parentInstanceId,
                                 depth: (parentInstance.data('depth') || 0) + 1,
-                                graphType: 'graph',
                                 child_name: graphLabel,
                                 templateColor: templateColor
                             },
@@ -2117,7 +2131,6 @@ export class HierarchyModule {
                         template_name: newTemplateName,
                         parent: parentId,
                         depth: parentDepth + 1,
-                        graphType: 'graph',
                         child_name: graphLabel,
                         templateColor: templateColor
                     },
@@ -3274,7 +3287,7 @@ export class HierarchyModule {
      * @param {string} currentParentTemplate - The current parent template name
      */
     moveGraphInstanceToTemplate(node, targetTemplateName, currentParentTemplate) {
-        const childName = node.data('child_name') || node.data('label');
+        const childName = node.data('child_name');
         const graphTemplateName = node.data('template_name');
 
         // Step 1: Remove from current parent template definition
@@ -3383,31 +3396,55 @@ export class HierarchyModule {
                 });
             });
         } else {
-            // Handle root-level instances: currentParentTemplate is null, so we're moving a root-level instance
-            // Find all root-level instances (no parent) that match the template being moved
-            // Use child_name if available, otherwise fall back to label for matching
-            const rootLevelInstancesToRemove = this.state.cy.nodes().filter(n => {
-                if (n.data('type') !== 'graph' || n.parent().length !== 0) {
-                    return false;
+            // Handle root-level graph: remove the specific node being moved (or all matching root-level instances)
+            // First try to remove the specific node if it's still in Cytoscape
+            const nodeToRemove = this.state.cy.getElementById(node.id());
+            if (nodeToRemove && nodeToRemove.length > 0) {
+                const parent = nodeToRemove.parent();
+                if (parent.length === 0) { // Ensure it's still root-level
+                    console.log(`Removing root-level graph instance "${nodeToRemove.data('label')}" (ID: ${nodeToRemove.id()})`);
+                    
+                    // Update metadata: the new container template becomes the root
+                    if (this.state.data.currentData && this.state.data.currentData.metadata) {
+                        this.state.data.currentData.metadata.initialRootTemplate = targetTemplateName;
+                        this.state.data.currentData.metadata.hasTopLevelAdditions = true;
+                        console.log(`Updated initialRootTemplate to "${targetTemplateName}"`);
+                    }
+                    
+                    nodeToRemove.remove(); // This will also remove all descendants
                 }
-                if (n.data('template_name') !== graphTemplateName) {
-                    return false;
-                }
-                // Match by child_name if available, otherwise by label
-                const nodeChildName = n.data('child_name') || n.data('label');
-                return nodeChildName === childName;
-            });
+            } else {
+                // Fallback: remove all root-level instances with matching child_name and template_name
+                const rootLevelInstancesToRemove = this.state.cy.nodes().filter(n => {
+                    const parent = n.parent();
+                    return parent.length === 0 && // No parent (root level)
+                        n.data('type') === 'graph' &&
+                        n.data('child_name') === childName &&
+                        n.data('template_name') === graphTemplateName;
+                });
 
-            rootLevelInstancesToRemove.forEach(rootInstance => {
-                console.log(`Removing root-level graph instance "${rootInstance.data('label')}" (ID: ${rootInstance.id()})`);
-                rootInstance.remove(); // This will also remove all descendants
-            });
+                if (rootLevelInstancesToRemove.length > 0) {
+                    // Update metadata: the new container template becomes the root
+                    if (this.state.data.currentData && this.state.data.currentData.metadata) {
+                        this.state.data.currentData.metadata.initialRootTemplate = targetTemplateName;
+                        this.state.data.currentData.metadata.hasTopLevelAdditions = true;
+                        console.log(`Updated initialRootTemplate to "${targetTemplateName}"`);
+                    }
+                }
+
+                rootLevelInstancesToRemove.forEach(rootInstance => {
+                    console.log(`Removing root-level graph instance "${rootInstance.data('label')}" (ID: ${rootInstance.id()})`);
+                    rootInstance.remove(); // This will also remove all descendants
+                });
+            }
         }
 
         // Step 4: Add to all instances of target template  
         const targetInstances = this.state.cy.nodes().filter(n =>
             n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
         );
+
+        console.log(`[moveGraphInstanceToTemplate] Found ${targetInstances.length} target instance(s) of template "${targetTemplateName}"`);
 
         const graphTemplate = this.state.data.availableGraphTemplates[graphTemplateName];
         if (!graphTemplate) {
@@ -3422,20 +3459,6 @@ export class HierarchyModule {
             const childGraphId = `${targetInstance.id()}_${childName}`;
             const childGraphLabel = childName;
             const parentDepth = targetInstance.data('depth') || 0;
-
-            // Build logical_path for the new instance: parent's logical_path + parent's label
-            let parentLogicalPath = null;
-            const parentNode = this.state.cy.getElementById(targetInstance.id());
-            if (parentNode && parentNode.length > 0) {
-                const parentPath = parentNode.data('logical_path');
-                if (parentPath && Array.isArray(parentPath)) {
-                    parentLogicalPath = [...parentPath];
-                    const parentLabel = parentNode.data('label');
-                    if (parentLabel) {
-                        parentLogicalPath.push(parentLabel);
-                    }
-                }
-            }
 
             // Instantiate the template recursively
             this.instantiateTemplate(
@@ -3452,18 +3475,36 @@ export class HierarchyModule {
                 {},
                 deferredConnections,
                 childName,
-                parentDepth,
-                parentLogicalPath  // Pass parent's logical_path
+                parentDepth
             );
 
             // Add nodes
             this.state.cy.add(nodesToAdd);
 
-            // Arrange trays and ports for newly added shelves
+            // Update logical_path for shelf nodes now that parent graphs are in Cytoscape
             nodesToAdd.forEach(nodeData => {
                 if (nodeData.data && nodeData.data.type === 'shelf') {
                     const shelfNode = this.state.cy.getElementById(nodeData.data.id);
                     if (shelfNode && shelfNode.length > 0) {
+                        const parent = shelfNode.parent();
+                        if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                            // Build logical_path from parent graph hierarchy
+                            const pathParts = [];
+                            let current = parent;
+                            while (current && current.length > 0) {
+                                const childName = current.data('child_name') || current.data('label');
+                                if (childName) {
+                                    pathParts.unshift(childName);
+                                }
+                                const grandParent = current.parent();
+                                if (grandParent && grandParent.length > 0 && grandParent.data('type') === 'graph') {
+                                    current = grandParent;
+                                } else {
+                                    break;
+                                }
+                            }
+                            shelfNode.data('logical_path', pathParts);
+                        }
                         this.common.arrangeTraysAndPorts(shelfNode);
                     }
                 }
@@ -3472,6 +3513,8 @@ export class HierarchyModule {
             // Process deferred connections
             this.processDeferredConnections(deferredConnections, edgesToAdd);
             this.state.cy.add(edgesToAdd);
+            
+            console.log(`[moveGraphInstanceToTemplate] Added ${nodesToAdd.length} nodes and ${edgesToAdd.length} edges to target instance "${targetInstance.data('label')}"`);
         });
 
         // Recalculate host indices

@@ -1803,7 +1803,7 @@ def export_deployment_descriptor_for_visualizer(
     """Export DeploymentDescriptor from Cytoscape data
 
     Prioritizes PHYSICAL LOCATION fields (hall, aisle, rack, shelf_u) from shelf nodes.
-    Ignores logical topology fields (logical_path, logical_child_name).
+    Ignores logical topology fields (logical_path).
     
     Supports both 8-column format (hostname only) and 20-column format (hostname + location)
     

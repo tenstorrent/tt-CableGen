@@ -12,7 +12,11 @@
     "lint": "eslint static/js/**/*.js",
     "lint:fix": "eslint static/js/**/*.js --fix",
     "format": "prettier --write \"static/js/**/*.js\"",
-    "docs": "jsdoc -c jsdoc.json"
+    "docs": "jsdoc -c jsdoc.json",
+    "find-orphans": "node find-orphaned-code.js",
+    "deps:graph": "madge --image deps.svg static/js",
+    "deps:orphans": "madge --orphans --extensions js static/js",
+    "deps:circular": "madge --circular --extensions js static/js"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

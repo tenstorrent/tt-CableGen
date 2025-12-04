@@ -687,9 +687,6 @@ export class LocationModule {
                             if (shelfInfo.data.logical_path !== undefined) {
                                 shelfData.logical_path = shelfInfo.data.logical_path;
                             }
-                            if (shelfInfo.data.logical_child_name !== undefined) {
-                                shelfData.logical_child_name = shelfInfo.data.logical_child_name;
-                            }
 
                             // Set label based on hostname (explicit or implied from host_index)
                             let displayLabel = shelfInfo.data.hostname;
@@ -1420,11 +1417,15 @@ export class LocationModule {
         // If location data is provided, ensure hall/aisle/rack hierarchy exists
         let rackParentId = null;
         if (hasLocation) {
-            // Use consolidated helper to find or create location nodes with proper hierarchy
-            const { shouldShowHalls, shouldShowAisles } = this._shouldShowHallsAndAisles();
+            // When adding nodes manually with location data, always create hall/aisle containers
+            // if they're provided, regardless of existing data (user explicitly wants them)
+            // Only use _shouldShowHallsAndAisles() for layout calculations, not for manual node addition
+            const forceShowHalls = hall && hall.length > 0;
+            const forceShowAisles = aisle && aisle.length > 0;
+            
             const { rackNode } = this._findOrCreateLocationNodes(
                 { hall, aisle, rackNum: rack },
-                { shouldShowHalls, shouldShowAisles }
+                { shouldShowHalls: forceShowHalls, shouldShowAisles: forceShowAisles }
             );
 
             if (rackNode) {
@@ -1530,8 +1531,13 @@ export class LocationModule {
         nodesToAdd.push(...trayPortNodes);
 
         try {
+            // Batch node additions for better performance
+            this.state.cy.startBatch();
+            
             // Add all nodes to cytoscape
             this.state.cy.add(nodesToAdd);
+
+            this.state.cy.endBatch();
 
             // Arrange trays and ports for the newly added shelf
             const addedShelf = this.state.cy.getElementById(shelfId);

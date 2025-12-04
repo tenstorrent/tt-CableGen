@@ -17,7 +17,7 @@ ENV APP_HOME=/app
 
 COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-RUN /bin/bash -c "apt update && apt install -y protobuf-compiler"
+RUN /bin/bash -c "apt update && apt install -y protobuf-compiler npm"
 
 # Clone tt-metal
 # Bust cache to ensure fresh clone every time

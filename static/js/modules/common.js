@@ -439,16 +439,17 @@ export class CommonModule {
             {
                 selector: '.graph',
                 style: {
-                    'shape': 'round-rectangle',
+                    'shape': 'ellipse',  // Circular shape for graph templates
                     'background-color': '#fff0f0',
                     'background-opacity': 0.3,
                     'border-width': 5,
                     'border-color': '#cc0000',
                     'border-opacity': 1.0,
                     'label': 'data(label)',
-                    'text-valign': 'top',
+                    'text-valign': 'center',  // Center vertically for circles
                     'text-halign': 'center',
                     'font-size': 24,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#cc0000',
                     'text-background-color': '#ffffff',
@@ -489,6 +490,7 @@ export class CommonModule {
                     'text-valign': 'top',
                     'text-halign': 'center',
                     'font-size': 28,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#000000',
                     'text-background-color': '#ffffff',
@@ -516,6 +518,7 @@ export class CommonModule {
                     'text-halign': 'center',
                     'text-margin-y': 10,
                     'font-size': 26,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#000000',
                     'text-background-color': '#ffffff',
@@ -544,6 +547,7 @@ export class CommonModule {
                     'text-halign': 'center',
                     'text-margin-y': 10,
                     'font-size': 26,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#000000',
                     'text-background-color': '#ffffff',
@@ -572,6 +576,7 @@ export class CommonModule {
                     'text-halign': 'center',
                     'text-margin-y': 10,
                     'font-size': 26,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#000000',
                     'text-background-color': '#ffffff',
@@ -600,6 +605,7 @@ export class CommonModule {
                     'text-halign': 'center',
                     'text-margin-y': 10,
                     'font-size': 26,
+                    'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
                     'color': '#000000',
                     'text-background-color': '#ffffff',
@@ -630,6 +636,7 @@ export class CommonModule {
                     'text-margin-x': 10,  // Left padding for label
                     'text-margin-y': 8,   // Top padding for label
                     'font-size': 16,
+                    'min-zoomed-font-size': 8,
                     'font-weight': 'bold',
                     'color': '#003366',
                     'text-background-color': '#ffffff',
@@ -659,6 +666,7 @@ export class CommonModule {
                     'text-margin-x': 6,   // Left padding for label
                     'text-margin-y': 6,   // Top padding for label
                     'font-size': 14,
+                    'min-zoomed-font-size': 8,
                     'font-weight': 'bold',
                     'color': '#333333',
                     'text-background-color': '#ffffff',
@@ -674,6 +682,7 @@ export class CommonModule {
 
             // Port styles - leaf nodes with distinct rectangular appearance
             // Note: width and height are set dynamically by common_arrangeTraysAndPorts based on tray_layout
+            // Labels are hidden by default and shown on hover
             {
                 selector: '.port',
                 style: {
@@ -681,10 +690,11 @@ export class CommonModule {
                     'background-color': '#ffffff',
                     'border-width': 2,
                     'border-color': '#000000',
-                    'label': 'data(label)',
+                    'label': '',  // Hidden by default, shown on hover
                     'text-valign': 'center',
                     'text-halign': 'center',
                     'font-size': 12,
+                    'min-zoomed-font-size': 8,
                     'font-weight': 'bold',
                     'color': '#000000',
                     // Default dimensions (will be overridden by common_arrangeTraysAndPorts based on layout)
@@ -704,6 +714,7 @@ export class CommonModule {
                     'border-style': 'dashed',
                     'label': 'data(label)',
                     'font-size': 12,
+                    'min-zoomed-font-size': 8,
                     'font-weight': 'bold',
                     'text-valign': 'center',
                     'text-halign': 'center',
@@ -938,6 +949,8 @@ export class CommonModule {
         this.state.cy.off('tap');
         this.state.cy.off('select', 'node, edge');
         this.state.cy.off('unselect', 'node, edge');
+        this.state.cy.off('mouseover', 'node.port');
+        this.state.cy.off('mouseout', 'node.port');
 
         // Node click handler for info display and port connection creation
         this.state.cy.on('tap', 'node', (evt) => {
@@ -1154,6 +1167,20 @@ export class CommonModule {
                     window.updateDeleteButtonState();
                 }
             }
+        });
+
+        // Port hover handlers - show labels on hover, hide on mouseout
+        this.state.cy.on('mouseover', 'node.port', (evt) => {
+            const port = evt.target;
+            // Show label on hover - get the actual label value from data
+            const labelValue = port.data('label') || '';
+            port.style('label', labelValue);
+        });
+
+        this.state.cy.on('mouseout', 'node.port', (evt) => {
+            const port = evt.target;
+            // Hide label when not hovering
+            port.style('label', '');
         });
 
         console.log('[addCytoscapeEventHandlers] Event handlers registered successfully');
@@ -1811,11 +1838,6 @@ export class CommonModule {
                 current = current.parent();
             }
             html += `Hierarchy Depth: ${depth}<br>`;
-
-            // Show child_name if available
-            if (data.child_name) {
-                html += `Child Name: ${data.child_name}<br>`;
-            }
         }
         // Show location information for physical location constructs (hall, aisle, rack)
         else if (isPhysicalConstruct) {
@@ -1869,9 +1891,34 @@ export class CommonModule {
                 if (data.child_name) {
                     html += `<br><strong>Template Position:</strong> ${data.child_name}<br>`;
                 }
-                // Show logical path if available
+                // Show logical path if available, including root graph
                 if (data.logical_path && Array.isArray(data.logical_path) && data.logical_path.length > 0) {
-                    html += `<strong>Logical Path:</strong> ${data.logical_path.join(' → ')}<br>`;
+                    // Find the root graph node (graph with no parent)
+                    let rootGraphLabel = '';
+                    const currentNode = this.state.cy.getElementById(node.id());
+                    if (currentNode.length > 0) {
+                        let current = currentNode;
+                        // Traverse up to find root graph
+                        while (current && current.length > 0) {
+                            const parent = current.parent();
+                            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                                current = parent;
+                            } else {
+                                // Found root or non-graph parent
+                                if (current.data('type') === 'graph') {
+                                    rootGraphLabel = current.data('label') || current.data('template_name') || current.id();
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Build full logical path with root graph at the beginning
+                    const fullLogicalPath = rootGraphLabel 
+                        ? [rootGraphLabel, ...data.logical_path]
+                        : data.logical_path;
+                    
+                    html += `<strong>Logical Path:</strong> ${fullLogicalPath.join(' → ')}<br>`;
                 }
             }
 
@@ -2046,8 +2093,6 @@ export class CommonModule {
         // Calculate control-point-step-size based on viewport for better separation
         const controlPointStepSize = Math.min(viewportWidth, viewportHeight) * 0.03; // 3% of smaller viewport dimension
 
-        console.log(`[forceApplyCurveStyles] Applying curve styles to ${edges.length} edges, control-point-step-size: ${controlPointStepSize.toFixed(2)}px`);
-
         this.state.cy.startBatch();
 
         edges.forEach((edge) => {
@@ -2079,22 +2124,14 @@ export class CommonModule {
                 targetNode = endpoints.targetNode;
                 
                 // For regular port-to-port edges, check if they're on the same shelf
-                const sourceId = sourceNode.id();
-                const targetId = targetNode.id();
+            const sourceId = sourceNode.id();
+            const targetId = targetNode.id();
                 isSameShelf = this.checkSameShelf(sourceId, targetId);
-                
-                // Debug: Log why same shelf check failed
-                if (!isSameShelf) {
-                    const sourceShelfId = this.extractShelfIdFromNodeId(sourceId);
-                    const targetShelfId = this.extractShelfIdFromNodeId(targetId);
-                    console.log(`[forceApplyCurveStyles] Same shelf check failed for ${sourceId} -> ${targetId}: sourceShelf=${sourceShelfId}, targetShelf=${targetShelfId}`);
-                }
                 // Don't check template for regular port-to-port edges
             }
 
             // Apply bezier for all edges - automatically separates multiple edges between the same nodes
             // bezier provides better visual separation than haystack for parallel edges
-            let curveStyle = 'bezier';
             let styleProps = {
                 'curve-style': 'bezier',
                 'control-point-step-size': controlPointStepSize
@@ -2102,16 +2139,6 @@ export class CommonModule {
 
             // Apply style directly to edge - this overrides stylesheet rules
             edge.style(styleProps);
-
-            // Debug log for each edge
-            const edgeId = edge.id();
-            const sourceLabel = sourceNode.data('label') || sourceNode.id();
-            const targetLabel = targetNode.data('label') || targetNode.id();
-            const reroutedFlag = isRerouted ? ' [REROUTED]' : '';
-            const templateInfo = isSameTemplate ? ` [SAME_TEMPLATE: ${sourceNode.data('template_name')}]` : '';
-            const shelfInfo = isSameShelf ? ' [SAME_SHELF]' : '';
-            
-            console.log(`[forceApplyCurveStyles] Edge ${edgeId}: ${sourceLabel} -> ${targetLabel} | Style: ${curveStyle}${reroutedFlag}${templateInfo}${shelfInfo}`);
         });
 
         this.state.cy.endBatch();
@@ -2120,8 +2147,6 @@ export class CommonModule {
         // This ensures programmatic style changes override stylesheet rules
         this.state.cy.style().update();
         this.state.cy.forceRender();
-        
-        console.log(`[forceApplyCurveStyles] Completed applying curve styles to ${edges.length} edges`);
     }
 
     /**
@@ -2137,7 +2162,6 @@ export class CommonModule {
         const targetNode = this.state.cy.getElementById(targetId);
 
         if (!sourceNode.length || !targetNode.length) {
-            console.log(`[checkSameShelf] Node not found: source=${sourceId} (${sourceNode.length}), target=${targetId} (${targetNode.length})`);
             return false;
         }
 
@@ -2154,15 +2178,7 @@ export class CommonModule {
             targetShelf = this.getParentShelfNode(targetNode);
         }
 
-        const result = sourceShelf && targetShelf && sourceShelf.length && targetShelf.length && sourceShelf.id() === targetShelf.id();
-        
-        if (!result) {
-            const sourceShelfId = sourceShelf && sourceShelf.length ? sourceShelf.id() : 'null';
-            const targetShelfId = targetShelf && targetShelf.length ? targetShelf.id() : 'null';
-            console.log(`[checkSameShelf] Different shelves: source=${sourceId} -> shelf=${sourceShelfId}, target=${targetId} -> shelf=${targetShelfId}`);
-        }
-        
-        return result;
+        return sourceShelf && targetShelf && sourceShelf.length && targetShelf.length && sourceShelf.id() === targetShelf.id();
     }
 
     /**
@@ -2270,14 +2286,14 @@ export class CommonModule {
         if (trayNum !== undefined && trayNum !== null) {
             locationParts.push(`T${trayNum}`);
         } else if (trayLabel) {
-            locationParts.push(trayLabel);
+        locationParts.push(trayLabel);
         }
         
         // Add port info (use port number if available, otherwise port label)
         if (portNum !== undefined && portNum !== null) {
             locationParts.push(`P${portNum}`);
         } else if (portLabel) {
-            locationParts.push(portLabel);
+        locationParts.push(portLabel);
         }
 
         return locationParts.join(' › ');

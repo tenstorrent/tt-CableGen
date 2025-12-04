@@ -2422,7 +2422,13 @@ function resetLayout() {
     // Get all racks and group by hall/aisle
     const racks = state.cy.nodes('[type="rack"]');
     if (racks.length === 0) {
-        // No racks - this might be 8-column format with standalone shelves
+        // Check if canvas is empty - if so, silently return (no error needed)
+        const allNodes = state.cy.nodes();
+        if (allNodes.length === 0) {
+            // Empty canvas - this is expected, no error needed
+            return;
+        }
+        // No racks but nodes exist - this might be 8-column format with standalone shelves
         alert('No rack hierarchy found.');
         return;
     }
@@ -3177,6 +3183,9 @@ function updateAllEdgeColorsToTemplateColors() {
     let updatedCount = 0;
     let skippedCount = 0;
 
+    // Batch all edge color updates for better performance
+    state.cy.startBatch();
+    
     allEdges.forEach(edge => {
         const templateName = edge.data('template_name') || edge.data('containerTemplate');
 
@@ -3202,6 +3211,8 @@ function updateAllEdgeColorsToTemplateColors() {
             // (e.g., manually created edges in location mode)
         }
     });
+
+    state.cy.endBatch();
 
     console.log(`[updateAllEdgeColorsToTemplateColors] Updated ${updatedCount} edge colors to match template colors, ${skippedCount} edges skipped (no template_name)`);
 }
@@ -3376,13 +3387,15 @@ function initVisualization(data) {
                 autoungrabify: false,
                 autounselectify: false,
                 autolock: false,
-                hideEdgesOnViewport: true
+                hideEdgesOnViewport: true,
+                textureOnViewport: true  // Use texture caching for smoother pan/zoom on large graphs
             });
 
             // Sync legacy global variable immediately
             cy = state.cy;
 
-            // Set template-based colors for all imported graph nodes
+            // Set template-based colors for all imported graph nodes (batched for performance)
+            state.cy.startBatch();
             state.cy.nodes('[type="graph"]').forEach(node => {
                 const templateName = node.data('template_name');
                 if (templateName) {
@@ -3390,6 +3403,7 @@ function initVisualization(data) {
                     node.data('templateColor', templateColor);
                 }
             });
+            state.cy.endBatch();
 
             // Update edge colors to use template-based colors (LAST STEP - ensures colors match legend)
             updateAllEdgeColorsToTemplateColors();
@@ -4705,21 +4719,21 @@ function uploadFileTopology() {
 const graphTemplateSelect = document.getElementById('graphTemplateSelect');
 if (graphTemplateSelect) {
     graphTemplateSelect.addEventListener('change', function () {
-        const addGraphBtn = document.getElementById('addGraphBtn');
-        const hasTemplate = this.value && this.value !== '';
+    const addGraphBtn = document.getElementById('addGraphBtn');
+    const hasTemplate = this.value && this.value !== '';
 
-        if (cy && hasTemplate) {
-            addGraphBtn.disabled = false;
-            addGraphBtn.style.cursor = 'pointer';
-            addGraphBtn.style.background = '#007bff';
-            addGraphBtn.style.opacity = '1';
-        } else {
-            addGraphBtn.disabled = true;
-            addGraphBtn.style.cursor = 'not-allowed';
-            addGraphBtn.style.background = '#6c757d';
-            addGraphBtn.style.opacity = '0.6';
-        }
-    });
+    if (cy && hasTemplate) {
+        addGraphBtn.disabled = false;
+        addGraphBtn.style.cursor = 'pointer';
+        addGraphBtn.style.background = '#007bff';
+        addGraphBtn.style.opacity = '1';
+    } else {
+        addGraphBtn.disabled = true;
+        addGraphBtn.style.cursor = 'not-allowed';
+        addGraphBtn.style.background = '#6c757d';
+        addGraphBtn.style.opacity = '0.6';
+    }
+});
 }
 
 // Label input event listener removed - instance names are now auto-generated as {template_name}_{index}
