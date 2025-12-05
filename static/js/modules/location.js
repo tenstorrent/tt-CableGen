@@ -107,14 +107,8 @@ export class LocationModule {
             const sourceShelf = this.getParentAtLevel(sourceNode, 2);
             const targetShelf = this.getParentAtLevel(targetNode, 2);
 
-            // Verify that both nodes are actually shelf nodes
-            const sourceIsShelf = sourceShelf && sourceShelf.length &&
-                (sourceShelf.data('type') === 'shelf' || sourceShelf.data('type') === 'node');
-            const targetIsShelf = targetShelf && targetShelf.length &&
-                (targetShelf.data('type') === 'shelf' || targetShelf.data('type') === 'node');
-
             let color;
-            if (sourceIsShelf && targetIsShelf && sourceShelf.id() === targetShelf.id()) {
+            if (sourceShelf && targetShelf && sourceShelf.id() === targetShelf.id()) {
                 color = CONNECTION_COLORS.INTRA_NODE;  // Green for same shelf
             } else {
                 color = CONNECTION_COLORS.INTER_NODE;  // Blue for different shelves
@@ -411,7 +405,9 @@ export class LocationModule {
                             this.recolorConnections();
 
                             // Note: forceApplyCurveStyles will be called from visualizer.js wrapper
-                            this.common.forceApplyCurveStyles();
+                            if (window.forceApplyCurveStyles) {
+                                window.forceApplyCurveStyles();
+                            }
                         }
                     });
                     if (layout) {
@@ -848,7 +844,9 @@ export class LocationModule {
         // Update edge curve styles for physical mode
         setTimeout(() => {
             // Call forceApplyCurveStyles via window if available
-            this.common.forceApplyCurveStyles();
+            if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
+                window.forceApplyCurveStyles();
+            }
         }, 100);
     }
 
@@ -1424,7 +1422,7 @@ export class LocationModule {
             // Only use _shouldShowHallsAndAisles() for layout calculations, not for manual node addition
             const forceShowHalls = hall && hall.length > 0;
             const forceShowAisles = aisle && aisle.length > 0;
-
+            
             const { rackNode } = this._findOrCreateLocationNodes(
                 { hall, aisle, rackNum: rack },
                 { shouldShowHalls: forceShowHalls, shouldShowAisles: forceShowAisles }
@@ -1532,74 +1530,58 @@ export class LocationModule {
         const trayPortNodes = this.common.nodeFactory.createTraysAndPorts(shelfId, hostIndex, nodeType, location);
         nodesToAdd.push(...trayPortNodes);
 
-        // Batch node additions for better performance
-        this.state.cy.startBatch();
+        try {
+            // Batch node additions for better performance
+            this.state.cy.startBatch();
+            
+            // Add all nodes to cytoscape
+            this.state.cy.add(nodesToAdd);
 
-        // Add all nodes to cytoscape
-        this.state.cy.add(nodesToAdd);
+            this.state.cy.endBatch();
 
-        this.state.cy.endBatch();
+            // Arrange trays and ports for the newly added shelf
+            const addedShelf = this.state.cy.getElementById(shelfId);
+            if (addedShelf && addedShelf.length > 0) {
+                this.common.arrangeTraysAndPorts(addedShelf);
+            }
 
-        // Arrange trays and ports for the newly added shelf
-        const addedShelf = this.state.cy.getElementById(shelfId);
-        if (addedShelf && addedShelf.length > 0) {
-            this.common.arrangeTraysAndPorts(addedShelf);
+            // Apply drag restrictions
+            this.common.applyDragRestrictions();
+
+            // Apply styling and layout
+            setTimeout(() => {
+                if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
+                    window.forceApplyCurveStyles();
+                }
+                if (window.updatePortConnectionStatus && typeof window.updatePortConnectionStatus === 'function') {
+                    window.updatePortConnectionStatus();
+                }
+                if (window.updatePortEditingHighlight && typeof window.updatePortEditingHighlight === 'function') {
+                    window.updatePortEditingHighlight(); // Highlight available ports if in editing mode
+                }
+            }, 100);
+
+            // Clear all inputs
+            hostnameInput.value = '';
+            hallInput.value = '';
+            aisleInput.value = '';
+            rackInput.value = '';
+            shelfUInput.value = '';
+
+            // Show success message
+            const nodeDescription = hasHostname ? `"${hostname}"` : `"${this.buildLabel(hall, aisle, rack, shelfU)}"`;
+            const locationInfo = hasHostname && hasLocation ? ` (with location: ${this.buildLabel(hall, aisle, rack, shelfU)})` : '';
+            alert(`Successfully added ${nodeType} node ${nodeDescription}${locationInfo} with ${config.tray_count} trays (host_index=${hostIndex}).`);
+
+            // Update node filter dropdown to include the new node
+            if (window.populateNodeFilterDropdown && typeof window.populateNodeFilterDropdown === 'function') {
+                window.populateNodeFilterDropdown();
+            }
+
+        } catch (error) {
+            console.error('Error adding new node:', error);
+            alert(`Failed to add node: ${error.message}`);
         }
-
-        // Apply drag restrictions
-        this.common.applyDragRestrictions();
-
-        // Apply styling and layout
-        setTimeout(() => {
-            this.common.forceApplyCurveStyles();
-            window.updatePortConnectionStatus?.();
-            window.updatePortEditingHighlight?.(); // Highlight available ports if in editing mode
-        }, 100);
-
-        // Clear all inputs
-        hostnameInput.value = '';
-        hallInput.value = '';
-        aisleInput.value = '';
-        rackInput.value = '';
-        shelfUInput.value = '';
-
-        // Show success message
-        const nodeDescription = hasHostname ? `"${hostname}"` : `"${this.buildLabel(hall, aisle, rack, shelfU)}"`;
-        const locationInfo = hasHostname && hasLocation ? ` (with location: ${this.buildLabel(hall, aisle, rack, shelfU)})` : '';
-        alert(`Successfully added ${nodeType} node ${nodeDescription}${locationInfo} with ${config.tray_count} trays (host_index=${hostIndex}).`);
-
-        // Update node filter dropdown to include the new node
-        window.populateNodeFilterDropdown?.();
-    }
-
-    /**
-     * Organize nodes in a simple grid when no location info is available
-     */
-    organizeInGrid() {
-        if (!this.state.cy) return;
-
-        const shelfNodes = this.state.cy.nodes('[type="shelf"]');
-        const cols = 3;
-        const spacing = 500;
-        const startX = 300;
-        const startY = 300;
-
-        shelfNodes.forEach((node, idx) => {
-            // Remove from any parent
-            node.move({ parent: null });
-
-            // Position in grid
-            const col = idx % cols;
-            const row = Math.floor(idx / cols);
-
-            node.position({
-                x: startX + col * spacing,
-                y: startY + row * spacing
-            });
-        });
-
-        // Fit view to show all nodes
-        this.state.cy.fit(null, 50);
     }
 
     /**
@@ -1628,7 +1610,9 @@ export class LocationModule {
 
                 newCheckbox.addEventListener('change', () => {
                     // Apply connection type filter when checkbox changes
-                    window.applyConnectionTypeFilter?.();
+                    if (window.applyConnectionTypeFilter && typeof window.applyConnectionTypeFilter === 'function') {
+                        window.applyConnectionTypeFilter();
+                    }
                 });
             }
         });
@@ -1750,7 +1734,9 @@ export class LocationModule {
         node.data('label', newLabel);
 
         // Update node filter dropdown since label/hostname may have changed
-        window.populateNodeFilterDropdown?.();
+        if (window.populateNodeFilterDropdown && typeof window.populateNodeFilterDropdown === 'function') {
+            window.populateNodeFilterDropdown();
+        }
 
         // Handle rack change - move shelf to new rack if rack number changed
         const parent = node.parent();
@@ -1807,11 +1793,15 @@ export class LocationModule {
             // Call resetLayout to recalculate positions
             // Use setTimeout to ensure the DOM updates are complete
             setTimeout(() => {
-                window.resetLayout?.();
+                if (window.resetLayout && typeof window.resetLayout === 'function') {
+                    window.resetLayout();
+                }
             }, 100);
         } else {
             // Show success message
-            window.showExportStatus?.('Shelf node updated successfully', 'success');
+            if (window.showExportStatus && typeof window.showExportStatus === 'function') {
+                window.showExportStatus('Shelf node updated successfully', 'success');
+            }
         }
     }
 
@@ -1829,7 +1819,9 @@ export class LocationModule {
         }
 
         // Hide the dialog
-        window.hideNodeInfo?.();
+        if (window.hideNodeInfo && typeof window.hideNodeInfo === 'function') {
+            window.hideNodeInfo();
+        }
     }
 
     /**
@@ -2005,7 +1997,9 @@ export class LocationModule {
         });
 
         // Update node filter dropdown
-        window.populateNodeFilterDropdown?.();
+        if (window.populateNodeFilterDropdown && typeof window.populateNodeFilterDropdown === 'function') {
+            window.populateNodeFilterDropdown();
+        }
 
         // Close dialog and clear selections
         if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {
@@ -2108,7 +2102,9 @@ export class LocationModule {
         }
 
         // Update node filter dropdown
-        window.populateNodeFilterDropdown?.();
+        if (window.populateNodeFilterDropdown && typeof window.populateNodeFilterDropdown === 'function') {
+            window.populateNodeFilterDropdown();
+        }
 
         // Close dialog and clear selections
         if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {
@@ -2199,7 +2195,9 @@ export class LocationModule {
         });
 
         // Update node filter dropdown
-        window.populateNodeFilterDropdown?.();
+        if (window.populateNodeFilterDropdown && typeof window.populateNodeFilterDropdown === 'function') {
+            window.populateNodeFilterDropdown();
+        }
 
         // Close dialog and clear selections
         if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {
