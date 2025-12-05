@@ -3,7 +3,7 @@
  * Extracted from visualizer.js to eliminate duplication and improve maintainability
  */
 import { getNodeConfig } from '../config/node-types.js';
-import { LAYOUT_CONSTANTS } from '../config/constants.js';
+import { LAYOUT_CONSTANTS, CONNECTION_COLORS } from '../config/constants.js';
 import { ExpandCollapseModule } from './expand-collapse.js';
 
 export class CommonModule {
@@ -446,8 +446,9 @@ export class CommonModule {
                     'border-color': '#cc0000',
                     'border-opacity': 1.0,
                     'label': 'data(label)',
-                    'text-valign': 'center',  // Center vertically for circles
+                    'text-valign': 'top',  // Centered on top edge
                     'text-halign': 'center',
+                    'text-margin-y': 8,   // Top padding for label
                     'font-size': 24,
                     'min-zoomed-font-size': 10,
                     'font-weight': 'bold',
@@ -632,8 +633,7 @@ export class CommonModule {
                     'border-opacity': 1.0,
                     'label': 'data(label)',
                     'text-valign': 'top',
-                    'text-halign': 'left',
-                    'text-margin-x': 10,  // Left padding for label
+                    'text-halign': 'center',
                     'text-margin-y': 8,   // Top padding for label
                     'font-size': 16,
                     'min-zoomed-font-size': 8,
@@ -770,9 +770,7 @@ export class CommonModule {
         // Check if editing mode is enabled - all editing popups require it
         if (!this.state.editing.isEdgeCreationMode) {
             console.log('[right-click] Editing mode not enabled - showing notification');
-            if (window.showNotificationBanner && typeof window.showNotificationBanner === 'function') {
-                window.showNotificationBanner('⚠️ Editing mode must be enabled to edit nodes. Please click "Enable Editing" button first.', 'warning');
-            }
+            window.showNotificationBanner?.('⚠️ Editing mode must be enabled to edit nodes. Please click "Enable Editing" button first.', 'warning');
             return;
         }
 
@@ -781,11 +779,7 @@ export class CommonModule {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
                 console.log('[right-click] Opening shelf editing popup');
-                if (window.enableShelfEditing && typeof window.enableShelfEditing === 'function') {
-                    window.enableShelfEditing(node, evt.renderedPosition || evt.position);
-                } else {
-                    console.warn('[right-click] enableShelfEditing function not available');
-                }
+                window.enableShelfEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableShelfEditing function not available');
             }
             return;
         }
@@ -795,11 +789,7 @@ export class CommonModule {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
                 console.log('[right-click] Opening hall editing popup');
-                if (window.enableHallEditing && typeof window.enableHallEditing === 'function') {
-                    window.enableHallEditing(node, evt.renderedPosition || evt.position);
-                } else {
-                    console.warn('[right-click] enableHallEditing function not available');
-                }
+                window.enableHallEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableHallEditing function not available');
             }
             return;
         }
@@ -809,11 +799,7 @@ export class CommonModule {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
                 console.log('[right-click] Opening aisle editing popup');
-                if (window.enableAisleEditing && typeof window.enableAisleEditing === 'function') {
-                    window.enableAisleEditing(node, evt.renderedPosition || evt.position);
-                } else {
-                    console.warn('[right-click] enableAisleEditing function not available');
-                }
+                window.enableAisleEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableAisleEditing function not available');
             }
             return;
         }
@@ -823,11 +809,7 @@ export class CommonModule {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
                 console.log('[right-click] Opening rack editing popup');
-                if (window.enableRackEditing && typeof window.enableRackEditing === 'function') {
-                    window.enableRackEditing(node, evt.renderedPosition || evt.position);
-                } else {
-                    console.warn('[right-click] enableRackEditing function not available');
-                }
+                window.enableRackEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableRackEditing function not available');
             }
             return;
         }
@@ -850,11 +832,7 @@ export class CommonModule {
 
                 if (!isEditing) {
                     console.log('[right-click] Opening graph template editing popup');
-                    if (window.enableGraphTemplateEditing && typeof window.enableGraphTemplateEditing === 'function') {
-                        window.enableGraphTemplateEditing(node, evt.renderedPosition || evt.position);
-                    } else {
-                        console.error('[right-click] enableGraphTemplateEditing function not available!');
-                    }
+                    window.enableGraphTemplateEditing?.(node, evt.renderedPosition || evt.position) || console.error('[right-click] enableGraphTemplateEditing function not available!');
                 } else {
                     console.log('[right-click] Node is already being edited');
                 }
@@ -970,28 +948,18 @@ export class CommonModule {
             if (isMultiSelect) {
                 // Update delete button state if in editing mode
                 if (this.state.editing.isEdgeCreationMode) {
-                    if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                        window.updateDeleteButtonState();
-                    }
+                    window.updateDeleteButtonState?.();
                 }
-
-                // Show node info even for multi-select
-                if (window.showNodeInfo && typeof window.showNodeInfo === 'function') {
-                    window.showNodeInfo(node, evt.renderedPosition || evt.position);
-                }
+                window.showNodeInfo?.(node, evt.renderedPosition || evt.position);
                 return;
             }
 
             // Handle port clicks
             if (node.hasClass('port')) {
                 if (this.state.editing.isEdgeCreationMode) {
-                    if (window.handlePortClickEditMode && typeof window.handlePortClickEditMode === 'function') {
-                        window.handlePortClickEditMode(node, evt);
-                    }
+                    window.handlePortClickEditMode?.(node, evt);
                 } else {
-                    if (window.handlePortClickViewMode && typeof window.handlePortClickViewMode === 'function') {
-                        window.handlePortClickViewMode(node, evt);
-                    }
+                    window.handlePortClickViewMode?.(node, evt);
                 }
             } else {
                 // Non-port node clicked - single left-click: select node and show info
@@ -1002,9 +970,7 @@ export class CommonModule {
                 if (this.state.editing.selectedConnection) {
                     this.state.editing.selectedConnection.removeClass('selected-connection');
                     this.state.editing.selectedConnection = null;
-                    if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                        window.updateDeleteButtonState();
-                    }
+                    window.updateDeleteButtonState?.();
                 }
 
                 // Clear Cytoscape multi-selections on single click (unless modifier keys are held)
@@ -1027,15 +993,11 @@ export class CommonModule {
 
                 // Update delete button state if in editing mode
                 if (this.state.editing.isEdgeCreationMode && isDeletable) {
-                    if (window.updateDeleteNodeButtonState && typeof window.updateDeleteNodeButtonState === 'function') {
-                        window.updateDeleteNodeButtonState();
-                    }
+                    window.updateDeleteNodeButtonState?.();
                 }
 
                 // Show node info
-                if (window.showNodeInfo && typeof window.showNodeInfo === 'function') {
-                    window.showNodeInfo(node, evt.renderedPosition || evt.position);
-                }
+                window.showNodeInfo?.(node, evt.renderedPosition || evt.position);
             }
         });
 
@@ -1084,15 +1046,11 @@ export class CommonModule {
             if (isMultiSelect) {
                 // Update delete button state if in editing mode
                 if (this.state.editing.isEdgeCreationMode) {
-                    if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                        window.updateDeleteButtonState();
-                    }
+                    window.updateDeleteButtonState?.();
                 }
 
                 // Show connection info even for multi-select
-                if (window.showConnectionInfo && typeof window.showConnectionInfo === 'function') {
-                    window.showConnectionInfo(edge, position);
-                }
+                window.showConnectionInfo?.(edge, position);
                 return;
             }
 
@@ -1107,9 +1065,7 @@ export class CommonModule {
                 if (this.state.editing.selectedNode) {
                     this.state.editing.selectedNode.removeClass('selected-node');
                     this.state.editing.selectedNode = null;
-                    if (window.updateDeleteNodeButtonState && typeof window.updateDeleteNodeButtonState === 'function') {
-                        window.updateDeleteNodeButtonState();
-                    }
+                    window.updateDeleteNodeButtonState?.();
                 }
 
                 // Clear Cytoscape multi-selections on single click (unless modifier keys are held)
@@ -1130,23 +1086,17 @@ export class CommonModule {
 
             // Update delete button state (only relevant in editing mode)
             if (this.state.editing.isEdgeCreationMode) {
-                if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                    window.updateDeleteButtonState();
-                }
+                window.updateDeleteButtonState?.();
             }
 
             // Show connection info annotation for any edge click (editing mode or not)
-            if (window.showConnectionInfo && typeof window.showConnectionInfo === 'function') {
-                window.showConnectionInfo(edge, position);
-            }
+            window.showConnectionInfo?.(edge, position);
         });
 
         // Click on background to hide info, deselect connection, and clear source port
         this.state.cy.on('tap', (evt) => {
             if (evt.target === this.state.cy) {
-                if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {
-                    window.clearAllSelections();
-                }
+                window.clearAllSelections?.();
             }
         });
 
@@ -1154,18 +1104,14 @@ export class CommonModule {
         this.state.cy.on('select', 'node, edge', () => {
             // Update delete button state when elements are selected
             if (this.state.editing.isEdgeCreationMode) {
-                if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                    window.updateDeleteButtonState();
-                }
+                window.updateDeleteButtonState?.();
             }
         });
 
         this.state.cy.on('unselect', 'node, edge', () => {
             // Update delete button state when elements are unselected
             if (this.state.editing.isEdgeCreationMode) {
-                if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                    window.updateDeleteButtonState();
-                }
+                window.updateDeleteButtonState?.();
             }
         });
 
@@ -1193,19 +1139,18 @@ export class CommonModule {
     addNodeFilterHandler() {
         // Add event listener to node filter dropdown
         const nodeFilterSelect = document.getElementById('nodeFilterSelect');
-        if (nodeFilterSelect) {
-            // Remove existing listeners to avoid duplicates
-            const newNodeFilterSelect = nodeFilterSelect.cloneNode(true);
-            nodeFilterSelect.parentNode.replaceChild(newNodeFilterSelect, nodeFilterSelect);
-
-            newNodeFilterSelect.addEventListener('change', () => {
-                // Apply node filter when node selection changes
-                if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
-                    window.applyNodeFilter();
-                }
-            });
+        if (!nodeFilterSelect) {
+            return;
         }
 
+        // Remove existing listeners to avoid duplicates
+        const newNodeFilterSelect = nodeFilterSelect.cloneNode(true);
+        nodeFilterSelect.parentNode.replaceChild(newNodeFilterSelect, nodeFilterSelect);
+
+        newNodeFilterSelect.addEventListener('change', () => {
+            // Apply node filter when node selection changes
+            window.applyNodeFilter?.();
+        });
     }
 
     /**
@@ -1222,7 +1167,12 @@ export class CommonModule {
             }
             currentNode = parent;
         }
-        return currentNode;
+        // Verify that the node 2 levels up is actually a shelf node
+        const nodeType = currentNode.data('type');
+        if (nodeType === 'shelf' || nodeType === 'node') {
+            return currentNode;
+        }
+        return null;
     }
 
     /**
@@ -1412,12 +1362,18 @@ export class CommonModule {
         let visibleCount = 0;
         let hiddenCount = 0;
 
+        // Reset all edges to visible first, then apply filters
+        // Use Cytoscape's show() method instead of style('display', 'element')
+        allEdges.forEach((edge) => {
+            edge.show();
+        });
+
         // Filter edges based on connection type, node, and template filters
         allEdges.forEach((edge) => {
             // Check template filter (hierarchy mode only) - use hierarchy module helper
             if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
                 if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
-                    edge.style('display', 'none');
+                    edge.hide();
                     hiddenCount++;
                     return;
                 }
@@ -1430,7 +1386,7 @@ export class CommonModule {
                 const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
                 const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
                 if (sourceShelfId !== selectedShelfId && targetShelfId !== selectedShelfId) {
-                    edge.style('display', 'none');
+                    edge.hide();
                     hiddenCount++;
                     return;
                 }
@@ -1473,10 +1429,10 @@ export class CommonModule {
             );
 
             if (shouldShowByType) {
-                edge.style('display', 'element');
+                edge.show();
                 visibleCount++;
             } else {
-                edge.style('display', 'none');
+                edge.hide();
                 hiddenCount++;
             }
         });
@@ -1529,12 +1485,18 @@ export class CommonModule {
         let visibleCount = 0;
         let hiddenCount = 0;
 
+        // Reset all edges to visible first, then apply filters
+        // Use Cytoscape's show() method instead of style('display', 'element')
+        allEdges.forEach((edge) => {
+            edge.show();
+        });
+
         // Apply all filters together
         allEdges.forEach((edge) => {
             // Check template filter (hierarchy mode only) - use hierarchy module helper
             if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
                 if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
-                    edge.style('display', 'none');
+                    edge.hide();
                     hiddenCount++;
                     return;
                 }
@@ -1547,7 +1509,7 @@ export class CommonModule {
                 const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
                 const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
                 if (sourceShelfId !== selectedShelfId && targetShelfId !== selectedShelfId) {
-                    edge.style('display', 'none');
+                    edge.hide();
                     hiddenCount++;
                     return;
                 }
@@ -1583,10 +1545,10 @@ export class CommonModule {
             }
 
             if (shouldShowByType) {
-                edge.style('display', 'element');
+                edge.show();
                 visibleCount++;
             } else {
-                edge.style('display', 'none');
+                edge.hide();
                 hiddenCount++;
             }
         });
@@ -1756,12 +1718,8 @@ export class CommonModule {
         }
 
         // Reapply filters to show all connections
-        if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
-            window.applyNodeFilter();
-        }
-        if (window.applyConnectionTypeFilter && typeof window.applyConnectionTypeFilter === 'function') {
-            window.applyConnectionTypeFilter();
-        }
+        window.applyNodeFilter?.();
+        window.applyConnectionTypeFilter?.();
 
         // Update status
         const statusDiv = document.getElementById('rangeStatus');
@@ -1912,12 +1870,12 @@ export class CommonModule {
                             }
                         }
                     }
-                    
+
                     // Build full logical path with root graph at the beginning
-                    const fullLogicalPath = rootGraphLabel 
+                    const fullLogicalPath = rootGraphLabel
                         ? [rootGraphLabel, ...data.logical_path]
                         : data.logical_path;
-                    
+
                     html += `<strong>Logical Path:</strong> ${fullLogicalPath.join(' → ')}<br>`;
                 }
             }
@@ -1934,7 +1892,7 @@ export class CommonModule {
         } else {
             // For other node types (tray, port), show hierarchical location with individual fields
             let locationData = {};
-            if (window.location_getNodeData && typeof window.location_getNodeData === 'function') {
+            if (window.location_getNodeData) {
                 locationData = window.location_getNodeData(node);
             }
             const isLogicalMode = currentMode === 'hierarchy';
@@ -1959,8 +1917,8 @@ export class CommonModule {
                     }
                 }
 
-                if (window.getEthChannelMapping && typeof window.getEthChannelMapping === 'function') {
-                    const ethChannel = window.getEthChannelMapping(nodeType, data.port);
+                const ethChannel = this.getEthChannelMapping(nodeType, data.port);
+                if (ethChannel && ethChannel !== 'Unknown') {
                     html += `Eth_Channel Mapping: ${ethChannel}<br>`;
                 }
             }
@@ -1986,6 +1944,69 @@ export class CommonModule {
     }
 
     /**
+     * Get Ethernet channel mapping for a given node type and port number
+     * @param {string} nodeType - Node type (e.g., 'WH_GALAXY', 'N300_LB')
+     * @param {number} portNumber - Port number (1-indexed)
+     * @returns {string} Channel mapping string or 'Unknown'
+     */
+    getEthChannelMapping(nodeType, portNumber) {
+        // Get the node type from 2 levels above the port (shelf level)
+        if (!nodeType || !portNumber) return 'Unknown';
+
+        const nodeTypeUpper = nodeType.toUpperCase();
+
+        // Define eth channel mappings based on node type and port number
+        switch (nodeTypeUpper) {
+            case 'N300_LB':
+            case 'N300_QB':
+                // N300 nodes: 2 ports per tray, specific channel mapping
+                if (portNumber === 1) return 'ASIC: 0 Channel: 6-7';
+                if (portNumber === 2) return 'ASIC: 0 Channel: 0-1';
+                break;
+
+            case 'WH_GALAXY':
+                // WH_GALAXY: 6 ports per tray
+                if (portNumber === 1) return 'ASIC: 5 Channel: 4-7';
+                if (portNumber === 2) return 'ASIC: 1 Channel: 4-7';
+                if (portNumber === 3) return 'ASIC: 1 Channel: 0-3';
+                if (portNumber === 4) return 'ASIC: 2 Channel: 0-3';
+                if (portNumber === 5) return 'ASIC: 3 Channel: 0-3';
+                if (portNumber === 6) return 'ASIC: 4 Channel: 0-3';
+                break;
+
+            case 'BH_GALAXY':
+                // BH_GALAXY: 14 ports per tray
+                if (portNumber === 1) return 'ASIC: 5 Channel: 2-3';
+                if (portNumber === 2) return 'ASIC: 1 Channel: 2-3';
+                if (portNumber === 3) return 'ASIC: 1 Channel: 0-1';
+                if (portNumber === 4) return 'ASIC: 2 Channel: 0-1';
+                if (portNumber === 5) return 'ASIC: 3 Channel: 0-1';
+                if (portNumber === 6) return 'ASIC: 4 Channel: 0-1';
+                if (portNumber === 7) return 'ASIC: 1 Channel: 10, ASIC: 2 Channel: 10';
+                if (portNumber === 8) return 'ASIC: 5 Channel: 10, ASIC: 6 Channel: 10';
+                if (portNumber === 9) return 'ASIC: 3 Channel: 10, ASIC: 4 Channel: 10';
+                if (portNumber === 10) return 'ASIC: 7 Channel: 10, ASIC: 8 Channel: 10';
+                if (portNumber === 11) return 'ASIC: 1 Channel: 11, ASIC: 2 Channel: 11';
+                if (portNumber === 12) return 'ASIC: 5 Channel: 11, ASIC: 6 Channel: 11';
+                if (portNumber === 13) return 'ASIC: 3 Channel: 11, ASIC: 4 Channel: 11';
+                if (portNumber === 14) return 'ASIC: 7 Channel: 11, ASIC: 8 Channel: 11';
+                break;
+
+            case 'P150_QB_GLOBAL':
+            case 'P150_QB_AMERICA':
+            case 'P150_LB':
+                // P150 nodes: 4 ports per tray (4 trays for QB variants, 8 trays for LB), specific channel mapping
+                if (portNumber === 1) return 'ASIC: 0 Channel: 9, ASIC: 0 Channel: 11';
+                if (portNumber === 2) return 'ASIC: 0 Channel: 8, ASIC: 0 Channel: 10';
+                if (portNumber === 3) return 'ASIC: 0 Channel: 5, ASIC: 0 Channel: 7';
+                if (portNumber === 4) return 'ASIC: 0 Channel: 4, ASIC: 0 Channel: 6';
+                break;
+        }
+
+        return 'Unknown';
+    }
+
+    /**
      * Show detailed information about a connection
      * Always shows full path regardless of collapsed state
      * @param {Object} edge - Cytoscape edge element
@@ -2008,7 +2029,7 @@ export class CommonModule {
         // Get detailed location info for both endpoints - always full path
         let sourceInfo = '';
         let targetInfo = '';
-        if (window.getPortLocationInfo && typeof window.getPortLocationInfo === 'function') {
+        if (window.getPortLocationInfo) {
             sourceInfo = window.getPortLocationInfo(sourceNode);
             targetInfo = window.getPortLocationInfo(targetNode);
         } else {
@@ -2066,12 +2087,12 @@ export class CommonModule {
             if (!parent || !parent.length) {
                 break;
             }
-            
+
             const parentTemplateName = parent.data('template_name');
             if (parentTemplateName) {
                 return parentTemplateName;
             }
-            
+
             currentNode = parent;
         }
 
@@ -2087,55 +2108,141 @@ export class CommonModule {
         if (!this.state.cy) return;
 
         const edges = this.state.cy.edges();
-        const viewport = this.state.cy.extent();
-        const viewportWidth = viewport.w;
-        const viewportHeight = viewport.h;
-        // Calculate control-point-step-size based on viewport for better separation
-        const controlPointStepSize = Math.min(viewportWidth, viewportHeight) * 0.03; // 3% of smaller viewport dimension
+        // Use fixed control-point-step-size instead of viewport-based calculation
+        // This prevents step-size from changing when viewport changes (zoom, pan, layout)
+        const controlPointStepSize = 40; // Fixed value for consistent curve appearance
+
+        console.log(`[forceApplyCurveStyles] Processing ${edges.length} edges, base stepSize: ${controlPointStepSize} (fixed)`);
 
         this.state.cy.startBatch();
 
-        edges.forEach((edge) => {
+        let sameShelfCount = 0;
+        let crossShelfCount = 0;
+        let crossGraphCount = 0;
+
+        edges.forEach((edge, index) => {
             let sourceNode, targetNode;
             let isSameTemplate = false;
             let isSameShelf = false;
             const isRerouted = edge.data('isRerouted');
+            const edgeId = edge.id();
+            const connectionNumber = edge.data('connection_number');
 
             // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
             if (isRerouted) {
                 // Rerouted edges connect collapsed graph nodes - check their template_name directly
                 sourceNode = edge.source();
                 targetNode = edge.target();
-                
+
                 // Check if both endpoints are graph nodes with the same template_name
                 const sourceTemplateName = sourceNode.data('template_name');
                 const targetTemplateName = targetNode.data('template_name');
                 const sourceIsGraph = sourceNode.data('type') === 'graph';
                 const targetIsGraph = targetNode.data('type') === 'graph';
-                
+
                 if (sourceIsGraph && targetIsGraph && sourceTemplateName && targetTemplateName) {
                     isSameTemplate = sourceTemplateName === targetTemplateName;
                 }
-                // For rerouted edges, don't check same shelf (graph nodes don't have shelves - shelves are children of graphs)
+
+                // Check if original endpoints (ports) are on the same shelf for curve styling
+                const endpoints = this.getOriginalEdgeEndpoints(edge);
+                const originalSourceId = endpoints.sourceNode.id();
+                const originalTargetId = endpoints.targetNode.id();
+                isSameShelf = this.checkSameShelf(originalSourceId, originalTargetId);
             } else {
                 // Regular edges - get original endpoints (ports)
                 const endpoints = this.getOriginalEdgeEndpoints(edge);
                 sourceNode = endpoints.sourceNode;
                 targetNode = endpoints.targetNode;
-                
+
                 // For regular port-to-port edges, check if they're on the same shelf
-            const sourceId = sourceNode.id();
-            const targetId = targetNode.id();
+                const sourceId = sourceNode.id();
+                const targetId = targetNode.id();
                 isSameShelf = this.checkSameShelf(sourceId, targetId);
                 // Don't check template for regular port-to-port edges
             }
 
-            // Apply bezier for all edges - automatically separates multiple edges between the same nodes
-            // bezier provides better visual separation than haystack for parallel edges
-            let styleProps = {
-                'curve-style': 'bezier',
-                'control-point-step-size': controlPointStepSize
-            };
+            // Apply different curve styles based on connection type
+            // Same-shelf connections: use unbundled-bezier for cleaner appearance
+            // Cross-shelf connections: use bezier for better separation
+            // Cross-graph connections: use bezier with reduced magnitude
+            let curveStyle;
+            let styleProps;
+
+            // Check if this is a cross-graph connection (between different graph nodes)
+            let isCrossGraph = false;
+            let sourceGraphNodeId = null;
+            let targetGraphNodeId = null;
+
+            if (isRerouted) {
+                // For rerouted edges, check if source and target are different graph nodes
+                const sourceGraphNode = sourceNode.data('type') === 'graph' ? sourceNode : null;
+                const targetGraphNode = targetNode.data('type') === 'graph' ? targetNode : null;
+                if (sourceGraphNode && targetGraphNode) {
+                    sourceGraphNodeId = sourceGraphNode.id();
+                    targetGraphNodeId = targetGraphNode.id();
+                    if (sourceGraphNodeId !== targetGraphNodeId) {
+                        isCrossGraph = true;
+                    }
+                }
+            } else {
+                // For regular edges, find the graph nodes containing the ports
+                let sourceGraphNode = null;
+                let targetGraphNode = null;
+                let current = sourceNode;
+                while (current && current.length > 0) {
+                    if (current.data('type') === 'graph') {
+                        sourceGraphNode = current;
+                        break;
+                    }
+                    current = current.parent();
+                }
+                current = targetNode;
+                while (current && current.length > 0) {
+                    if (current.data('type') === 'graph') {
+                        targetGraphNode = current;
+                        break;
+                    }
+                    current = current.parent();
+                }
+                if (sourceGraphNode && targetGraphNode) {
+                    sourceGraphNodeId = sourceGraphNode.id();
+                    targetGraphNodeId = targetGraphNode.id();
+                    if (sourceGraphNodeId !== targetGraphNodeId) {
+                        isCrossGraph = true;
+                    }
+                }
+            }
+
+            if (isSameShelf) {
+                sameShelfCount++;
+                curveStyle = 'unbundled-bezier';
+                // Ensure unbundled-bezier has visible but subtle curvature
+                // control-point-distance controls how far control points are from the straight line
+                // control-point-weight controls the relative position along the edge
+                // Reduced distance for subtler curves on same-shelf connections
+                const controlPointDistance = Math.max(20, controlPointStepSize * 0.8); // Reduced magnitude for subtler curves
+                styleProps = {
+                    'curve-style': curveStyle,
+                    'control-point-distance': controlPointDistance,  // Distance from straight line (reduced)
+                    'control-point-weight': 0.5  // Position along edge (0.5 = middle)
+                };
+                console.log(`[forceApplyCurveStyles] Edge ${index + 1}/${edges.length} (conn#${connectionNumber || 'N/A'}, id: ${edgeId.substring(0, 20)}...): SAME-SHELF -> ${curveStyle}, control-point-distance: ${controlPointDistance.toFixed(2)}`);
+            } else {
+                crossShelfCount++;
+                curveStyle = 'bezier';
+                // Reduce magnitude for cross-graph connections (between different graph nodes)
+                const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
+                styleProps = {
+                    'curve-style': curveStyle,
+                    'control-point-step-size': stepSize
+                };
+                const connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
+                console.log(`[forceApplyCurveStyles] Edge ${index + 1}/${edges.length} (conn#${connectionNumber || 'N/A'}, id: ${edgeId.substring(0, 20)}...): ${connectionType} -> ${curveStyle}, control-point-step-size: ${stepSize.toFixed(2)} (base: ${controlPointStepSize.toFixed(2)}, ${isCrossGraph ? 'reduced 50%' : 'full'}), sourceGraph: ${sourceGraphNodeId || 'N/A'}, targetGraph: ${targetGraphNodeId || 'N/A'}, isRerouted: ${isRerouted}`);
+                if (isCrossGraph) {
+                    crossGraphCount++;
+                }
+            }
 
             // Apply style directly to edge - this overrides stylesheet rules
             edge.style(styleProps);
@@ -2143,9 +2250,11 @@ export class CommonModule {
 
         this.state.cy.endBatch();
 
-        // Force style recalculation and render to ensure changes take effect
-        // This ensures programmatic style changes override stylesheet rules
-        this.state.cy.style().update();
+        console.log(`[forceApplyCurveStyles] Summary: ${sameShelfCount} same-shelf (unbundled-bezier), ${crossShelfCount} cross-shelf/cross-graph (bezier), ${crossGraphCount} cross-graph (reduced magnitude)`);
+
+        // Force render to ensure changes take effect
+        // NOTE: Do NOT call style().update() here as it can reset styles to stylesheet defaults
+        // Programmatic styles applied via edge.style() should persist
         this.state.cy.forceRender();
     }
 
@@ -2166,19 +2275,21 @@ export class CommonModule {
         }
 
         // Get parent 2 levels up (port -> tray -> shelf)
-        let sourceShelf = null;
-        let targetShelf = null;
+        const sourceShelf = this.getParentAtLevel(sourceNode, 2);
+        const targetShelf = this.getParentAtLevel(targetNode, 2);
 
-        if (window.hierarchyModule && typeof window.hierarchyModule.getParentAtLevel === 'function') {
-            sourceShelf = window.hierarchyModule.getParentAtLevel(sourceNode, 2);
-            targetShelf = window.hierarchyModule.getParentAtLevel(targetNode, 2);
-        } else {
-            // Fallback: use getParentShelfNode
-            sourceShelf = this.getParentShelfNode(sourceNode);
-            targetShelf = this.getParentShelfNode(targetNode);
+        // Verify that both nodes are actually shelf nodes (type === 'shelf' or type === 'node')
+        if (!sourceShelf || !sourceShelf.length || !targetShelf || !targetShelf.length) {
+            return false;
         }
 
-        return sourceShelf && targetShelf && sourceShelf.length && targetShelf.length && sourceShelf.id() === targetShelf.id();
+        const sourceShelfType = sourceShelf.data('type');
+        const targetShelfType = targetShelf.data('type');
+        const isSourceShelf = sourceShelfType === 'shelf' || sourceShelfType === 'node';
+        const isTargetShelf = targetShelfType === 'shelf' || targetShelfType === 'node';
+
+        // Both must be shelf nodes and have the same ID
+        return isSourceShelf && isTargetShelf && sourceShelf.id() === targetShelf.id();
     }
 
     /**
@@ -2191,11 +2302,11 @@ export class CommonModule {
     getPortLocationInfo(portNode, locationModule = null) {
         const portId = portNode.id();
         const portLabel = portNode.data('label');
-        
+
         // Get tray and port numbers from port node data (always available regardless of collapse state)
         const trayNum = portNode.data('tray');
         const portNum = portNode.data('port');
-        
+
         // Try to get tray node (may fail if collapsed, but we have tray number from data)
         let trayNode = portNode.parent();
         if (!trayNode || !trayNode.length) {
@@ -2207,13 +2318,13 @@ export class CommonModule {
                 trayNode = this.state.cy.getElementById(trayId);
             }
         }
-        
+
         // Get shelf node - use robust method that works even when collapsed
         let shelfNode = null;
         if (trayNode && trayNode.length) {
             shelfNode = trayNode.parent();
         }
-        
+
         // If parent() fails, extract shelf ID from port ID and get shelf directly
         if (!shelfNode || !shelfNode.length) {
             const shelfId = this.extractShelfIdFromNodeId(portId);
@@ -2221,7 +2332,7 @@ export class CommonModule {
                 shelfNode = this.state.cy.getElementById(shelfId);
             }
         }
-        
+
         // Fallback: use getParentShelfNode helper
         if (!shelfNode || !shelfNode.length) {
             shelfNode = this.getParentShelfNode(portNode);
@@ -2234,7 +2345,7 @@ export class CommonModule {
         let rackNum = undefined;
         let shelfU = undefined;
         let hostIndex = undefined;
-        
+
         if (shelfNode && shelfNode.length) {
             hostname = shelfNode.data('hostname') || '';
             hall = shelfNode.data('hall') || '';
@@ -2250,7 +2361,7 @@ export class CommonModule {
                 hostIndex = parseInt(shelfId, 10);
             }
         }
-        
+
         const trayLabel = trayNode && trayNode.length ? trayNode.data('label') : (trayNum !== undefined ? `T${trayNum}` : 'Tray');
 
         // Build location string
@@ -2261,7 +2372,7 @@ export class CommonModule {
             // Use location format: HallAisle##U##
             if (locationModule && typeof locationModule.buildLabel === 'function') {
                 locationParts.push(locationModule.buildLabel(hall, aisle, rackNum, shelfU));
-            } else if (window.location_buildLabel && typeof window.location_buildLabel === 'function') {
+            } else if (window.location_buildLabel) {
                 locationParts.push(window.location_buildLabel(hall, aisle, rackNum, shelfU));
             } else {
                 // Fallback
@@ -2281,19 +2392,19 @@ export class CommonModule {
         if (hostIndex !== undefined && hostIndex !== null) {
             locationParts.push(`host_${hostIndex}`);
         }
-        
+
         // Add tray info (use tray number if available, otherwise tray label)
         if (trayNum !== undefined && trayNum !== null) {
             locationParts.push(`T${trayNum}`);
         } else if (trayLabel) {
-        locationParts.push(trayLabel);
+            locationParts.push(trayLabel);
         }
-        
+
         // Add port info (use port number if available, otherwise port label)
         if (portNum !== undefined && portNum !== null) {
             locationParts.push(`P${portNum}`);
         } else if (portLabel) {
-        locationParts.push(portLabel);
+            locationParts.push(portLabel);
         }
 
         return locationParts.join(' › ');
@@ -2442,7 +2553,7 @@ export class CommonModule {
             onSetup: () => {
                 if (isHierarchyMode && this.state.editing.isEdgeCreationMode) {
                     // Populate the move target template dropdown (only in editing mode)
-                    if (window.hierarchyModule && typeof window.hierarchyModule.populateMoveTargetTemplates === 'function') {
+                    if (window.hierarchyModule?.populateMoveTargetTemplates) {
                         window.hierarchyModule.populateMoveTargetTemplates(node);
                     }
                 }
@@ -2503,17 +2614,13 @@ export class CommonModule {
         if (this.state.editing.selectedConnection) {
             this.state.editing.selectedConnection.removeClass('selected-connection');
             this.state.editing.selectedConnection = null;
-            if (window.updateDeleteButtonState && typeof window.updateDeleteButtonState === 'function') {
-                window.updateDeleteButtonState();
-            }
+            window.updateDeleteButtonState?.();
         }
 
         if (this.state.editing.selectedNode) {
             this.state.editing.selectedNode.removeClass('selected-node');
             this.state.editing.selectedNode = null;
-            if (window.updateDeleteNodeButtonState && typeof window.updateDeleteNodeButtonState === 'function') {
-                window.updateDeleteNodeButtonState();
-            }
+            window.updateDeleteNodeButtonState?.();
         }
     }
 
@@ -2607,6 +2714,377 @@ export class CommonModule {
             elements: filteredElements,
             ...(Object.keys(filteredMetadata).length > 0 ? { metadata: filteredMetadata } : {})
         };
+    }
+
+    // ===== Connection Management Functions (Phase 5) =====
+
+    /**
+     * Get the next available connection number
+     * @returns {number} Next connection number
+     */
+    /**
+     * Get the next available connection number for a template
+     * @returns {number} Next connection number
+     */
+    getNextConnectionNumber() {
+        if (!this.state.cy) return 0;
+
+        // Get all existing edges and find the highest connection number
+        const allEdges = this.state.cy.edges();
+        let maxConnectionNumber = -1;
+
+        allEdges.forEach(edge => {
+            const connectionNum = edge.data('connection_number');
+            if (typeof connectionNum === 'number' && connectionNum > maxConnectionNumber) {
+                maxConnectionNumber = connectionNum;
+            }
+        });
+
+        // Return the next number (0 if no connections exist, otherwise max + 1)
+        return maxConnectionNumber + 1;
+    }
+
+    /**
+     * Create a connection between two ports (main entry point)
+     * Delegates to hierarchy module for hierarchy mode, handles location mode directly
+     * @param {string} sourceId - Source port ID
+     * @param {string} targetId - Target port ID
+     * @param {Object} hierarchyModule - Hierarchy module instance (for hierarchy mode)
+     */
+    createConnection(sourceId, targetId, hierarchyModule = null) {
+        const sourceNode = this.state.cy.getElementById(sourceId);
+        const targetNode = this.state.cy.getElementById(targetId);
+
+        if (!sourceNode.length || !targetNode.length) {
+            console.error('Source or target node not found');
+            return;
+        }
+
+        // Check if either port already has a connection
+        const sourceConnections = this.state.cy.edges(`[source="${sourceId}"], [target="${sourceId}"]`);
+        const targetConnections = this.state.cy.edges(`[source="${targetId}"], [target="${targetId}"]`);
+
+        if (sourceConnections.length > 0) {
+            alert(`Cannot create connection: Source port "${sourceNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            return;
+        }
+
+        if (targetConnections.length > 0) {
+            alert(`Cannot create connection: Target port "${targetNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            return;
+        }
+
+        // Check visualization mode - template connections are only for hierarchy mode
+        const visualizationMode = this.state.mode;
+
+        // In physical/location mode, always create direct connections (no template logic)
+        if (visualizationMode === 'location') {
+            this.createConnectionAtLevel(sourceNode, targetNode, null, hierarchyModule);
+            return;
+        }
+
+        // In hierarchy mode, check if we have graph hierarchy
+        // If so, show placement level selection modal
+        const hasGraphHierarchy = this.state.cy.nodes('[type="graph"]').length > 0;
+
+        if (hasGraphHierarchy && hierarchyModule) {
+            // Enumerate all possible placement levels
+            const placementLevels = hierarchyModule.enumeratePlacementLevels(sourceNode, targetNode);
+
+            if (placementLevels.length === 0) {
+                // No valid placement levels available
+                alert('Cannot create connection: No valid placement levels available.\n\nAll potential placement levels have conflicts with existing connections.');
+                return;
+            }
+
+            if (placementLevels.length > 1) {
+                // Multiple placement options available - show modal
+                hierarchyModule.showConnectionPlacementModal(sourceNode, targetNode, placementLevels);
+                return;
+            }
+
+            // Only one option available - use it directly (no modal needed)
+            console.log(`[createConnection] Only one placement level available: ${placementLevels[0].label} (${placementLevels[0].template_name})`);
+            this.createConnectionAtLevel(sourceNode, targetNode, placementLevels[0], hierarchyModule);
+            return;
+        }
+
+        // Direct connection creation (no modal needed - no graph hierarchy)
+        this.createConnectionAtLevel(sourceNode, targetNode, null, hierarchyModule);
+    }
+
+    /**
+     * Create a connection at a specific placement level
+     * Delegates to hierarchy module for hierarchy mode logic
+     * @param {Object} sourceNode - Source port node
+     * @param {Object} targetNode - Target port node  
+     * @param {Object|null} selectedLevel - Selected placement level (null for auto-detect)
+     * @param {Object} hierarchyModule - Hierarchy module instance (for hierarchy mode)
+     */
+    createConnectionAtLevel(sourceNode, targetNode, selectedLevel, hierarchyModule = null) {
+        // Check visualization mode - template connections are only for hierarchy mode
+        const visualizationMode = this.state.mode;
+
+        // In physical/location mode, always create direct connections (no template logic)
+        if (visualizationMode === 'location') {
+            // Physical mode: create single direct connection, no template references
+            this.createSingleConnection(sourceNode, targetNode, null, 0);
+            return;
+        }
+
+        // Hierarchy mode: delegate to hierarchy module
+        if (hierarchyModule) {
+            hierarchyModule.createConnectionAtLevel(sourceNode, targetNode, selectedLevel);
+        } else {
+            // Fallback: create single connection if no hierarchy module
+            this.createSingleConnection(sourceNode, targetNode, null, 0);
+        }
+    }
+
+    /**
+     * Create a single connection between two specific ports
+     * @param {Object} sourceNode - Source port node
+     * @param {Object} targetNode - Target port node
+     * @param {string|null} template_name - Template name (for hierarchy mode)
+     * @param {number} depth - Hierarchy depth (for hierarchy mode)
+     */
+    createSingleConnection(sourceNode, targetNode, template_name, depth) {
+        const sourceId = sourceNode.id();
+        const targetId = targetNode.id();
+
+        // Determine connection color based on visualization mode
+        const visualizationMode = this.state.mode;
+        let connectionColor;
+
+        if (visualizationMode === 'hierarchy' && template_name) {
+            // Hierarchy mode: use template-based coloring (matches legend)
+            connectionColor = this.getTemplateColor(template_name);
+        } else {
+            // Physical mode: use intra-node vs inter-node coloring
+            const sourceGrandparent = this.getParentAtLevel(sourceNode, 2);
+            const targetGrandparent = this.getParentAtLevel(targetNode, 2);
+
+            // Verify that both grandparent nodes are actually shelf nodes
+            const sourceIsShelf = sourceGrandparent && sourceGrandparent.length &&
+                (sourceGrandparent.data('type') === 'shelf' || sourceGrandparent.data('type') === 'node');
+            const targetIsShelf = targetGrandparent && targetGrandparent.length &&
+                (targetGrandparent.data('type') === 'shelf' || targetGrandparent.data('type') === 'node');
+
+            if (sourceIsShelf && targetIsShelf && sourceGrandparent.id() === targetGrandparent.id()) {
+                connectionColor = CONNECTION_COLORS.INTRA_NODE;
+            } else {
+                connectionColor = CONNECTION_COLORS.INTER_NODE;
+            }
+        }
+
+        const edgeId = `edge_${sourceId}_${targetId}_${Date.now()}`;
+        const sourceParent = this.getParentAtLevel(sourceNode, 2);
+        const sourceHostname = sourceNode.data('hostname') || (sourceParent ? sourceParent.data('hostname') : '') || '';
+        const targetParent = this.getParentAtLevel(targetNode, 2);
+        const targetHostname = targetNode.data('hostname') || (targetParent ? targetParent.data('hostname') : '') || '';
+
+        // Determine the template where this connection is defined
+        // For hierarchy mode, find the common ancestor graph that defines this connection
+        let connectionTemplate = template_name;
+        if (!connectionTemplate && visualizationMode === 'hierarchy') {
+            // Use hierarchyModule.findCommonAncestor if available
+            if (window.hierarchyModule?.findCommonAncestor) {
+                const commonAncestor = window.hierarchyModule.findCommonAncestor(sourceNode, targetNode);
+                if (commonAncestor) {
+                    connectionTemplate = commonAncestor.data('template_name');
+                    console.log(`[createSingleConnection] Found common ancestor template: ${connectionTemplate} for connection ${sourceId} -> ${targetId}`);
+                } else {
+                    console.warn(`[createSingleConnection] No common ancestor found for connection ${sourceId} -> ${targetId}`);
+                }
+            } else if (window.findCommonAncestorGraph && typeof window.findCommonAncestorGraph === 'function') {
+                // Fallback to window function if hierarchyModule not available
+                const commonAncestor = window.findCommonAncestorGraph(sourceNode, targetNode);
+                if (commonAncestor) {
+                    connectionTemplate = commonAncestor.data('template_name');
+                    console.log(`[createSingleConnection] Found common ancestor template: ${connectionTemplate} for connection ${sourceId} -> ${targetId}`);
+                } else {
+                    console.warn(`[createSingleConnection] No common ancestor found for connection ${sourceId} -> ${targetId}`);
+                }
+            }
+        }
+
+        // Log template assignment for debugging
+        if (connectionTemplate) {
+            console.log(`[createSingleConnection] Setting template for connection: ${connectionTemplate}`);
+        }
+
+        const connectionNumber = this.getNextConnectionNumber();
+        const DEFAULT_CABLE_CONFIG = {
+            type: 'QSFP_DD',
+            length: 'Unknown'
+        };
+
+        const newEdge = {
+            data: {
+                id: edgeId,
+                source: sourceId,
+                target: targetId,
+                cable_type: DEFAULT_CABLE_CONFIG.type,
+                cable_length: DEFAULT_CABLE_CONFIG.length,
+                connection_number: connectionNumber,
+                color: connectionColor,
+                source_hostname: sourceHostname,
+                destination_hostname: targetHostname,
+                template_name: connectionTemplate,  // Template where connection is defined
+                containerTemplate: connectionTemplate,  // Also set containerTemplate for consistency
+                depth: depth
+            }
+        };
+
+        this.state.cy.add(newEdge);
+
+        // Update visuals
+        this.updatePortConnectionStatus();
+        this.updatePortEditingHighlight();
+        setTimeout(() => {
+            this.forceApplyCurveStyles();
+        }, 50);
+
+        // Update the connection legend after creating a connection
+        if (this.state.data.currentData) {
+            if (window.updateConnectionLegend && typeof window.updateConnectionLegend === 'function') {
+                window.updateConnectionLegend(this.state.data.currentData);
+            }
+        }
+    }
+
+    /**
+     * Handle port click in editing mode
+     * @param {Object} node - Port node
+     * @param {Object} evt - Event object
+     * @param {Object} hierarchyModule - Hierarchy module instance (for connection creation)
+     */
+    handlePortClickEditMode(node, evt, hierarchyModule = null) {
+        const portId = node.id();
+        const existingConnections = this.state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
+
+        // If port is already connected, select the connection
+        if (existingConnections.length > 0) {
+            const edge = existingConnections[0]; // Only one connection per port
+
+            // Clear source port selection if any
+            if (this.state.editing.selectedFirstPort) {
+                this.state.editing.selectedFirstPort.removeClass('source-selected');
+                this.state.editing.selectedFirstPort = null;
+            }
+
+            // Select this connection
+            if (this.state.editing.selectedConnection) {
+                this.state.editing.selectedConnection.removeClass('selected-connection');
+            }
+            this.state.editing.selectedConnection = edge;
+            edge.addClass('selected-connection');
+
+            // Show port info and update UI
+            this.showNodeInfo(node, evt.renderedPosition || evt.position);
+            window.updateDeleteButtonState?.();
+            return;
+        }
+
+        // Port is unconnected - handle connection creation
+        if (!this.state.editing.selectedFirstPort) {
+            // First click - select source port
+            this.state.editing.selectedFirstPort = node;
+            this.state.editing.selectedFirstPort.addClass('source-selected');
+        } else {
+            // Second click - create connection
+            const targetPort = node;
+
+            // Can't connect port to itself
+            if (this.state.editing.selectedFirstPort.id() === targetPort.id()) {
+                this.state.editing.selectedFirstPort.removeClass('source-selected');
+                this.state.editing.selectedFirstPort = null;
+                return;
+            }
+
+            // Create the connection
+            this.createConnection(this.state.editing.selectedFirstPort.id(), targetPort.id(), hierarchyModule);
+
+            // Clear source port selection
+            this.state.editing.selectedFirstPort.removeClass('source-selected');
+            this.state.editing.selectedFirstPort = null;
+        }
+    }
+
+    /**
+     * Handle port click in view mode (not editing)
+     * @param {Object} node - Port node
+     * @param {Object} evt - Event object
+     */
+    handlePortClickViewMode(node, evt) {
+        const portId = node.id();
+        const connectedEdges = this.state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
+
+        if (connectedEdges.length > 0) {
+            // Port has connection - select it
+            const edge = connectedEdges[0]; // Only one connection per port
+
+            if (this.state.editing.selectedConnection) {
+                this.state.editing.selectedConnection.removeClass('selected-connection');
+            }
+
+            this.state.editing.selectedConnection = edge;
+            edge.addClass('selected-connection');
+            this.showNodeInfo(node, evt.renderedPosition || evt.position);
+        } else {
+            // Port has no connection - just show info
+            if (this.state.editing.selectedConnection) {
+                this.state.editing.selectedConnection.removeClass('selected-connection');
+                this.state.editing.selectedConnection = null;
+                window.updateDeleteButtonState?.();
+            }
+            this.showNodeInfo(node, evt.renderedPosition || evt.position);
+        }
+    }
+
+    /**
+     * Update visual highlighting for available ports in editing mode
+     */
+    updatePortEditingHighlight() {
+        if (!this.state.editing.isEdgeCreationMode) return;
+
+        this.state.cy.nodes('.port').forEach(port => {
+            const portId = port.id();
+            const connections = this.state.cy.edges(`[source="${portId}"], [target="${portId}"]`);
+
+            if (connections.length === 0) {
+                // Port is available - add orange highlighting
+                port.style({
+                    'border-width': '3px',
+                    'border-color': '#ff6600',
+                    'border-opacity': 0.7
+                });
+            } else {
+                // Port is connected - use default styling
+                port.style({
+                    'border-width': '2px',
+                    'border-color': '#666666',
+                    'border-opacity': 1.0
+                });
+            }
+        });
+    }
+
+    /**
+     * Get parent node at a specific level (helper for connection creation)
+     * @param {Object} node - Starting node
+     * @param {number} level - Number of levels up (1 = parent, 2 = grandparent, etc.)
+     * @returns {Object|null} Parent node at specified level
+     */
+    getParentAtLevel(node, level) {
+        let current = node;
+        for (let i = 0; i < level; i++) {
+            current = current.parent();
+            if (!current || current.length === 0) {
+                return null;
+            }
+        }
+        return current;
     }
 
 }

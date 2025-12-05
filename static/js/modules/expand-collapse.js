@@ -103,7 +103,7 @@ export class ExpandCollapseModule {
 
         // Batch DOM operations
         this.state.cy.startBatch();
-        
+
         // Hide children (use display: none for shrinking visualization)
         node.children().forEach(child => {
             child.style('display', 'none');
@@ -190,7 +190,7 @@ export class ExpandCollapseModule {
      */
     isNodeActuallyVisible(node) {
         const nodeId = node.id();
-        
+
         // Check cache first (cache is cleared when graph structure changes)
         if (this._visibilityCache.has(nodeId)) {
             return this._visibilityCache.get(nodeId);
@@ -206,14 +206,14 @@ export class ExpandCollapseModule {
         let ancestor = node.parent();
         while (ancestor && ancestor.length > 0) {
             const ancestorId = ancestor.id();
-            
+
             // Check cache for ancestor
             if (this._visibilityCache.has(ancestorId)) {
                 const ancestorVisible = this._visibilityCache.get(ancestorId);
                 this._visibilityCache.set(nodeId, ancestorVisible);
                 return ancestorVisible;
             }
-            
+
             if (ancestor.style('display') === 'none') {
                 this._visibilityCache.set(nodeId, false);
                 this._visibilityCache.set(ancestorId, false);
@@ -369,208 +369,93 @@ export class ExpandCollapseModule {
             return;
         }
 
+        // Collect original edges from affected edges (skip rerouted edges - we'll handle via originals)
+        const originalEdgesToProcess = [];
+        const originalEdgeIds = new Set();
+
+        affectedEdges.forEach((edge) => {
+            if (edge.data('isRerouted')) {
+                const originalEdgeId = edge.data('originalEdgeId');
+                if (originalEdgeId && !originalEdgeIds.has(originalEdgeId)) {
+                    originalEdgeIds.add(originalEdgeId);
+                    const originalEdge = this.state.cy.getElementById(originalEdgeId);
+                    if (originalEdge.length) {
+                        originalEdgesToProcess.push(originalEdge);
+                    }
+                }
+                // Remove rerouted edge - we'll recreate it if needed
+                edge.remove();
+            } else {
+                if (!originalEdgeIds.has(edge.id())) {
+                    originalEdgeIds.add(edge.id());
+                    originalEdgesToProcess.push(edge);
+                }
+            }
+        });
+
         // Batch DOM operations
         this.state.cy.startBatch();
 
-        const processedOriginalEdges = new Set();
-        const processedReroutedEdges = new Set();
-
-        affectedEdges.forEach((edge) => {
-            // Handle rerouted edges separately - they need to be recalculated based on their original endpoints
-            if (edge.data('isRerouted')) {
-                // Skip if already processed
-                if (processedReroutedEdges.has(edge.id())) {
-                    return;
-                }
-                processedReroutedEdges.add(edge.id());
-
-                // Get the original edge ID
-                const originalEdgeId = edge.data('originalEdgeId');
-                if (!originalEdgeId) {
-                    return;
-                }
-
-                // Mark original edge as processed to avoid double processing
-                processedOriginalEdges.add(originalEdgeId);
-
-                // Find the original edge
-                const originalEdge = this.state.cy.getElementById(originalEdgeId);
-                if (!originalEdge.length) {
-                    // Original edge doesn't exist, remove rerouted edge
-                    edge.remove();
-                    return;
-                }
-
-                // Recalculate routing based on original edge
-                const routing = this.recalculateEdgeRouting(originalEdge, collapsedNodeIds);
-
-                if (routing.hide) {
-                    // Hide original edge and remove rerouted version
-                    originalEdge.style('display', 'none');
-                    edge.remove();
-                } else {
-                    const needsRerouting = routing.source !== routing.originalSource ||
-                        routing.target !== routing.originalTarget;
-
-                    if (needsRerouting) {
-                        // Update rerouted edge endpoints or recreate if needed
-                        const currentSource = edge.data('source');
-                        const currentTarget = edge.data('target');
-
-                        if (currentSource !== routing.source || currentTarget !== routing.target) {
-                            // Endpoints changed, need to recreate rerouted edge
-                            originalEdge.style('display', 'none');
-                            edge.remove();
-
-                            // Create new rerouted edge
-                            let reroutedEdgeId = this._generateReroutedEdgeId(originalEdgeId);
-                            // Ensure ID is unique - check if it already exists
-                            let attempts = 0;
-                            while (this.state.cy.getElementById(reroutedEdgeId).length > 0 && attempts < 10) {
-                                reroutedEdgeId = this._generateReroutedEdgeId(originalEdgeId);
-                                attempts++;
-                            }
-                            
-                            const reroutedEdgeData = {
-                                data: {
-                                    id: reroutedEdgeId,
-                                    source: routing.source,
-                                    target: routing.target,
-                                    cable_type: originalEdge.data('cable_type'),
-                                    cable_length: originalEdge.data('cable_length'),
-                                    connection_number: originalEdge.data('connection_number'),
-                                    color: originalEdge.data('color'),
-                                    template_name: originalEdge.data('template_name'),
-                                    depth: originalEdge.data('depth'),
-                                    source_hostname: originalEdge.data('source_hostname'),
-                                    destination_hostname: originalEdge.data('destination_hostname'),
-                                    originalEdgeId: originalEdgeId,
-                                    originalSource: routing.originalSource,
-                                    originalTarget: routing.originalTarget,
-                                    isRerouted: true
-                                },
-                                classes: 'connection rerouted-edge'
-                            };
-
-                            const sourceNode = this.state.cy.getElementById(routing.source);
-                            const targetNode = this.state.cy.getElementById(routing.target);
-
-                            if (sourceNode.length && targetNode.length) {
-                                const reroutedEdge = this.state.cy.add(reroutedEdgeData);
-                                reroutedEdge.style('display', 'element');
-                            }
-                        }
-                    } else {
-                        // No rerouting needed, show original edge and remove rerouted version
-                        originalEdge.style('display', 'element');
-                        edge.remove();
-                    }
-                }
-                return;
-            }
-
-            // Handle original edges
-            // Skip if already processed
-            if (processedOriginalEdges.has(edge.id())) {
-                return;
-            }
-
-            processedOriginalEdges.add(edge.id());
-
-            // Find any existing rerouted edge for this original edge
+        // Process all original edges and create rerouted edges as needed
+        originalEdgesToProcess.forEach((edge) => {
+            // Find any existing rerouted edges for this original edge and remove them
             const existingRerouted = this.state.cy.edges(`[originalEdgeId="${edge.id()}"]`);
+            existingRerouted.forEach(e => e.remove());
 
             // Calculate new routing
             const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
 
             if (routing.hide) {
-                // Hide original edge and remove any rerouted version
+                // Hide original edge (internal/loopback connection)
                 edge.style('display', 'none');
-                existingRerouted.forEach(e => e.remove());
             } else {
                 const needsRerouting = routing.source !== routing.originalSource ||
                     routing.target !== routing.originalTarget;
 
                 if (needsRerouting) {
-                    // Hide original edge
+                    // Hide original edge and create rerouted edge
                     edge.style('display', 'none');
 
-                    // Check if there's already a rerouted edge with the same endpoints
-                    const existingReroutedWithSameEndpoints = existingRerouted.filter(e => {
-                        return e.data('source') === routing.source && 
-                               e.data('target') === routing.target;
-                    });
+                    // Create new rerouted edge for this original edge
+                    // Multiple original edges can reroute to same endpoints - each gets its own rerouted edge
+                    const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
+                    const reroutedEdgeData = {
+                        data: {
+                            id: reroutedEdgeId,
+                            source: routing.source,
+                            target: routing.target,
+                            cable_type: edge.data('cable_type'),
+                            cable_length: edge.data('cable_length'),
+                            connection_number: edge.data('connection_number'),
+                            color: edge.data('color'),
+                            template_name: edge.data('template_name'),
+                            depth: edge.data('depth'),
+                            source_hostname: edge.data('source_hostname'),
+                            destination_hostname: edge.data('destination_hostname'),
+                            originalEdgeId: edge.id(),
+                            originalSource: routing.originalSource,
+                            originalTarget: routing.originalTarget,
+                            isRerouted: true
+                        },
+                        classes: 'connection rerouted-edge'
+                    };
 
-                    if (existingReroutedWithSameEndpoints.length > 0) {
-                        // Reuse existing rerouted edge - just ensure it's visible
-                        existingReroutedWithSameEndpoints[0].style('display', 'element');
-                        // Remove any other rerouted edges for this original edge
-                        existingRerouted.forEach(e => {
-                            if (e.id() !== existingReroutedWithSameEndpoints[0].id()) {
-                                e.remove();
-                            }
-                        });
-                    } else {
-                        // Remove old rerouted edges (they have different endpoints)
-                        existingRerouted.forEach(e => e.remove());
+                    const sourceNode = this.state.cy.getElementById(routing.source);
+                    const targetNode = this.state.cy.getElementById(routing.target);
 
-                        // Create new rerouted edge
-                        const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
-                        // Ensure ID is unique - check if it already exists
-                        let uniqueId = reroutedEdgeId;
-                        let attempts = 0;
-                        while (this.state.cy.getElementById(uniqueId).length > 0 && attempts < 10) {
-                            uniqueId = this._generateReroutedEdgeId(edge.id());
-                            attempts++;
-                        }
-                        
-                        const reroutedEdgeData = {
-                            data: {
-                                id: uniqueId,
-                                source: routing.source,
-                                target: routing.target,
-                                // Copy all edge properties
-                                cable_type: edge.data('cable_type'),
-                                cable_length: edge.data('cable_length'),
-                                connection_number: edge.data('connection_number'),
-                                color: edge.data('color'),
-                                template_name: edge.data('template_name'),
-                                depth: edge.data('depth'),
-                                source_hostname: edge.data('source_hostname'),
-                                destination_hostname: edge.data('destination_hostname'),
-                                // Store original edge info
-                                originalEdgeId: edge.id(),
-                                originalSource: routing.originalSource,
-                                originalTarget: routing.originalTarget,
-                                isRerouted: true
-                            },
-                            classes: 'connection rerouted-edge'
-                        };
-
-                        // Verify source and target nodes exist before creating edge
-                        const sourceNode = this.state.cy.getElementById(routing.source);
-                        const targetNode = this.state.cy.getElementById(routing.target);
-
-                        if (!sourceNode.length || !targetNode.length) {
-                            // Don't create edge if nodes don't exist - keep original hidden
-                            return;
-                        }
-
-                        const reroutedEdge = this.state.cy.add(reroutedEdgeData);
-                        // Explicitly set display to element to ensure visibility
-                        reroutedEdge.style('display', 'element');
+                    if (sourceNode.length && targetNode.length) {
+                        this.state.cy.add(reroutedEdgeData).style('display', 'element');
                     }
                 } else {
-                    // No rerouting needed, show original edge and remove any rerouted version
+                    // No rerouting needed, show original edge
                     edge.style('display', 'element');
-                    existingRerouted.forEach(e => e.remove());
                 }
             }
         });
 
         this.state.cy.endBatch();
 
-        // Schedule curve styles update (debounced)
+        // Schedule curve styles update (debounced) - bezier curves will handle overlapping edges
         this._scheduleCurveStylesUpdate();
     }
 
@@ -588,116 +473,90 @@ export class ExpandCollapseModule {
         // Batch DOM operations
         this.state.cy.startBatch();
 
-        // Track which original edges we've processed
-        const processedOriginalEdges = new Set();
+        // First, collect all original edges and their routing info before making any changes
+        // This ensures we have a clean snapshot of what should exist
+        const originalEdges = [];
+        const originalEdgeRouting = new Map();
 
         allEdges.forEach((edge) => {
-            // Skip if this is a rerouted edge (we'll process it via its original)
-            if (edge.data('isRerouted')) {
-                return;
+            if (!edge.data('isRerouted')) {
+                originalEdges.push(edge);
+                const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
+                originalEdgeRouting.set(edge.id(), { edge, routing });
             }
+        });
 
-            // Skip if already processed
+        // Remove ALL existing rerouted edges first to start clean
+        // This prevents leftover rerouted edges from causing duplicates
+        allEdges.forEach((edge) => {
+            if (edge.data('isRerouted')) {
+                edge.remove();
+            }
+        });
+
+        const processedOriginalEdges = new Set();
+
+        // Process all original edges and create rerouted edges as needed
+        originalEdges.forEach((edge) => {
             if (processedOriginalEdges.has(edge.id())) {
                 return;
             }
 
             processedOriginalEdges.add(edge.id());
 
-            // Find any existing rerouted edge for this original edge
-            const existingRerouted = this.state.cy.edges(`[originalEdgeId="${edge.id()}"]`);
-
-            // Calculate new routing
-            const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
+            const { routing } = originalEdgeRouting.get(edge.id());
 
             if (routing.hide) {
-                // Hide original edge and remove any rerouted version
+                // Hide original edge (internal/loopback connection)
                 edge.style('display', 'none');
-                existingRerouted.forEach(e => e.remove());
             } else {
                 const needsRerouting = routing.source !== routing.originalSource ||
                     routing.target !== routing.originalTarget;
 
                 if (needsRerouting) {
-                    // Hide original edge
+                    // Hide original edge and create rerouted edge
                     edge.style('display', 'none');
 
-                    // Check if there's already a rerouted edge with the same endpoints
-                    const existingReroutedWithSameEndpoints = existingRerouted.filter(e => {
-                        return e.data('source') === routing.source && 
-                               e.data('target') === routing.target;
-                    });
+                    // Create new rerouted edge for this original edge
+                    // Multiple original edges can reroute to same endpoints - each gets its own rerouted edge
+                    const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
+                    const reroutedEdgeData = {
+                        data: {
+                            id: reroutedEdgeId,
+                            source: routing.source,
+                            target: routing.target,
+                            cable_type: edge.data('cable_type'),
+                            cable_length: edge.data('cable_length'),
+                            connection_number: edge.data('connection_number'),
+                            color: edge.data('color'),
+                            template_name: edge.data('template_name'),
+                            depth: edge.data('depth'),
+                            source_hostname: edge.data('source_hostname'),
+                            destination_hostname: edge.data('destination_hostname'),
+                            originalEdgeId: edge.id(),
+                            originalSource: routing.originalSource,
+                            originalTarget: routing.originalTarget,
+                            isRerouted: true
+                        },
+                        classes: 'connection rerouted-edge'
+                    };
 
-                    if (existingReroutedWithSameEndpoints.length > 0) {
-                        // Reuse existing rerouted edge - just ensure it's visible
-                        existingReroutedWithSameEndpoints[0].style('display', 'element');
-                        // Remove any other rerouted edges for this original edge
-                        existingRerouted.forEach(e => {
-                            if (e.id() !== existingReroutedWithSameEndpoints[0].id()) {
-                                e.remove();
-                            }
-                        });
-                    } else {
-                        // Remove old rerouted edges (they have different endpoints)
-                        existingRerouted.forEach(e => e.remove());
+                    const sourceNode = this.state.cy.getElementById(routing.source);
+                    const targetNode = this.state.cy.getElementById(routing.target);
 
-                        // Create new rerouted edge
-                        const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
-                        // Ensure ID is unique - check if it already exists
-                        let uniqueId = reroutedEdgeId;
-                        let attempts = 0;
-                        while (this.state.cy.getElementById(uniqueId).length > 0 && attempts < 10) {
-                            uniqueId = this._generateReroutedEdgeId(edge.id());
-                            attempts++;
-                        }
-                        
-                        const reroutedEdgeData = {
-                            data: {
-                                id: uniqueId,
-                                source: routing.source,
-                                target: routing.target,
-                                // Copy all edge properties
-                                cable_type: edge.data('cable_type'),
-                                cable_length: edge.data('cable_length'),
-                                connection_number: edge.data('connection_number'),
-                                color: edge.data('color'),
-                                template_name: edge.data('template_name'),
-                                depth: edge.data('depth'),
-                                source_hostname: edge.data('source_hostname'),
-                                destination_hostname: edge.data('destination_hostname'),
-                                // Store original edge info
-                                originalEdgeId: edge.id(),
-                                originalSource: routing.originalSource,
-                                originalTarget: routing.originalTarget,
-                                isRerouted: true
-                            },
-                            classes: 'connection rerouted-edge'
-                        };
-
-                        // Verify source and target nodes exist before creating edge
-                        const sourceNode = this.state.cy.getElementById(routing.source);
-                        const targetNode = this.state.cy.getElementById(routing.target);
-
-                        if (!sourceNode.length || !targetNode.length) {
-                            // Don't create edge if nodes don't exist - keep original hidden
-                            return;
-                        }
-
-                        const reroutedEdge = this.state.cy.add(reroutedEdgeData);
-                        // Explicitly set display to element to ensure visibility
-                        reroutedEdge.style('display', 'element');
+                    if (sourceNode.length && targetNode.length) {
+                        this.state.cy.add(reroutedEdgeData).style('display', 'element');
                     }
                 } else {
-                    // No rerouting needed, show original edge and remove any rerouted version
+                    // No rerouting needed, show original edge
                     edge.style('display', 'element');
-                    existingRerouted.forEach(e => e.remove());
                 }
             }
         });
 
         this.state.cy.endBatch();
 
-        // Schedule curve styles update (debounced)
+        // Schedule curve styles update (debounced) - bezier curves will handle overlapping edges
         this._scheduleCurveStylesUpdate();
     }
 
@@ -713,9 +572,7 @@ export class ExpandCollapseModule {
         this._layoutRefreshTimer = requestAnimationFrame(() => {
             this.state.cy.layout({ name: 'preset' }).run();
             // Update button states
-            if (typeof window.updateExpandCollapseButtons === 'function') {
-                window.updateExpandCollapseButtons();
-            }
+            window.updateExpandCollapseButtons?.();
             this._layoutRefreshTimer = null;
         });
     }
@@ -730,8 +587,8 @@ export class ExpandCollapseModule {
         }
 
         this._curveStylesTimer = setTimeout(() => {
-            if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
-                window.forceApplyCurveStyles();
+            if (this.state && this.state.commonModule) {
+                this.state.commonModule.forceApplyCurveStyles();
             }
             this._curveStylesTimer = null;
         }, 50); // Reduced from 100ms to 50ms for faster response
