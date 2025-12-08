@@ -879,9 +879,9 @@ export class HierarchyModule {
         const hasLogicalTopology = shelfDataList.some(shelfInfo =>
             shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0
         );
-        
-        // Track if we're creating extracted_topology root (for connection tagging)
-        // Will be set to "extracted_topology_0" (template-name_instance# notation) if we create it
+
+        // Track if we're creating extracted_topology template (for connection tagging)
+        // Template name: "extracted_topology", Instance name: "extracted_topology_0"
         let rootTemplateName = null;
 
         if (hasLogicalTopology) {
@@ -1027,38 +1027,62 @@ export class HierarchyModule {
                 });
             });
         } else {
-            // No logical topology - create "extracted_topology_0" root container
+            // No logical topology - create "extracted_topology" template with instance "extracted_topology_0"
             // This wraps the flat structure so it can be exported hierarchically
-            // Use template-name_instance# notation (instance 0 since it's the first/only instance)
-            rootTemplateName = "extracted_topology_0";
+            // Template name: "extracted_topology", Instance name: "extracted_topology_0"
+            const templateName = "extracted_topology";
+            const instanceName = "extracted_topology_0";
+            rootTemplateName = templateName; // Use template name for connection tagging
             const rootGraphId = "graph_extracted_topology_0";
-            
-            // Get template color for the root
-            const rootTemplateColor = this.common.getTemplateColor(rootTemplateName);
-            
+
+            // Get template color for the root (use template name, not instance name)
+            const rootTemplateColor = this.common.getTemplateColor(templateName);
+
             // Create root graph node
             newElements.push({
                 data: {
                     id: rootGraphId,
-                    label: rootTemplateName,
+                    label: instanceName, // Instance name: extracted_topology_0
                     type: 'graph',
-                    template_name: rootTemplateName,
+                    template_name: templateName, // Template name: extracted_topology
+                    child_name: instanceName, // Instance name: extracted_topology_0
                     parent: null,
                     depth: 0,
                     templateColor: rootTemplateColor
                 },
                 classes: 'graph'
             });
-            
-            // Add all shelves as children of the extracted_topology_0 root
-            shelfDataList.forEach((shelfInfo, index) => {
+
+            // Sort shelves by host_index before adding them as children
+            // This ensures consistent ordering in the exported topology
+            const sortedShelfDataList = [...shelfDataList].sort((a, b) => {
+                const hostIndexA = a.data.host_index;
+                const hostIndexB = b.data.host_index;
+
+                // Handle undefined/null host_index values (put them at the end)
+                if (hostIndexA === undefined || hostIndexA === null) {
+                    if (hostIndexB === undefined || hostIndexB === null) {
+                        return 0; // Both undefined, maintain order
+                    }
+                    return 1; // A is undefined, B is not, so A comes after B
+                }
+                if (hostIndexB === undefined || hostIndexB === null) {
+                    return -1; // B is undefined, A is not, so B comes after A
+                }
+
+                // Both have host_index, sort numerically
+                return hostIndexA - hostIndexB;
+            });
+
+            // Add all shelves as children of the extracted_topology_0 root (sorted by host_index)
+            sortedShelfDataList.forEach((shelfInfo, index) => {
                 // Determine child_name - use hostname if available, otherwise use host_index
                 let childName = shelfInfo.data.child_name;
                 if (!childName) {
                     // Use hostname as child_name for flat structures
                     childName = shelfInfo.data.hostname || `host_${shelfInfo.data.host_index ?? index}`;
                 }
-                
+
                 // Format label for hierarchy mode: "child_name (host_index)"
                 let hierarchyLabel = shelfInfo.data.label; // Default to existing label
                 const hostIndex = shelfInfo.data.host_index;
@@ -1134,22 +1158,22 @@ export class HierarchyModule {
         });
 
         // Re-create connections with all preserved data
-        // If we created extracted_topology_0 root, tag all connections with that template
-        const shouldTagWithExtractedTopology = !hasLogicalTopology && rootTemplateName && rootTemplateName.startsWith("extracted_topology");
-        
+        // If we created extracted_topology root, tag all connections with that template
+        const shouldTagWithExtractedTopology = !hasLogicalTopology && rootTemplateName && rootTemplateName === "extracted_topology";
+
         connections.forEach(conn => {
             const connectionData = { ...conn.data };
-            
-            // Tag connections with extracted_topology_0 template if we're in flat structure mode
+
+            // Tag connections with extracted_topology template if we're in flat structure mode
             if (shouldTagWithExtractedTopology) {
-                connectionData.template_name = rootTemplateName;
+                connectionData.template_name = rootTemplateName; // Use template name: "extracted_topology"
                 connectionData.containerTemplate = rootTemplateName;
                 // Set depth to 0 since they're at the root template level
                 if (connectionData.depth === undefined || connectionData.depth === null) {
                     connectionData.depth = 0;
                 }
             }
-            
+
             newElements.push({
                 data: connectionData,
                 classes: conn.classes

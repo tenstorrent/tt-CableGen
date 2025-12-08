@@ -648,7 +648,7 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     
     Strategy:
     - Export using graph templates structure (hierarchical)
-    - All structures are now wrapped in proper hierarchy (including "extracted_topology_0" root)
+    - All structures are now wrapped in proper hierarchy (including "extracted_topology" template with instance "extracted_topology_0")
     """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
@@ -656,11 +656,11 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     # Check if shelf nodes have logical topology information
     # This includes:
     # 1. Shelf nodes with non-empty logical_path (from descriptor imports)
-    # 2. Graph nodes present (including "extracted_topology_0" root from mode switching)
+    # 2. Graph nodes present (including "extracted_topology" template from mode switching)
     elements = cytoscape_data.get("elements", [])
     has_logical_topology = False
     
-    # Check for graph nodes first (including extracted_topology_0 root)
+    # Check for graph nodes first (including extracted_topology template)
     has_graph_nodes = any(
         el.get("data", {}).get("type") in ["graph", "superpod", "pod", "cluster", "zone", "region"]
         for el in elements
@@ -691,7 +691,7 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
             # Build hierarchy from logical_path data
             return export_hierarchical_cabling_descriptor(cytoscape_data)
     else:
-        # No graph nodes found - this should not happen as mode switching creates "extracted_topology_0" root
+        # No graph nodes found - this should not happen as mode switching creates "extracted_topology" template
         raise ValueError(
             "Cannot export cabling descriptor: No graph nodes found. "
             "Please switch to topology mode first, which will create the proper hierarchy structure."
@@ -883,7 +883,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             root_graph_nodes.append(el)
     
     if not root_graph_nodes:
-        # No hierarchical structure found - this should not happen as mode switching creates "extracted_topology_0" root
+        # No hierarchical structure found - this should not happen as mode switching creates "extracted_topology" template
         raise ValueError(
             "Cannot export cabling descriptor: No root graph nodes found. "
             "Please switch to topology mode first, which will create the proper hierarchy structure."
@@ -978,9 +978,9 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
         root_graph_data = root_graph_el.get("data", {})
         root_template_name = root_graph_data.get("template_name", "root_template")
         
-        # Special case: "extracted_topology_0" is always the root template (from mode switching)
+        # Special case: "extracted_topology" is always the root template (from mode switching)
         # Use it directly without wrapping
-        if root_template_name and root_template_name.startswith("extracted_topology"):
+        if root_template_name and root_template_name == "extracted_topology":
             root_instance = cluster_config_pb2.GraphInstance()
             root_instance.template_name = root_template_name
             

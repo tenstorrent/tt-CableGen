@@ -38,12 +38,12 @@ export function getTestDataFiles(extension, subdirectory = null) {
     if (!fs.existsSync(TEST_DATA_DIR)) {
         return [];
     }
-    
+
     const searchDir = subdirectory ? path.join(TEST_DATA_DIR, subdirectory) : TEST_DATA_DIR;
     if (!fs.existsSync(searchDir)) {
         return [];
     }
-    
+
     return fs.readdirSync(searchDir)
         .filter(file => file.endsWith(extension))
         .map(file => subdirectory ? path.join(subdirectory, file) : file)
@@ -440,7 +440,13 @@ for conn in connections:
     csv_line = f"{source_hostname},{source_loc.get('hall', '')},{source_loc.get('aisle', '')},{source_loc.get('rack', '')},{source_loc.get('shelf_u', '')},{source_tray},{source_port},{source_label},{source_node_type},{target_hostname},{target_loc.get('hall', '')},{target_loc.get('aisle', '')},{target_loc.get('rack', '')},{target_loc.get('shelf_u', '')},{target_tray},{target_port},{target_label},{target_node_type},{cable_length},{cable_type}"
     csv_lines.append(csv_line)
 
-result = "\\n".join(csv_lines)
+# Add CSV header lines (matching the format expected by CSV import)
+# Line 1: Source,Destination marker with commas aligning to columns (9 commas after Source, 9 commas after Destination)
+# Line 2: Column headers
+header_line_1 = "Source,,,,,,,,,Destination,,,,,,,,,Cable Length,Cable Type"
+header_line_2 = "Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,,"
+
+result = header_line_1 + "\\n" + header_line_2 + "\\n" + "\\n".join(csv_lines)
 print(result)`;
 
         // Write script to temp file
@@ -573,13 +579,13 @@ export function parseDeploymentDescriptor(filePath) {
     const deploymentDir = path.join(TEST_DATA_DIR, 'deployment-descriptors');
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(deploymentDir, filePath);
     const content = fs.readFileSync(absPath, 'utf-8');
-    
+
     // Parse deployment descriptor textproto format
     // Format: hosts: { hall: "...", aisle: "...", rack: N, shelf_u: N, host: "..." }
     const hosts = [];
     const hostRegex = /hosts:\s*\{([^}]+)\}/g;
     let match;
-    
+
     while ((match = hostRegex.exec(content)) !== null) {
         const hostBlock = match[1];
         const host = {
@@ -589,26 +595,26 @@ export function parseDeploymentDescriptor(filePath) {
             shelf_u: 0,
             host: ''
         };
-        
+
         // Extract fields from host block
         const hallMatch = hostBlock.match(/hall:\s*"([^"]+)"/);
         if (hallMatch) host.hall = hallMatch[1];
-        
+
         const aisleMatch = hostBlock.match(/aisle:\s*"([^"]+)"/);
         if (aisleMatch) host.aisle = aisleMatch[1];
-        
+
         const rackMatch = hostBlock.match(/rack:\s*(\d+)/);
         if (rackMatch) host.rack = parseInt(rackMatch[1]);
-        
+
         const shelfUMatch = hostBlock.match(/shelf_u:\s*(\d+)/);
         if (shelfUMatch) host.shelf_u = parseInt(shelfUMatch[1]);
-        
+
         const hostMatch = hostBlock.match(/host:\s*"([^"]+)"/);
         if (hostMatch) host.host = hostMatch[1];
-        
+
         hosts.push(host);
     }
-    
+
     // Convert to format expected by updateShelfLocations
     // Elements array with shelf nodes indexed by host_id
     const elements = hosts.map((host, hostIndex) => ({
@@ -623,7 +629,68 @@ export function parseDeploymentDescriptor(filePath) {
             hostname: host.host
         }
     }));
-    
+
+    return { elements };
+}
+
+/**
+ * Parse deployment descriptor from textproto content (string) and convert to format expected by updateShelfLocations
+ * @param {string} textprotoContent - Deployment descriptor textproto content as string
+ * @returns {Object} Deployment data in format expected by updateShelfLocations
+ */
+export function parseDeploymentDescriptorFromContent(textprotoContent) {
+    // Parse deployment descriptor textproto format
+    // Format: hosts { hall: "..." aisle: "..." rack: N shelf_u: N host: "..." }
+    // Multiple hosts blocks, one per host
+    const hosts = [];
+    // Match each hosts { ... } block (handles nested braces correctly)
+    const hostRegex = /hosts\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g;
+    let match;
+
+    while ((match = hostRegex.exec(textprotoContent)) !== null) {
+        const hostBlock = match[1];
+        const host = {
+            hall: '',
+            aisle: '',
+            rack: 0,
+            shelf_u: 0,
+            host: ''
+        };
+
+        // Extract fields from host block (fields can be on separate lines or same line)
+        const hallMatch = hostBlock.match(/hall:\s*"([^"]+)"/);
+        if (hallMatch) host.hall = hallMatch[1];
+
+        const aisleMatch = hostBlock.match(/aisle:\s*"([^"]+)"/);
+        if (aisleMatch) host.aisle = aisleMatch[1];
+
+        const rackMatch = hostBlock.match(/rack:\s*(\d+)/);
+        if (rackMatch) host.rack = parseInt(rackMatch[1]);
+
+        const shelfUMatch = hostBlock.match(/shelf_u:\s*(\d+)/);
+        if (shelfUMatch) host.shelf_u = parseInt(shelfUMatch[1]);
+
+        const hostMatch = hostBlock.match(/host:\s*"([^"]+)"/);
+        if (hostMatch) host.host = hostMatch[1];
+
+        hosts.push(host);
+    }
+
+    // Convert to format expected by updateShelfLocations
+    // Elements array with shelf nodes indexed by host_id
+    const elements = hosts.map((host, hostIndex) => ({
+        data: {
+            type: 'shelf',
+            host_index: hostIndex,
+            host_id: hostIndex,
+            hall: host.hall,
+            aisle: host.aisle,
+            rack_num: host.rack,
+            shelf_u: host.shelf_u,
+            hostname: host.host
+        }
+    }));
+
     return { elements };
 }
 

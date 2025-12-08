@@ -34,6 +34,7 @@ import {
     saveTestArtifact,
     parseDeploymentDescriptorHostnames,
     parseDeploymentDescriptor,
+    parseDeploymentDescriptorFromContent,
     loadExpectedOutput,
     parseExportedTextproto
 } from './test-helpers.js';
@@ -169,7 +170,7 @@ describe('Import/Export Flow Integration Tests', () => {
             headless: true, // Run in headless mode (no DOM rendering needed)
             elements: []
         });
-        
+
         // Mock style() method for headless mode (some methods need it)
         if (!state.cy.style || typeof state.cy.style !== 'function') {
             state.cy.style = jest.fn(() => ({
@@ -308,8 +309,7 @@ describe('Import/Export Flow Integration Tests', () => {
             // Verify CSV format
             const csvLines = exportedCSV.split('\n');
             expect(csvLines.length).toBeGreaterThan(2); // Header + at least one data row
-            expect(csvLines[0]).toContain('Source');
-            expect(csvLines[0]).toContain('Destination');
+            expect(csvLines[0]).toMatch(/^Source,.*Destination,.*Cable Length,Cable Type/);
             expect(csvLines[1]).toContain('Hostname');
 
             // Verify exported data contains connections
@@ -785,12 +785,28 @@ describe('Import/Export Flow Integration Tests', () => {
                 });
             }
 
-            // Step 3: Python Export
+            // Step 3: Python Export - Should fail because we're in location mode
+            // Cabling descriptor export requires hierarchy mode (with graph nodes)
             const cytoscapeData = getCytoscapeData();
-            const exportedTextproto = exportToPython(cytoscapeData);
 
-            expect(exportedTextproto).toBeTruthy();
-            expect(exportedTextproto.length).toBeGreaterThan(0);
+            // Verify we're in location mode (no graph nodes)
+            const graphNodes = cytoscapeData.elements.filter(el =>
+                el.data && el.data.type === 'graph'
+            );
+            expect(graphNodes.length).toBe(0); // Should be in location mode
+
+            // Attempting to export should fail
+            expect(() => {
+                exportToPython(cytoscapeData);
+            }).toThrow();
+
+            // Verify the error message
+            try {
+                exportToPython(cytoscapeData);
+            } catch (error) {
+                expect(error.message).toContain('No graph nodes found');
+                expect(error.message).toContain('switch to topology mode');
+            }
 
             // Verify connection count increased or stayed same
             const modifiedConnections = countConnections();
@@ -923,19 +939,51 @@ describe('Import/Export Flow Integration Tests', () => {
             state.setMode('hierarchy');
             expect(importedData.elements.length).toBeGreaterThan(0);
 
-            // Step 2: JS Modification - Create a new template
+            // Step 2: Get the root graph and select it BEFORE creating new template
+            // This ensures createNewTemplate adds the instance as a child, not at root level
+            const rootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0; // Root level
+            });
+
+            expect(rootGraphs.length).toBeGreaterThan(0);
+            const rootGraph = rootGraphs[0];
+            const rootGraphId = rootGraph.id();
+            const rootTemplateName = rootGraph.data('template_name');
+
+            // Select the root graph BEFORE creating template (so instance is added as child)
+            state.cy.elements().unselect();
+            rootGraph.select();
+            state.editing.selectedNode = rootGraph;
+
+            // Verify selection
+            const selectedNodes = state.cy.nodes(':selected');
+            expect(selectedNodes.length).toBe(1);
+            expect(selectedNodes[0].id()).toBe(rootGraphId);
+
+            // Step 3: JS Modification - Create a new template
+            // Since root is selected, createNewTemplate will add instance as child of root
             const newTemplateNameInput = mockDOM.getElementById('newTemplateNameInput');
             newTemplateNameInput.value = 'new_template';
 
             hierarchyModule.createNewTemplate();
 
-            // Step 3: JS Modification - Add graph instance using new template
-            const graphTemplateSelect = mockDOM.getElementById('graphTemplateSelect');
-            graphTemplateSelect.value = 'new_template';
+            // Step 4: Verify we still have only one root template (the original root)
+            const finalRootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0; // Root level
+            });
+            expect(finalRootGraphs.length).toBe(1); // Should still have single root
+            expect(finalRootGraphs[0].data('template_name')).toBe(rootTemplateName); // Should be the original root
 
-            hierarchyModule.addGraph(graphTemplateSelect);
+            // Verify the new_template instance was added as a child of the root (not at root level)
+            const rootChildren = finalRootGraphs[0].children('[type="graph"]');
+            const newTemplateInstances = rootChildren.filter(node =>
+                node.data('template_name') === 'new_template'
+            );
+            expect(newTemplateInstances.length).toBeGreaterThan(0); // Should have at least one instance as child
 
-            // Step 4: Python Export - Should succeed since template now has children
+            // Step 5: Python Export - Should succeed since we have single root
             const cytoscapeData = getCytoscapeData();
             const exportedTextproto = exportToPython(cytoscapeData);
 
@@ -1358,52 +1406,52 @@ describe('Import/Export Flow Integration Tests', () => {
         });
 
         test.skip('Export should error on empty root template', () => {
-        // Step 1: Python Import - Use real test file
-        const textprotoFiles = getTestDataFiles('.textproto');
-        if (textprotoFiles.length === 0) {
-            throw new Error('No textproto test files found in test-data directory. Please add test files to run this test.');
-        }
+            // Step 1: Python Import - Use real test file
+            const textprotoFiles = getTestDataFiles('.textproto');
+            if (textprotoFiles.length === 0) {
+                throw new Error('No textproto test files found in test-data directory. Please add test files to run this test.');
+            }
 
-        const importedData = importFromPython(textprotoFiles[0]);
+            const importedData = importFromPython(textprotoFiles[0]);
 
-        state.setMode('hierarchy');
-        expect(importedData.elements.length).toBeGreaterThan(0);
+            state.setMode('hierarchy');
+            expect(importedData.elements.length).toBeGreaterThan(0);
 
-        // Step 2: JS Modification - Create a new empty template at root level
-        // Ensure document.getElementById works - if not, use mockDOM directly
-        let newTemplateNameInput = document.getElementById('newTemplateNameInput');
-        if (!newTemplateNameInput) {
-            // Fallback: try mockDOM
-            newTemplateNameInput = mockDOM.getElementById('newTemplateNameInput');
-        }
-        if (!newTemplateNameInput) {
-            throw new Error('Failed to get newTemplateNameInput element from document or mockDOM');
-        }
-        newTemplateNameInput.value = 'empty_root_template';
+            // Step 2: JS Modification - Create a new empty template at root level
+            // Ensure document.getElementById works - if not, use mockDOM directly
+            let newTemplateNameInput = document.getElementById('newTemplateNameInput');
+            if (!newTemplateNameInput) {
+                // Fallback: try mockDOM
+                newTemplateNameInput = mockDOM.getElementById('newTemplateNameInput');
+            }
+            if (!newTemplateNameInput) {
+                throw new Error('Failed to get newTemplateNameInput element from document or mockDOM');
+            }
+            newTemplateNameInput.value = 'empty_root_template';
 
-        hierarchyModule.createNewTemplate();
+            hierarchyModule.createNewTemplate();
 
-        // Verify the empty template was created at root
-        const topLevelGraphs = state.cy.nodes('[type="graph"]').filter(node => {
-            const parent = node.parent();
-            return parent.length === 0;
-        });
-        const emptyRootTemplate = topLevelGraphs.find(n =>
-            n.data('template_name') === 'empty_root_template'
-        );
-        expect(emptyRootTemplate).toBeTruthy();
-        expect(emptyRootTemplate.children().length).toBe(0);
+            // Verify the empty template was created at root
+            const topLevelGraphs = state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0;
+            });
+            const emptyRootTemplate = topLevelGraphs.find(n =>
+                n.data('template_name') === 'empty_root_template'
+            );
+            expect(emptyRootTemplate).toBeTruthy();
+            expect(emptyRootTemplate.children().length).toBe(0);
 
-        // Step 3: Python Export - Should error because root template is empty
-        const cytoscapeData = getCytoscapeData();
-        expect(() => {
-            exportToPython(cytoscapeData);
-        }).toThrow(/Empty root template|empty root template|Cannot export CablingDescriptor/);
+            // Step 3: Python Export - Should error because root template is empty
+            const cytoscapeData = getCytoscapeData();
+            expect(() => {
+                exportToPython(cytoscapeData);
+            }).toThrow(/Empty root template|empty root template|Cannot export CablingDescriptor/);
         });
 
         test('Textproto import -> create new template -> move root graph -> verify single instance', () => {
-                // Step 1: Python Import - Import cabling descriptor textproto
-                const textprotoFiles = getTestDataFiles('.textproto', 'cabling-descriptors');
+            // Step 1: Python Import - Import cabling descriptor textproto
+            const textprotoFiles = getTestDataFiles('.textproto', 'cabling-descriptors');
             if (textprotoFiles.length === 0) {
                 throw new Error('No textproto test files found in test-data directory. Please add test files to run this test.');
             }
@@ -1608,7 +1656,7 @@ describe('Import/Export Flow Integration Tests', () => {
                 const source = state.cy.getElementById(edge.data('source'));
                 const target = state.cy.getElementById(edge.data('target'));
                 return (source && source.ancestors().some(a => a.id() === firstInstance.id())) ||
-                       (target && target.ancestors().some(a => a.id() === firstInstance.id()));
+                    (target && target.ancestors().some(a => a.id() === firstInstance.id()));
             });
 
             if (instanceEdges.length === 0) {
@@ -1641,7 +1689,7 @@ describe('Import/Export Flow Integration Tests', () => {
                     const source = state.cy.getElementById(edge.data('source'));
                     const target = state.cy.getElementById(edge.data('target'));
                     return (source && source.ancestors().some(a => a.id() === instance.id())) ||
-                           (target && target.ancestors().some(a => a.id() === instance.id()));
+                        (target && target.ancestors().some(a => a.id() === instance.id()));
                 });
                 connectionsBefore.set(instance.id(), instanceEdges.length);
             });
@@ -1671,7 +1719,7 @@ describe('Import/Export Flow Integration Tests', () => {
                     const source = state.cy.getElementById(edge.data('source'));
                     const target = state.cy.getElementById(edge.data('target'));
                     return (source && source.ancestors().some(a => a.id() === instance.id())) ||
-                           (target && target.ancestors().some(a => a.id() === instance.id()));
+                        (target && target.ancestors().some(a => a.id() === instance.id()));
                 });
                 connectionsAfter.set(instance.id(), instanceEdges.length);
             });
@@ -1748,7 +1796,7 @@ describe('Import/Export Flow Integration Tests', () => {
                 const source = state.cy.getElementById(edge.data('source'));
                 const target = state.cy.getElementById(edge.data('target'));
                 return (source && source.ancestors().some(a => a.id() === firstNestedInstance.id())) ||
-                       (target && target.ancestors().some(a => a.id() === firstNestedInstance.id()));
+                    (target && target.ancestors().some(a => a.id() === firstNestedInstance.id()));
             });
 
             if (nestedEdges.length === 0) {
@@ -2094,7 +2142,7 @@ describe('Import/Export Flow Integration Tests', () => {
             let matchingInstances = 0;
             targetTemplateInstances.forEach(instance => {
                 const instanceConnectionSet = instanceConnections.get(instance.id());
-                
+
                 // Count how many connections match
                 let matches = 0;
                 firstConnectionSet.forEach(conn => {
@@ -2157,14 +2205,14 @@ describe('Import/Export Flow Integration Tests', () => {
                     connectionsTotal++;
                     const source = state.cy.getElementById(edge.data('source'));
                     const target = state.cy.getElementById(edge.data('target'));
-                    
+
                     if (source && source.length > 0 && target && target.length > 0) {
                         // Verify ports exist and are accessible
-                        const sourcePath = hierarchyModule.findPortByPath ? 
+                        const sourcePath = hierarchyModule.findPortByPath ?
                             'path_resolved' : 'path_exists';
-                        const targetPath = hierarchyModule.findPortByPath ? 
+                        const targetPath = hierarchyModule.findPortByPath ?
                             'path_resolved' : 'path_exists';
-                        
+
                         if (sourcePath && targetPath) {
                             connectionsResolved++;
                         }
@@ -2406,12 +2454,12 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Step 4: Try to export - should error because root template is empty
             const cytoscapeData = getCytoscapeData();
-            
+
             // The export should either error or handle empty templates gracefully
             // Check if export throws or returns empty/invalid result
             let exportError = null;
             let exportedTextproto = null;
-            
+
             try {
                 exportedTextproto = exportToPython(cytoscapeData);
             } catch (error) {
@@ -2454,7 +2502,7 @@ describe('Import/Export Flow Integration Tests', () => {
             }
 
             // Find a shelf with location data to use as target location
-            const shelfWithLocation = shelfNodes.filter(s => 
+            const shelfWithLocation = shelfNodes.filter(s =>
                 s.data('hall') && s.data('aisle') && s.data('rack_num')
             )[0];
 
@@ -2499,10 +2547,10 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Count containers after first node (baseline)
             const baselineHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2536,10 +2584,10 @@ describe('Import/Export Flow Integration Tests', () => {
             // Step 6: Verify no duplicate containers were created
             // After adding second node, container counts should remain the same (no duplicates)
             const finalHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2562,8 +2610,8 @@ describe('Import/Export Flow Integration Tests', () => {
                 const rRackNumRaw = r.data('rack_num');
                 const rRackNum = typeof rRackNumRaw === 'string' ? parseInt(rRackNumRaw) : rRackNumRaw;
                 return rHall === targetHall &&
-                       rAisle === targetAisle &&
-                       rRackNum === targetRackNum;
+                    rAisle === targetAisle &&
+                    rRackNum === targetRackNum;
             });
 
             // Find shelves in the target location (should include both nodes we added)
@@ -2573,17 +2621,17 @@ describe('Import/Export Flow Integration Tests', () => {
                 const sRackNumRaw = shelf.data('rack_num');
                 const sRackNum = typeof sRackNumRaw === 'string' ? parseInt(sRackNumRaw) : sRackNumRaw;
                 return sHall === targetHall &&
-                       sAisle === targetAisle &&
-                       sRackNum === targetRackNum;
+                    sAisle === targetAisle &&
+                    sRackNum === targetRackNum;
             });
 
             // Count shelves before adding nodes
             const shelvesBefore = state.cy.nodes('[type="shelf"]').length;
-            
+
             // Should have at least one more shelf than before (the nodes we added)
             // Note: addNode might not work in test environment, so we'll verify what we can
             const shelvesAfter = state.cy.nodes('[type="shelf"]').length;
-            
+
             // If nodes were added, verify they're in the correct location
             if (shelvesAfter > shelvesBefore) {
                 expect(shelvesInLocation.length).toBeGreaterThan(0);
@@ -2658,10 +2706,10 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Count containers for target location after ensuring they exist
             const baselineHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2688,10 +2736,10 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Step 6: Verify no duplicate containers were created
             const finalHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2708,7 +2756,7 @@ describe('Import/Export Flow Integration Tests', () => {
             expect(finalRackCount).toBeLessThanOrEqual(1);
 
             // Step 7: Verify the shelf was moved to the correct rack
-            const targetRacks = state.cy.nodes('[type="rack"]').filter(r => 
+            const targetRacks = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2744,7 +2792,7 @@ describe('Import/Export Flow Integration Tests', () => {
             }
 
             // Find a shelf with location data to use as target
-            const targetShelf = shelfNodes.filter(s => 
+            const targetShelf = shelfNodes.filter(s =>
                 s.data('hall') && s.data('aisle') && s.data('rack_num')
             )[0];
 
@@ -2760,7 +2808,7 @@ describe('Import/Export Flow Integration Tests', () => {
             const targetRackNum = typeof targetRackNumRaw === 'string' ? parseInt(targetRackNumRaw) : targetRackNumRaw;
 
             // Step 3: Find a different shelf to modify
-            const shelfToModify = shelfNodes.filter(s => 
+            const shelfToModify = shelfNodes.filter(s =>
                 s.id() !== targetShelf.id() &&
                 (s.data('hall') !== targetHall || s.data('aisle') !== targetAisle || s.data('rack_num') !== targetRackNum)
             )[0];
@@ -2779,10 +2827,10 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Count containers for target location after ensuring they exist
             const baselineHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2805,10 +2853,10 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Step 6: Verify no duplicate containers were created
             const finalHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === targetHall).length;
-            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === targetHall && a.data('aisle') === targetAisle
             ).length;
-            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r => 
+            const finalRackCount = state.cy.nodes('[type="rack"]').filter(r =>
                 r.data('hall') === targetHall &&
                 r.data('aisle') === targetAisle &&
                 r.data('rack_num') === targetRackNum
@@ -2840,7 +2888,7 @@ describe('Import/Export Flow Integration Tests', () => {
         test('Location mode -> empty canvas -> add nodes with different racks -> verify hall/aisle reused and new rack created', () => {
             // Step 1: Start with empty canvas in location mode
             state.setMode('location');
-            
+
             // Verify we start with empty canvas
             expect(state.cy.nodes().length).toBe(0);
 
@@ -2881,7 +2929,7 @@ describe('Import/Export Flow Integration Tests', () => {
             // Note: Hall/aisle containers may not be created if _shouldShowHallsAndAisles() 
             // returns false (when there's only one unique hall/aisle), but rack should always be created
             const baselineHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === hall1).length;
-            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const baselineAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === hall1 && a.data('aisle') === aisle1
             ).length;
             const baselineRackCount = state.cy.nodes('[type="rack"]').filter(r => {
@@ -2889,8 +2937,8 @@ describe('Import/Export Flow Integration Tests', () => {
                 const rAisle = r.data('aisle') || '';
                 const rRackNum = typeof r.data('rack_num') === 'string' ? parseInt(r.data('rack_num')) : r.data('rack_num');
                 return rHall === hall1 &&
-                       rAisle === aisle1 &&
-                       rRackNum === rack1;
+                    rAisle === aisle1 &&
+                    rRackNum === rack1;
             }).length;
 
             // Verify first node was created
@@ -2899,7 +2947,7 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Verify rack was created (rack should always be created when rackNum is provided)
             expect(baselineRackCount).toBeGreaterThanOrEqual(1);
-            
+
             // Hall/aisle may or may not be created depending on _shouldShowHallsAndAisles() logic
             // They will be created if there are multiple unique values, or if the single value is non-empty
 
@@ -2933,7 +2981,7 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Step 5: Verify hall/aisle were reused and new rack was created
             const finalHallCount = state.cy.nodes('[type="hall"]').filter(h => h.data('hall') === hall1).length;
-            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a => 
+            const finalAisleCount = state.cy.nodes('[type="aisle"]').filter(a =>
                 a.data('hall') === hall1 && a.data('aisle') === aisle1
             ).length;
             const finalRack1Count = state.cy.nodes('[type="rack"]').filter(r => {
@@ -2941,16 +2989,16 @@ describe('Import/Export Flow Integration Tests', () => {
                 const rAisle = r.data('aisle') || '';
                 const rRackNum = typeof r.data('rack_num') === 'string' ? parseInt(r.data('rack_num')) : r.data('rack_num');
                 return rHall === hall1 &&
-                       rAisle === aisle1 &&
-                       rRackNum === rack1;
+                    rAisle === aisle1 &&
+                    rRackNum === rack1;
             }).length;
             const finalRack2Count = state.cy.nodes('[type="rack"]').filter(r => {
                 const rHall = r.data('hall') || '';
                 const rAisle = r.data('aisle') || '';
                 const rRackNum = typeof r.data('rack_num') === 'string' ? parseInt(r.data('rack_num')) : r.data('rack_num');
                 return rHall === hall1 &&
-                       rAisle === aisle1 &&
-                       rRackNum === rack2;
+                    rAisle === aisle1 &&
+                    rRackNum === rack2;
             }).length;
 
             // Verify hall/aisle counts didn't increase (reused existing containers if they exist)
@@ -2961,7 +3009,7 @@ describe('Import/Export Flow Integration Tests', () => {
                 // If halls weren't created initially, they should be created now (2 nodes with same hall)
                 expect(finalHallCount).toBeGreaterThanOrEqual(1);
             }
-            
+
             if (baselineAisleCount > 0) {
                 expect(finalAisleCount).toBe(baselineAisleCount); // Should reuse existing
             } else {
@@ -3090,7 +3138,7 @@ describe('Import/Export Flow Integration Tests', () => {
             // Step 8: Load and compare with expected output
             try {
                 const expectedCSV = loadExpectedOutput('16_lb_expected.csv');
-                
+
                 // Normalize both CSVs for comparison (split into lines, sort, compare)
                 const exportedLines = exportedCSV.split('\n').filter(line => line.trim().length > 0).sort();
                 const expectedLines = expectedCSV.split('\n').filter(line => line.trim().length > 0).sort();
@@ -3100,17 +3148,17 @@ describe('Import/Export Flow Integration Tests', () => {
                 // Filter out header lines (lines starting with "Source" or "Hostname" or "Destination")
                 const exportedDataLines = exportedLines.filter(line => {
                     const trimmed = line.trim();
-                    return !trimmed.startsWith('Source,') && 
-                           !trimmed.startsWith('Hostname,') && 
-                           !trimmed.startsWith('Destination,') &&
-                           trimmed.length > 0;
+                    return !trimmed.startsWith('Source,') &&
+                        !trimmed.startsWith('Hostname,') &&
+                        !trimmed.startsWith('Destination,') &&
+                        trimmed.length > 0;
                 });
                 const expectedDataLines = expectedLines.filter(line => {
                     const trimmed = line.trim();
-                    return !trimmed.startsWith('Source,') && 
-                           !trimmed.startsWith('Hostname,') && 
-                           !trimmed.startsWith('Destination,') &&
-                           trimmed.length > 0;
+                    return !trimmed.startsWith('Source,') &&
+                        !trimmed.startsWith('Hostname,') &&
+                        !trimmed.startsWith('Destination,') &&
+                        trimmed.length > 0;
                 });
 
                 expect(exportedDataLines.length).toBe(expectedDataLines.length);
@@ -3130,16 +3178,17 @@ describe('Import/Export Flow Integration Tests', () => {
                 // If expected file doesn't exist or comparison fails, verify export format and content
                 console.log(`⚠️ Expected output comparison failed, verifying export format: ${error.message}`);
                 // Verify CSV has proper headers ("Source" and "Destination")
-                expect(exportedCSV).toMatch(/^Source,/m);
-                expect(exportedCSV).toMatch(/Destination,/);
+                expect(exportedCSV).toMatch(/^Source,Destination/m);
+                expect(exportedCSV).toMatch(/Source Hostname/);
+                expect(exportedCSV).toMatch(/Destination Hostname/);
                 // Verify deployment descriptor data is in export
                 expect(exportedCSV).toMatch(/SC_Floor_5/); // Expected hall from deployment descriptor
                 expect(exportedCSV).toMatch(/A,/); // Expected aisle
-                
+
                 // Verify we have connection data (more than just headers)
-                const dataLines = exportedCSV.split('\n').filter(line => 
-                    line.trim().length > 0 && 
-                    !line.match(/^Source,/) && 
+                const dataLines = exportedCSV.split('\n').filter(line =>
+                    line.trim().length > 0 &&
+                    !line.match(/^Source,/) &&
                     !line.match(/^Hostname,/)
                 );
                 expect(dataLines.length).toBeGreaterThan(0);
@@ -3172,7 +3221,7 @@ describe('Import/Export Flow Integration Tests', () => {
 
             const csvFile = path.join(TEST_DATA_DIR, csvFiles[0]);
             const importedData = callPythonImport(csvFile);
-            
+
             // Initialize visualization in location mode
             state.setMode('location');
             state.cy.elements().remove();
@@ -3201,12 +3250,12 @@ describe('Import/Export Flow Integration Tests', () => {
                 elements: state.cy.elements().jsons(),
                 metadata: state.data.currentData.metadata || {}
             };
-            
+
             // Now switch to hierarchy mode (creates extracted_topology_0 root)
             state.setMode('hierarchy');
             hierarchyModule.switchMode();
 
-            // Verify extracted_topology_0 root was created (using template-name_instance# notation)
+            // Verify extracted_topology template with instance extracted_topology_0 was created
             const rootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
                 const parent = node.parent();
                 return parent.length === 0; // No parent = root level
@@ -3214,7 +3263,9 @@ describe('Import/Export Flow Integration Tests', () => {
 
             expect(rootGraphs.length).toBe(1);
             const rootGraph = rootGraphs[0];
-            expect(rootGraph.data('template_name')).toBe('extracted_topology_0');
+            expect(rootGraph.data('template_name')).toBe('extracted_topology'); // Template name
+            expect(rootGraph.data('label')).toBe('extracted_topology_0'); // Instance name
+            expect(rootGraph.data('child_name')).toBe('extracted_topology_0'); // Instance name
             expect(rootGraph.data('id')).toBe('graph_extracted_topology_0');
 
             // Step 4: Count nodes and connections in hierarchy mode
@@ -3238,11 +3289,11 @@ describe('Import/Export Flow Integration Tests', () => {
                 const edgeData = edge.data();
                 const sourceNode = state.cy.getElementById(edgeData.source);
                 const targetNode = state.cy.getElementById(edgeData.target);
-                
+
                 // Get host_id from source and target ports
                 let sourceHostId = null;
                 let targetHostId = null;
-                
+
                 if (sourceNode.length > 0) {
                     const sourceParent = sourceNode.parent();
                     if (sourceParent.length > 0) {
@@ -3253,7 +3304,7 @@ describe('Import/Export Flow Integration Tests', () => {
                         }
                     }
                 }
-                
+
                 if (targetNode.length > 0) {
                     const targetParent = targetNode.parent();
                     if (targetParent.length > 0) {
@@ -3264,7 +3315,7 @@ describe('Import/Export Flow Integration Tests', () => {
                         }
                     }
                 }
-                
+
                 connectionDetails.push({
                     id: edgeData.id,
                     source: edgeData.source,
@@ -3276,7 +3327,7 @@ describe('Import/Export Flow Integration Tests', () => {
                     targetHostname: edgeData.destination_hostname || edgeData.destination_hostname
                 });
             });
-            
+
             console.log(`\n📊 Connection Analysis:`);
             console.log(`Total connections: ${connectionDetails.length}`);
             const taggedConnections = connectionDetails.filter(c => c.template_name && c.template_name.startsWith('extracted_topology'));
@@ -3298,29 +3349,29 @@ describe('Import/Export Flow Integration Tests', () => {
 
             // Step 7: Parse exported textproto and verify counts
             const exportedStats = parseExportedTextproto(exportedTextproto);
-            
+
             expect(exportedStats.node_count).toBe(locationShelfCount);
             expect(exportedStats.connection_count).toBe(locationConnectionCount);
-            expect(exportedStats.root_template).toBe('extracted_topology_0');
+            expect(exportedStats.root_template).toBe('extracted_topology'); // Template name, not instance name
             expect(exportedStats.template_count).toBeGreaterThan(0);
-            
+
             // If connection count doesn't match, investigate
             const connectionDiff = locationConnectionCount - exportedStats.connection_count;
             if (connectionDiff > 0) {
                 console.log(`\n❌ ERROR: ${connectionDiff} connection(s) missing from export!`);
                 console.log(`Expected: ${locationConnectionCount}, Got: ${exportedStats.connection_count}`);
-                
+
                 // Save exported textproto for inspection
                 saveTestArtifact('location_to_hierarchy_export_missing_connections', exportedTextproto, 'textproto');
-                
+
                 // This should fail the test - all connections must be preserved
                 throw new Error(`Connection preservation failed: ${connectionDiff} out of ${locationConnectionCount} connections are missing from export. Check debug output above for details.`);
             }
 
             console.log(`Exported textproto: ${exportedStats.node_count} nodes, ${exportedStats.connection_count} connections, root template: ${exportedStats.root_template}`);
 
-            // Step 8: Verify all connections are tagged with extracted_topology_0 template
-            const taggedConnectionsCount = connectionDetails.filter(c => c.template_name && c.template_name.startsWith('extracted_topology')).length;
+            // Step 8: Verify all connections are tagged with extracted_topology template
+            const taggedConnectionsCount = connectionDetails.filter(c => c.template_name === 'extracted_topology').length;
             expect(taggedConnectionsCount).toBe(locationConnectionCount);
             console.log(`✅ Verified: All ${taggedConnectionsCount} connections are tagged with extracted_topology template`);
 
@@ -3339,6 +3390,162 @@ describe('Import/Export Flow Integration Tests', () => {
 
             saveTestArtifact('location_to_hierarchy_export', exportedTextproto, 'textproto');
             console.log(`✅ Verified: Location mode -> hierarchy mode switch preserves all ${locationShelfCount} nodes and ${locationConnectionCount} connections in exported cabling descriptor`);
+        });
+
+        test('CSV import -> export deployment descriptor -> switch to topology mode -> export cabling descriptor -> re-import -> apply deployment -> verify round-trip', () => {
+            // Step 1: Import CSV
+            const csvFiles = getTestDataFiles('.csv', 'cabling-guides');
+            if (csvFiles.length === 0) {
+                throw new Error('No CSV test files found in test-data directory. Please add test files to run this test.');
+            }
+
+            const importedData = importFromPython(csvFiles[0]);
+            state.setMode('location');
+            state.cy.elements().remove();
+            state.cy.add(importedData.elements);
+            state.data.currentData = {
+                elements: importedData.elements,
+                metadata: importedData.metadata || {}
+            };
+
+            // Capture original visualization state
+            const originalCytoscapeData = getCytoscapeData();
+            const originalShelfCount = countShelfNodes(originalCytoscapeData);
+            const originalConnectionCount = countConnections(originalCytoscapeData);
+            const originalHostnames = extractHostnames(originalCytoscapeData);
+
+            expect(originalShelfCount).toBeGreaterThan(0);
+            expect(originalConnectionCount).toBeGreaterThan(0);
+            expect(originalHostnames.size).toBeGreaterThan(0);
+
+            // Step 2: Export deployment descriptor
+            const exportedDeploymentTextproto = exportDeploymentToPython(originalCytoscapeData);
+            expect(exportedDeploymentTextproto).toBeTruthy();
+            expect(exportedDeploymentTextproto.length).toBeGreaterThan(0);
+            expect(exportedDeploymentTextproto).toMatch(/hosts\s*\{/);
+
+            // Step 3: Switch to topology mode (creates extracted_topology template)
+            // First, save the current state as hierarchyModeState (simulating switching from hierarchy to location)
+            // This is needed because switchMode() restores from hierarchyModeState
+            state.data.hierarchyModeState = {
+                elements: state.cy.elements().jsons(),
+                metadata: state.data.currentData.metadata || {}
+            };
+
+            state.setMode('hierarchy');
+            hierarchyModule.switchMode();
+
+            // Verify extracted_topology template was created
+            const rootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0; // Root level
+            });
+            expect(rootGraphs.length).toBe(1);
+            expect(rootGraphs[0].data('template_name')).toBe('extracted_topology');
+
+            // Step 4: Export cabling descriptor
+            const hierarchyModeData = getCytoscapeData();
+            const exportedCablingTextproto = exportToPython(hierarchyModeData);
+            expect(exportedCablingTextproto).toBeTruthy();
+            expect(exportedCablingTextproto.length).toBeGreaterThan(0);
+
+            // Step 5: Clear visualization and re-import the exported cabling descriptor
+            state.cy.elements().remove();
+            state.data.currentData = null;
+            state.data.hierarchyModeState = null;
+
+            // Write exported cabling descriptor to temp file for import
+            const tempCablingFile = path.join(process.cwd(), '.test_roundtrip_cabling.textproto');
+            fs.writeFileSync(tempCablingFile, exportedCablingTextproto);
+
+            const reimportedData = importFromPython(tempCablingFile);
+            state.setMode('hierarchy');
+            state.cy.elements().remove();
+            state.cy.add(reimportedData.elements);
+            state.data.currentData = {
+                elements: reimportedData.elements,
+                metadata: reimportedData.metadata || {}
+            };
+
+            // Step 6: Apply the exported deployment descriptor
+            const deploymentData = parseDeploymentDescriptorFromContent(exportedDeploymentTextproto);
+            expect(deploymentData.elements.length).toBe(originalShelfCount);
+
+            // Switch to location mode to apply deployment descriptor
+            state.setMode('location');
+            locationModule.switchMode();
+
+            // Apply deployment descriptor
+            const updatedCount = locationModule.updateShelfLocations(deploymentData);
+            expect(updatedCount).toBeGreaterThan(0);
+            expect(updatedCount).toBe(originalShelfCount);
+
+            // Step 7: Verify the round-trip visualization matches the original
+            const finalCytoscapeData = getCytoscapeData();
+            const finalShelfCount = countShelfNodes(finalCytoscapeData);
+            const finalConnectionCount = countConnections(finalCytoscapeData);
+            const finalHostnames = extractHostnames(finalCytoscapeData);
+
+            // Verify counts match
+            expect(finalShelfCount).toBe(originalShelfCount);
+            expect(finalConnectionCount).toBe(originalConnectionCount);
+            expect(finalHostnames.size).toBe(originalHostnames.size);
+
+            // Verify hostnames match
+            const originalHostnameSet = new Set(originalHostnames);
+            const finalHostnameSet = new Set(finalHostnames);
+            expect(finalHostnameSet.size).toBe(originalHostnameSet.size);
+            for (const hostname of originalHostnameSet) {
+                expect(finalHostnameSet.has(hostname)).toBe(true);
+            }
+
+            // Verify location data was applied correctly
+            const shelves = state.cy.nodes('[type="shelf"]');
+            let verifiedLocationCount = 0;
+            shelves.forEach(shelf => {
+                const hostname = shelf.data('hostname');
+                if (hostname && originalHostnameSet.has(hostname)) {
+                    // Find corresponding original shelf
+                    const originalShelf = originalCytoscapeData.elements.find(el =>
+                        el.data && el.data.type === 'shelf' && el.data.hostname === hostname
+                    );
+                    if (originalShelf) {
+                        // Verify location fields match
+                        expect(shelf.data('hall')).toBe(originalShelf.data.hall || '');
+                        expect(shelf.data('aisle')).toBe(originalShelf.data.aisle || '');
+                        // Handle rack_num as string or number (CSV may have "01" but deployment descriptor has 1)
+                        const originalRack = originalShelf.data.rack_num;
+                        const finalRack = shelf.data('rack_num');
+                        if (originalRack !== undefined && originalRack !== null) {
+                            expect(Number(finalRack)).toBe(Number(originalRack));
+                        } else {
+                            expect(finalRack || 0).toBe(0);
+                        }
+                        // Handle shelf_u similarly
+                        const originalShelfU = originalShelf.data.shelf_u;
+                        const finalShelfU = shelf.data('shelf_u');
+                        if (originalShelfU !== undefined && originalShelfU !== null) {
+                            expect(Number(finalShelfU)).toBe(Number(originalShelfU));
+                        } else {
+                            expect(finalShelfU || 0).toBe(0);
+                        }
+                        verifiedLocationCount++;
+                    }
+                }
+            });
+
+            expect(verifiedLocationCount).toBeGreaterThan(0);
+            console.log(`✅ Verified: Round-trip test - ${finalShelfCount} shelves, ${finalConnectionCount} connections, ${verifiedLocationCount} locations verified`);
+
+            // Clean up temp file
+            if (fs.existsSync(tempCablingFile)) {
+                fs.unlinkSync(tempCablingFile);
+            }
+
+            saveTestArtifact('roundtrip_original', JSON.stringify(originalCytoscapeData, null, 2), 'json');
+            saveTestArtifact('roundtrip_final', JSON.stringify(finalCytoscapeData, null, 2), 'json');
+            saveTestArtifact('roundtrip_deployment', exportedDeploymentTextproto, 'textproto');
+            saveTestArtifact('roundtrip_cabling', exportedCablingTextproto, 'textproto');
         });
     });
 });
