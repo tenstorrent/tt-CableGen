@@ -785,16 +785,23 @@ export class HierarchyModule {
             this.common.clearAllSelections();
         }
 
-        if (!this.state.data.hierarchyModeState || !this.state.data.hierarchyModeState.elements) {
-            alert('Cannot restore logical topology - no saved state available. Please switch to location mode first or re-upload your file.');
-            return;
-        }
-
         // Extract shelf nodes with their logical topology data
         const shelfNodes = this.state.cy.nodes('[type="shelf"]');
         if (shelfNodes.length === 0) {
             console.warn('No shelf nodes found');
             return;
+        }
+
+        // Check if we have saved hierarchy state (from previous hierarchy mode session)
+        // If not, we'll create extracted_topology from current location mode state
+        const hasSavedHierarchyState = this.state.data.hierarchyModeState && this.state.data.hierarchyModeState.elements;
+
+        if (!hasSavedHierarchyState) {
+            // No saved hierarchy state - this happens when:
+            // 1. CSV import starts in location mode (no previous hierarchy state)
+            // 2. User switches to hierarchy mode for the first time
+            // In this case, we'll create extracted_topology from current shelf nodes
+            console.log('No saved hierarchy state - will create extracted_topology from current location mode state');
         }
 
         // Extract all relevant data from shelf nodes (preserve ALL fields for round-trip)
