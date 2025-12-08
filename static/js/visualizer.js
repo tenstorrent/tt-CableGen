@@ -391,9 +391,7 @@ function checkSameShelf(sourceId, targetId) { return commonModule.checkSameShelf
 function getParentAtLevel(node, level) { return commonModule.getParentAtLevel(node, level); }
 function getCytoscapeStyles() { return commonModule.getCytoscapeStyles(); }
 function addCytoscapeEventHandlers() { return commonModule.addCytoscapeEventHandlers(); }
-async function addConnectionTypeEventHandlers() {
-    const locationModule = await loadLocationModule();
-    const hierarchyModule = await loadHierarchyModule();
+function addConnectionTypeEventHandlers() {
     locationModule.addConnectionTypeEventHandlers();
     commonModule.addNodeFilterHandler();
     hierarchyModule.addTemplateFilterHandler();
@@ -403,12 +401,10 @@ function getParentShelfNode(node) { return commonModule.getParentShelfNode(node)
 function extractShelfIdFromNodeId(nodeId) { return commonModule.extractShelfIdFromNodeId(nodeId); }
 function getOriginalEdgeEndpoints(edge) { return commonModule.getOriginalEdgeEndpoints(edge); }
 function applyNodeFilter() { return commonModule.applyNodeFilter(); }
-async function populateNodeFilterDropdown() {
-    const locationModule = await loadLocationModule();
+function populateNodeFilterDropdown() {
     return commonModule.populateNodeFilterDropdown(locationModule);
 }
-async function populateTemplateFilterDropdown() {
-    const hierarchyModule = await loadHierarchyModule();
+function populateTemplateFilterDropdown() {
     if (hierarchyModule && typeof hierarchyModule.populateTemplateFilterDropdown === 'function') {
         hierarchyModule.populateTemplateFilterDropdown();
     }
