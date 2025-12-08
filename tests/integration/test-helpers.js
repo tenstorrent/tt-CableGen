@@ -31,14 +31,22 @@ export function loadTestDataFile(filename) {
 /**
  * Get all test data files matching an extension
  * @param {string} extension - File extension (e.g., '.csv', '.textproto')
- * @returns {string[]} Array of filenames
+ * @param {string} subdirectory - Optional subdirectory to search (e.g., 'cabling-guides', 'deployment-descriptors')
+ * @returns {string[]} Array of filenames (with full paths relative to TEST_DATA_DIR)
  */
-export function getTestDataFiles(extension) {
+export function getTestDataFiles(extension, subdirectory = null) {
     if (!fs.existsSync(TEST_DATA_DIR)) {
         return [];
     }
-    return fs.readdirSync(TEST_DATA_DIR)
+
+    const searchDir = subdirectory ? path.join(TEST_DATA_DIR, subdirectory) : TEST_DATA_DIR;
+    if (!fs.existsSync(searchDir)) {
+        return [];
+    }
+
+    return fs.readdirSync(searchDir)
         .filter(file => file.endsWith(extension))
+        .map(file => subdirectory ? path.join(subdirectory, file) : file)
         .sort();
 }
 
@@ -156,6 +164,98 @@ print(result)`;
         // Clean up temp files
         if (fs.existsSync(tempDataFile)) {
             fs.unlinkSync(tempDataFile);
+        }
+        if (fs.existsSync(tempScript)) {
+            fs.unlinkSync(tempScript);
+        }
+    }
+}
+
+/**
+ * Parse exported textproto and count nodes and connections
+ * @param {string} textprotoContent - Textproto content from export
+ * @returns {Object} Object with nodeCount and connectionCount
+ */
+export function parseExportedTextproto(textprotoContent) {
+    const tempTextprotoFile = path.join(PROJECT_ROOT, '.test_parse_textproto.textproto');
+    const tempScript = path.join(PROJECT_ROOT, '.test_parse_textproto_script.py');
+
+    try {
+        // Write textproto to temp file
+        fs.writeFileSync(tempTextprotoFile, textprotoContent);
+
+        const pythonScript = `import sys
+import json
+import os
+sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
+
+# Add protobuf directory to path (same as export_descriptors.py does)
+tt_metal_home = os.environ.get("TT_METAL_HOME")
+if tt_metal_home:
+    protobuf_dir = os.path.join(tt_metal_home, "build", "tools", "scaleout", "protobuf")
+    if os.path.exists(protobuf_dir):
+        sys.path.append(protobuf_dir)
+
+try:
+    import cluster_config_pb2
+    from google.protobuf import text_format
+    
+    # Read and parse textproto
+    with open(r'${tempTextprotoFile.replace(/\\/g, '/')}', 'r') as f:
+        textproto_content = f.read()
+    
+    cluster_desc = cluster_config_pb2.ClusterDescriptor()
+    text_format.Parse(textproto_content, cluster_desc)
+    
+    # Count nodes (children in templates that are node_ref, not graph_ref)
+    node_count = 0
+    connection_count = 0
+    
+    # Traverse all templates to count nodes
+    for template_name, template in cluster_desc.graph_templates.items():
+        for child in template.children:
+            if child.HasField('node_ref'):
+                node_count += 1
+    
+    # Count connections in all templates
+    for template_name, template in cluster_desc.graph_templates.items():
+        if 'QSFP_DD' in template.internal_connections:
+            port_conns = template.internal_connections['QSFP_DD']
+            connection_count += len(port_conns.connections)
+    
+    result = {
+        'node_count': node_count,
+        'connection_count': connection_count,
+        'template_count': len(cluster_desc.graph_templates),
+        'root_template': cluster_desc.root_instance.template_name
+    }
+    
+    print(json.dumps(result))
+except Exception as e:
+    print(json.dumps({'error': str(e)}))
+    sys.exit(1)`;
+
+        // Write script to temp file
+        fs.writeFileSync(tempScript, pythonScript);
+
+        // Execute Python script
+        const result = execSync(`python3 "${tempScript}"`, {
+            encoding: 'utf-8',
+            cwd: PROJECT_ROOT,
+            maxBuffer: 10 * 1024 * 1024
+        });
+
+        const parsed = JSON.parse(result.trim());
+        if (parsed.error) {
+            throw new Error(`Failed to parse textproto: ${parsed.error}`);
+        }
+        return parsed;
+    } catch (error) {
+        throw new Error(`Python textproto parsing failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
+    } finally {
+        // Clean up temp files
+        if (fs.existsSync(tempTextprotoFile)) {
+            fs.unlinkSync(tempTextprotoFile);
         }
         if (fs.existsSync(tempScript)) {
             fs.unlinkSync(tempScript);
@@ -289,56 +389,36 @@ connections = parser.extract_connections()
 # Build a map of shelf node IDs to their location data
 shelf_nodes = {}
 for element in cytoscape_data.get('elements', []):
-    node_data = element.get('data', {})
-    if node_data.get('type') == 'shelf':
-        shelf_id = node_data.get('id')
-        shelf_nodes[shelf_id] = {
-            'hostname': node_data.get('hostname', ''),
-            'hall': node_data.get('hall', ''),
-            'aisle': node_data.get('aisle', ''),
-            'rack': node_data.get('rack', '') or node_data.get('rack_num', ''),
-            'shelf_u': node_data.get('shelf_u', ''),
-            'node_type': node_data.get('node_type', '')
-        }
+    if 'data' in element:
+        data = element['data']
+        if data.get('type') == 'shelf':
+            shelf_id = data.get('id')
+            shelf_nodes[shelf_id] = {
+                'hostname': data.get('hostname', ''),
+                'hall': data.get('hall', ''),
+                'aisle': data.get('aisle', ''),
+                'rack': data.get('rack_num') or data.get('rack', 0),
+                'shelf_u': data.get('shelf_u', 0),
+                'node_type': data.get('shelf_node_type') or data.get('node_type', '')
+            }
 
-# Helper to get location from shelf node
-def get_location_from_shelf(shelf_id, shelf_nodes):
-    shelf = shelf_nodes.get(shelf_id, {})
-    return {
-        'hostname': shelf.get('hostname', ''),
-        'hall': shelf.get('hall', ''),
-        'aisle': shelf.get('aisle', ''),
-        'rack': str(shelf.get('rack', '')),
-        'shelf_u': str(shelf.get('shelf_u', '')),
-        'node_type': shelf.get('node_type', '')
-    }
-
-# Format as CSV
+# Generate CSV lines
 csv_lines = []
-csv_lines.append("Source,,,,,,,,,Destination,,,,,,,,,Cable Length,Cable Type")
-csv_lines.append("Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,,")
-
 for conn in connections:
-    source = conn.get('source', {})
-    target = conn.get('target', {})
+    source = conn['source']
+    target = conn['target']
     
-    # Get shelf IDs from connection
-    source_shelf_id = source.get('shelf_id', '')
-    target_shelf_id = target.get('shelf_id', '')
+    source_hostname = source.get('hostname', '')
+    target_hostname = target.get('hostname', '')
     
     # Get location data from shelf nodes
-    source_loc = get_location_from_shelf(source_shelf_id, shelf_nodes)
-    target_loc = get_location_from_shelf(target_shelf_id, shelf_nodes)
+    source_loc = shelf_nodes.get(source.get('shelf_id', ''), {})
+    target_loc = shelf_nodes.get(target.get('shelf_id', ''), {})
     
-    # Use connection data for hostname if available, otherwise use shelf location
-    source_hostname = source.get('hostname') or source_loc.get('hostname', '')
-    target_hostname = target.get('hostname') or target_loc.get('hostname', '')
-    
-    # Get tray and port from connection
-    source_tray = str(source.get('tray_id', ''))
-    source_port = str(source.get('port_id', ''))
-    target_tray = str(target.get('tray_id', ''))
-    target_port = str(target.get('port_id', ''))
+    source_tray = source.get('tray_id', '')
+    source_port = source.get('port_id', '')
+    target_tray = target.get('tray_id', '')
+    target_port = target.get('port_id', '')
     
     # Get node type from connection or shelf
     source_node_type = source.get('node_type') or source_loc.get('node_type', '')
@@ -360,7 +440,13 @@ for conn in connections:
     csv_line = f"{source_hostname},{source_loc.get('hall', '')},{source_loc.get('aisle', '')},{source_loc.get('rack', '')},{source_loc.get('shelf_u', '')},{source_tray},{source_port},{source_label},{source_node_type},{target_hostname},{target_loc.get('hall', '')},{target_loc.get('aisle', '')},{target_loc.get('rack', '')},{target_loc.get('shelf_u', '')},{target_tray},{target_port},{target_label},{target_node_type},{cable_length},{cable_type}"
     csv_lines.append(csv_line)
 
-result = "\\n".join(csv_lines)
+# Add CSV header lines (matching the format expected by CSV import)
+# Line 1: Source,Destination marker with commas aligning to columns (9 commas after Source, 9 commas after Destination)
+# Line 2: Column headers
+header_line_1 = "Source,,,,,,,,,Destination,,,,,,,,,Cable Length,Cable Type"
+header_line_2 = "Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,,"
+
+result = header_line_1 + "\\n" + header_line_2 + "\\n" + "\\n".join(csv_lines)
 print(result)`;
 
         // Write script to temp file
@@ -484,3 +570,140 @@ except Exception as e:
     }
 }
 
+/**
+ * Parse deployment descriptor textproto file and convert to format expected by updateShelfLocations
+ * @param {string} filePath - Path to deployment descriptor textproto file (relative to test-data/deployment-descriptors/)
+ * @returns {Object} Deployment data in format expected by updateShelfLocations
+ */
+export function parseDeploymentDescriptor(filePath) {
+    const deploymentDir = path.join(TEST_DATA_DIR, 'deployment-descriptors');
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(deploymentDir, filePath);
+    const content = fs.readFileSync(absPath, 'utf-8');
+
+    // Parse deployment descriptor textproto format
+    // Format: hosts: { hall: "...", aisle: "...", rack: N, shelf_u: N, host: "..." }
+    const hosts = [];
+    const hostRegex = /hosts:\s*\{([^}]+)\}/g;
+    let match;
+
+    while ((match = hostRegex.exec(content)) !== null) {
+        const hostBlock = match[1];
+        const host = {
+            hall: '',
+            aisle: '',
+            rack: 0,
+            shelf_u: 0,
+            host: ''
+        };
+
+        // Extract fields from host block
+        const hallMatch = hostBlock.match(/hall:\s*"([^"]+)"/);
+        if (hallMatch) host.hall = hallMatch[1];
+
+        const aisleMatch = hostBlock.match(/aisle:\s*"([^"]+)"/);
+        if (aisleMatch) host.aisle = aisleMatch[1];
+
+        const rackMatch = hostBlock.match(/rack:\s*(\d+)/);
+        if (rackMatch) host.rack = parseInt(rackMatch[1]);
+
+        const shelfUMatch = hostBlock.match(/shelf_u:\s*(\d+)/);
+        if (shelfUMatch) host.shelf_u = parseInt(shelfUMatch[1]);
+
+        const hostMatch = hostBlock.match(/host:\s*"([^"]+)"/);
+        if (hostMatch) host.host = hostMatch[1];
+
+        hosts.push(host);
+    }
+
+    // Convert to format expected by updateShelfLocations
+    // Elements array with shelf nodes indexed by host_id
+    const elements = hosts.map((host, hostIndex) => ({
+        data: {
+            type: 'shelf',
+            host_index: hostIndex,
+            host_id: hostIndex,
+            hall: host.hall,
+            aisle: host.aisle,
+            rack_num: host.rack,
+            shelf_u: host.shelf_u,
+            hostname: host.host
+        }
+    }));
+
+    return { elements };
+}
+
+/**
+ * Parse deployment descriptor from textproto content (string) and convert to format expected by updateShelfLocations
+ * @param {string} textprotoContent - Deployment descriptor textproto content as string
+ * @returns {Object} Deployment data in format expected by updateShelfLocations
+ */
+export function parseDeploymentDescriptorFromContent(textprotoContent) {
+    // Parse deployment descriptor textproto format
+    // Format: hosts { hall: "..." aisle: "..." rack: N shelf_u: N host: "..." }
+    // Multiple hosts blocks, one per host
+    const hosts = [];
+    // Match each hosts { ... } block (handles nested braces correctly)
+    const hostRegex = /hosts\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g;
+    let match;
+
+    while ((match = hostRegex.exec(textprotoContent)) !== null) {
+        const hostBlock = match[1];
+        const host = {
+            hall: '',
+            aisle: '',
+            rack: 0,
+            shelf_u: 0,
+            host: ''
+        };
+
+        // Extract fields from host block (fields can be on separate lines or same line)
+        const hallMatch = hostBlock.match(/hall:\s*"([^"]+)"/);
+        if (hallMatch) host.hall = hallMatch[1];
+
+        const aisleMatch = hostBlock.match(/aisle:\s*"([^"]+)"/);
+        if (aisleMatch) host.aisle = aisleMatch[1];
+
+        const rackMatch = hostBlock.match(/rack:\s*(\d+)/);
+        if (rackMatch) host.rack = parseInt(rackMatch[1]);
+
+        const shelfUMatch = hostBlock.match(/shelf_u:\s*(\d+)/);
+        if (shelfUMatch) host.shelf_u = parseInt(shelfUMatch[1]);
+
+        const hostMatch = hostBlock.match(/host:\s*"([^"]+)"/);
+        if (hostMatch) host.host = hostMatch[1];
+
+        hosts.push(host);
+    }
+
+    // Convert to format expected by updateShelfLocations
+    // Elements array with shelf nodes indexed by host_id
+    const elements = hosts.map((host, hostIndex) => ({
+        data: {
+            type: 'shelf',
+            host_index: hostIndex,
+            host_id: hostIndex,
+            hall: host.hall,
+            aisle: host.aisle,
+            rack_num: host.rack,
+            shelf_u: host.shelf_u,
+            hostname: host.host
+        }
+    }));
+
+    return { elements };
+}
+
+/**
+ * Load expected output file (CSV or textproto)
+ * @param {string} filePath - Path to expected output file (relative to test-data/expected-outputs/)
+ * @returns {string} File contents
+ */
+export function loadExpectedOutput(filePath) {
+    const expectedDir = path.join(TEST_DATA_DIR, 'expected-outputs');
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(expectedDir, filePath);
+    if (!fs.existsSync(absPath)) {
+        throw new Error(`Expected output file not found: ${absPath}`);
+    }
+    return fs.readFileSync(absPath, 'utf-8');
+}

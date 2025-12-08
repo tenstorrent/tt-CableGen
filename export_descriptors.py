@@ -647,23 +647,36 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
     """Export CablingDescriptor from Cytoscape data
     
     Strategy:
-    - If nodes have logical_path populated: Export using graph templates structure
-    - If nodes don't have logical_path (CSV imports, synthetic root): Export flat with node_ref only
+    - Export using graph templates structure (hierarchical)
+    - All structures are now wrapped in proper hierarchy (including "extracted_topology" template with instance "extracted_topology_0")
     """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
 
     # Check if shelf nodes have logical topology information
+    # This includes:
+    # 1. Shelf nodes with non-empty logical_path (from descriptor imports)
+    # 2. Graph nodes present (including "extracted_topology" template from mode switching)
     elements = cytoscape_data.get("elements", [])
     has_logical_topology = False
     
-    for element in elements:
-        node_data = element.get("data", {})
-        if node_data.get("type") == "shelf":
-            logical_path = node_data.get("logical_path")
-            if logical_path and len(logical_path) > 0:
-                has_logical_topology = True
-                break
+    # Check for graph nodes first (including extracted_topology template)
+    has_graph_nodes = any(
+        el.get("data", {}).get("type") in ["graph", "superpod", "pod", "cluster", "zone", "region"]
+        for el in elements
+    )
+    
+    if has_graph_nodes:
+        has_logical_topology = True
+    else:
+        # Fallback: check for shelf nodes with non-empty logical_path
+        for element in elements:
+            node_data = element.get("data", {})
+            if node_data.get("type") == "shelf":
+                logical_path = node_data.get("logical_path")
+                if logical_path and len(logical_path) > 0:
+                    has_logical_topology = True
+                    break
     
     if has_logical_topology:
         # Nodes have logical topology - export hierarchical structure
@@ -678,9 +691,11 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
             # Build hierarchy from logical_path data
             return export_hierarchical_cabling_descriptor(cytoscape_data)
     else:
-        # No logical topology - export flat structure with node_ref only
-        # This is for CSV imports or manually created nodes
-        return export_flat_cabling_descriptor(cytoscape_data)
+        # No graph nodes found - this should not happen as mode switching creates "extracted_topology" template
+        raise ValueError(
+            "Cannot export cabling descriptor: No graph nodes found. "
+            "Please switch to topology mode first, which will create the proper hierarchy structure."
+        )
 
 
 def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: Dict) -> str:
@@ -805,150 +820,14 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                 child_mapping.sub_instance.CopyFrom(nested_instance)
                 root_instance.child_mappings[root_node_label].CopyFrom(child_mapping)
     else:
-        # Multiple top-level nodes
-        # Check if one of them is the visible root cluster
-        visible_root = None
-        other_nodes = []
-        
-        for root_node_el in root_nodes:
-            root_node_data = root_node_el.get("data", {})
-            root_node_id = root_node_data.get("id", "")
-            
-            if root_node_id == "graph_root_cluster" or root_node_id.startswith("graph_root_"):
-                visible_root = root_node_el
-            else:
-                other_nodes.append(root_node_el)
-        
-        if visible_root:
-            # There's a visible root among multiple top-level nodes
-            # This means user added graphs at top level after importing
-            # We need to create a synthetic wrapper to contain all of them
-            
-            visible_root_data = visible_root.get("data", {})
-            visible_root_template = visible_root_data.get("template_name", root_template_name)
-            
-            # Enumerate the original root cluster as {template_name}_0 since it's now a child
-            # Count instances of this template at the new synthetic root level
-            root_instances_of_same_template = [n for n in other_nodes 
-                                                if n.get("data", {}).get("template_name") == visible_root_template]
-            visible_root_index = 0  # The visible root is the first instance
-            visible_root_label = f"{visible_root_template}_{visible_root_index}"
-            
-            # Create a synthetic root template that wraps everything
-            synthetic_root_template = cluster_config_pb2.GraphTemplate()
-            
-            # Add the original root cluster as a child (only if non-empty)
-            if visible_root_template in cluster_desc.graph_templates:
-                child = synthetic_root_template.children.add()
-                child.name = visible_root_label
-                child.graph_ref.graph_template = visible_root_template
-            
-            # Enumerate user-added top-level nodes per template
-            # Count instances per template (visible_root takes index 0 for its template)
-            template_counters = {visible_root_template: 1}  # Start at 1 since visible_root is 0
-            
-            # Add user-added top-level nodes as children (only if non-empty)
-            for other_node_el in other_nodes:
-                other_node_data = other_node_el.get("data", {})
-                other_node_template = other_node_data.get("template_name", f"template_{other_node_data.get('label', other_node_data.get('id'))}")
-                
-                # Skip empty templates
-                if other_node_template not in cluster_desc.graph_templates:
-                    continue
-                
-                # Get next index for this template
-                if other_node_template not in template_counters:
-                    template_counters[other_node_template] = 0
-                other_node_index = template_counters[other_node_template]
-                template_counters[other_node_template] += 1
-                
-                other_node_label = f"{other_node_template}_{other_node_index}"
-                
-                child = synthetic_root_template.children.add()
-                child.name = other_node_label
-                child.graph_ref.graph_template = other_node_template
-                
-            # Add the synthetic template to cluster descriptor
-            synthetic_root_name = "synthetic_root"
-            cluster_desc.graph_templates[synthetic_root_name].CopyFrom(synthetic_root_template)
-            
-            # Update root_instance to use synthetic template
-            root_instance.template_name = synthetic_root_name
-            
-            # Create child_mappings for the synthetic root
-            host_id = 0
-            
-            # Add the original root cluster as a sub-instance (if non-empty)
-            if visible_root_template in cluster_desc.graph_templates:
-                nested_instance = cluster_config_pb2.GraphInstance()
-                nested_instance.template_name = visible_root_template
-                host_id = add_child_mappings_with_reuse(visible_root, element_map, nested_instance, host_id)
-                
-                child_mapping = cluster_config_pb2.ChildMapping()
-                child_mapping.sub_instance.CopyFrom(nested_instance)
-                root_instance.child_mappings[visible_root_label].CopyFrom(child_mapping)
-            
-            # Add the other top-level nodes as sub-instances (use same enumeration, skip empty)
-            template_counters = {visible_root_template: 1}  # Reset counter for child_mappings
-            
-            for other_node_el in other_nodes:
-                other_node_data = other_node_el.get("data", {})
-                other_node_template = other_node_data.get("template_name", f"template_{other_node_data.get('label', other_node_data.get('id'))}")
-                
-                # Skip empty templates
-                if other_node_template not in cluster_desc.graph_templates:
-                    continue
-                
-                # Get next index for this template (matching the template definition above)
-                if other_node_template not in template_counters:
-                    template_counters[other_node_template] = 0
-                other_node_index = template_counters[other_node_template]
-                template_counters[other_node_template] += 1
-                
-                other_node_label = f"{other_node_template}_{other_node_index}"
-                
-                nested_instance = cluster_config_pb2.GraphInstance()
-                nested_instance.template_name = other_node_template
-                host_id = add_child_mappings_with_reuse(other_node_el, element_map, nested_instance, host_id)
-                
-                child_mapping = cluster_config_pb2.ChildMapping()
-                child_mapping.sub_instance.CopyFrom(nested_instance)
-                root_instance.child_mappings[other_node_label].CopyFrom(child_mapping)
-        else:
-            # Multiple top-level nodes, none is the visible root
-            # Treat each as a child to be wrapped, enumerate per template
-            
-            # Enumerate instances per template
-            template_counters = {}
-            host_id = 0
-            
-            for root_node_el in root_nodes:
-                root_node_data = root_node_el.get("data", {})
-                root_node_template = root_node_data.get("template_name", f"template_{root_node_data.get('label', root_node_data.get('id'))}")
-                
-                # Skip empty templates
-                if root_node_template not in cluster_desc.graph_templates:
-                    continue
-                
-                # Get next index for this template
-                if root_node_template not in template_counters:
-                    template_counters[root_node_template] = 0
-                root_node_index = template_counters[root_node_template]
-                template_counters[root_node_template] += 1
-                
-                root_node_label = f"{root_node_template}_{root_node_index}"
-                
-                # Create a nested GraphInstance for this child graph
-                nested_instance = cluster_config_pb2.GraphInstance()
-                nested_instance.template_name = root_node_template
-                
-                # Recursively populate the nested instance
-                host_id = add_child_mappings_with_reuse(root_node_el, element_map, nested_instance, host_id)
-                
-                # Add the nested instance to root's child_mappings
-                child_mapping = cluster_config_pb2.ChildMapping()
-                child_mapping.sub_instance.CopyFrom(nested_instance)
-                root_instance.child_mappings[root_node_label].CopyFrom(child_mapping)
+        # Multiple top-level nodes - not allowed
+        template_names = [el.get("data", {}).get("template_name") or el.get("data", {}).get("label", "unknown") 
+                         for el in root_nodes]
+        template_names_str = ", ".join(template_names)
+        raise ValueError(
+            f"Cannot export CablingDescriptor: Multiple root templates found ({template_names_str}). "
+            f"A singular root template containing all nodes and connections is required for CablingDescriptor export."
+        )
     
     cluster_desc.root_instance.CopyFrom(root_instance)
     
@@ -1004,8 +883,11 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             root_graph_nodes.append(el)
     
     if not root_graph_nodes:
-        # No hierarchical structure found - fall back to flat export
-        return export_flat_cabling_descriptor(cytoscape_data)
+        # No hierarchical structure found - this should not happen as mode switching creates "extracted_topology" template
+        raise ValueError(
+            "Cannot export cabling descriptor: No root graph nodes found. "
+            "Please switch to topology mode first, which will create the proper hierarchy structure."
+        )
     
     
     # Create ClusterDescriptor
@@ -1090,23 +972,15 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
         )
         
         cluster_desc.root_instance.CopyFrom(root_instance)
-    elif len(root_graph_nodes) == 1 and not has_top_level_additions:
-        # Single top-level node without tracking data
+    elif len(root_graph_nodes) == 1:
+        # Single top-level node - use it directly as the root
         root_graph_el = root_graph_nodes[0]
         root_graph_data = root_graph_el.get("data", {})
         root_template_name = root_graph_data.get("template_name", "root_template")
-        root_label = root_graph_data.get("label", "root")
         
-        # Check if this is a "visible root" that was created during import
-        # The ID is always "graph_root_cluster" for imported roots
-        root_id = root_graph_data.get("id", "")
-        is_visible_root = (root_id == "graph_root_cluster" or 
-                          root_id.startswith("graph_root_"))
-        
-        
-        if is_visible_root:
-            # This node IS the root cluster - use it directly
-            
+        # Special case: "extracted_topology" is always the root template (from mode switching)
+        # Use it directly without wrapping
+        if root_template_name and root_template_name == "extracted_topology":
             root_instance = cluster_config_pb2.GraphInstance()
             root_instance.template_name = root_template_name
             
@@ -1118,89 +992,46 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             
             cluster_desc.root_instance.CopyFrom(root_instance)
         else:
-            # This is a regular top-level node - nest it in root_instance
+            # Check if this is a "visible root" that was created during import
+            # The ID is always "graph_root_cluster" for imported roots
+            root_id = root_graph_data.get("id", "")
+            is_visible_root = (root_id == "graph_root_cluster" or 
+                              root_id.startswith("graph_root_"))
             
-            root_instance = cluster_config_pb2.GraphInstance()
-            root_instance.template_name = root_template_name
-            
-            # Add child mappings and nested instances
-            host_id = 0
-            host_id = add_child_mappings_with_reuse(
-                root_graph_el, element_map, root_instance, host_id
-            )
-            
-            cluster_desc.root_instance.CopyFrom(root_instance)
+            if is_visible_root:
+                # This node IS the root cluster - use it directly
+                root_instance = cluster_config_pb2.GraphInstance()
+                root_instance.template_name = root_template_name
+                
+                # Add child mappings from the root's children
+                host_id = 0
+                host_id = add_child_mappings_with_reuse(
+                    root_graph_el, element_map, root_instance, host_id
+                )
+                
+                cluster_desc.root_instance.CopyFrom(root_instance)
+            else:
+                # This is a regular top-level node - use it directly as root
+                # (No need to wrap it, just use its template_name)
+                root_instance = cluster_config_pb2.GraphInstance()
+                root_instance.template_name = root_template_name
+                
+                # Add child mappings and nested instances
+                host_id = 0
+                host_id = add_child_mappings_with_reuse(
+                    root_graph_el, element_map, root_instance, host_id
+                )
+                
+                cluster_desc.root_instance.CopyFrom(root_instance)
     else:
-        # Multiple top-level nodes - create a synthetic root template
-        
-        # Create a synthetic root template that contains all top-level nodes
-        synthetic_root_template = cluster_config_pb2.GraphTemplate()
-        
-        empty_root_templates = []
-        for root_node in root_graph_nodes:
-            root_data = root_node.get("data", {})
-            root_label = root_data.get("label", root_data.get("id", "node"))
-            root_template_name = root_data.get("template_name")
-            
-            # Only add reference if template is non-empty (exists in cluster_desc)
-            if root_template_name and root_template_name in cluster_desc.graph_templates:
-                # Add as graph_ref child
-                child = synthetic_root_template.children.add()
-                child.name = root_label
-                child.graph_ref.graph_template = root_template_name
-                print(f"  Adding graph_ref: {root_label} -> {root_template_name}")
-            elif root_template_name:
-                empty_root_templates.append(root_template_name)
-        
-        # Error if any root template is empty
-        if empty_root_templates:
-            raise ValueError(
-                f"Cannot export CablingDescriptor: Empty root template(s) found: {', '.join(empty_root_templates)}. "
-                f"Root templates must contain at least one child node or graph reference."
-            )
-        
-        # Error if synthetic root template itself is empty (no valid root templates)
-        if len(synthetic_root_template.children) == 0:
-            raise ValueError(
-                "Cannot export CablingDescriptor: No valid root templates found. "
-                "All root templates are empty. Root templates must contain at least one child node or graph reference."
-            )
-        
-        # Add the synthetic root template
-        synthetic_root_name = "synthetic_root"
-        cluster_desc.graph_templates[synthetic_root_name].CopyFrom(synthetic_root_template)
-        
-        # Create root instance using synthetic template
-        root_instance = cluster_config_pb2.GraphInstance()
-        root_instance.template_name = synthetic_root_name
-        
-        # Add sub-instances for each top-level node (skip empty templates)
-        host_id = 0
-        for root_node in root_graph_nodes:
-            root_data = root_node.get("data", {})
-            root_label = root_data.get("label", root_data.get("id", "node"))
-            root_template_name = root_data.get("template_name", "unknown_template")
-            
-            # Skip if template is empty (not in cluster_desc)
-            if root_template_name not in cluster_desc.graph_templates:
-                print(f"  Skipping instance creation for empty template: {root_template_name}")
-                continue
-            
-            # Create nested instance for this top-level node
-            nested_instance = cluster_config_pb2.GraphInstance()
-            nested_instance.template_name = root_template_name
-            
-            # Recursively add child mappings for this sub-instance
-            host_id = add_child_mappings_with_reuse(
-                root_node, element_map, nested_instance, host_id
-            )
-            
-            # Add the nested instance to root's child_mappings
-            child_mapping = cluster_config_pb2.ChildMapping()
-            child_mapping.sub_instance.CopyFrom(nested_instance)
-            root_instance.child_mappings[root_label].CopyFrom(child_mapping)
-        
-        cluster_desc.root_instance.CopyFrom(root_instance)
+        # Multiple top-level nodes - not allowed
+        template_names = [el.get("data", {}).get("template_name") or el.get("data", {}).get("label", "unknown") 
+                         for el in root_graph_nodes]
+        template_names_str = ", ".join(template_names)
+        raise ValueError(
+            f"Cannot export CablingDescriptor: Multiple root templates found ({template_names_str}). "
+            f"A singular root template containing all nodes and connections is required for CablingDescriptor export."
+        )
         
     return text_format.MessageToString(cluster_desc)
 
@@ -1317,7 +1148,11 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
         child_type = child_data.get("type")
         if child_type == "shelf":
             # Read host_index from shelf node (this is the field name used in shelf nodes)
-            host_id = child_data.get("host_index") or child_data.get("host_id")
+            # CRITICAL: Use explicit None check, not 'or', because host_index can be 0 (which is falsy)
+            host_id = child_data.get("host_index")
+            if host_id is None:
+                # Fallback to host_id field name
+                host_id = child_data.get("host_id")
             child_id = child_data.get("id")
             child_label = child_data.get("label", child_id)
             # Use same fallback logic as when adding children to template (line 1117)
@@ -1716,94 +1551,13 @@ def _ensure_host_indices(cytoscape_data: Dict, sorted_hosts: List[Tuple[str, str
                     node_data["host_index"] = hostname_to_index[hostname]
 
 
-def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
-    """Export CablingDescriptor with flat structure (original behavior for location mode)
-    
-    This is used for CSV imports or when no logical topology information is available.
-    Requires hostnames to be set (from CSV or deployment descriptor).
-    """
-    if cluster_config_pb2 is None:
-        raise ImportError("cluster_config_pb2 not available")
-
-    # Get the common sorted host list (shared with DeploymentDescriptor)
-    # This also dynamically assigns host_index if needed (CSV imports)
-    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
-    
-    # For CSV imports, dynamically assign host_index to shelf nodes
-    # This allows the connection parser to find host_id when building connections
-    _ensure_host_indices(cytoscape_data, sorted_hosts)
-    
-    # Get connections for building the topology (after host indices are assigned)
-    parser = VisualizerCytoscapeDataParser(cytoscape_data)
-    connections = parser.extract_connections()
-    
-    # Flat export requires hostnames as identifiers
-    if not sorted_hosts or all(not hostname for hostname, _ in sorted_hosts):
-        raise ValueError(
-            "Cannot export flat cabling descriptor: No hostnames found. "
-            "Flat export requires hostnames. If you imported a cabling descriptor, "
-            "the hierarchical export will be used automatically instead."
-        )
-
-    # Create ClusterDescriptor with full structure
-    cluster_desc = cluster_config_pb2.ClusterDescriptor()
-
-    # Create graph template
-    template_name = "extracted_topology"
-    graph_template = cluster_config_pb2.GraphTemplate()
-    
-    # Add child instances (one per host) using ACTUAL HOSTNAMES as child names
-    # This avoids confusion and makes connections clearly map to the right hosts
-    for i, (hostname, node_type) in enumerate(sorted_hosts):
-        child = graph_template.children.add()
-        child.name = hostname  # Use actual hostname instead of generic "host_i"
-        # Ensure node_descriptor is capitalized and strip _DEFAULT suffix only
-        node_type_normalized = node_type.upper()
-        if node_type_normalized.endswith('_DEFAULT'):
-            node_type_normalized = node_type_normalized[:-8]  # len('_DEFAULT') = 8
-        child.node_ref.node_descriptor = node_type_normalized
-
-    # Add connections to graph template
-    port_connections = graph_template.internal_connections["QSFP_DD"]  # Default port type
-    for connection in connections:
-        conn = port_connections.connections.add()
-
-        # Source port - use actual hostname directly
-        conn.port_a.path.append(connection["source"]["hostname"])
-        conn.port_a.tray_id = connection["source"]["tray_id"]
-        conn.port_a.port_id = connection["source"]["port_id"]
-
-        # Target port - use actual hostname directly
-        conn.port_b.path.append(connection["target"]["hostname"])
-        conn.port_b.tray_id = connection["target"]["tray_id"]
-        conn.port_b.port_id = connection["target"]["port_id"]
-
-    # Add graph template to cluster descriptor
-    cluster_desc.graph_templates[template_name].CopyFrom(graph_template)
-
-    # Create root instance
-    root_instance = cluster_config_pb2.GraphInstance()
-    root_instance.template_name = template_name
-
-    # Map each child (by actual hostname) to its host_id (using the same sorted host list)
-    for i, (hostname, node_type) in enumerate(sorted_hosts):
-        child_mapping = cluster_config_pb2.ChildMapping()
-        child_mapping.host_id = i
-        root_instance.child_mappings[hostname].CopyFrom(child_mapping)  # Use actual hostname as key
-
-    cluster_desc.root_instance.CopyFrom(root_instance)
-
-    # Return the content directly
-    return text_format.MessageToString(cluster_desc)
-
-
 def export_deployment_descriptor_for_visualizer(
     cytoscape_data: Dict, filename_prefix: str = "deployment_descriptor"
 ) -> str:
     """Export DeploymentDescriptor from Cytoscape data
 
     Prioritizes PHYSICAL LOCATION fields (hall, aisle, rack, shelf_u) from shelf nodes.
-    Ignores logical topology fields (logical_path, logical_child_name).
+    Ignores logical topology fields (logical_path).
     
     Supports both 8-column format (hostname only) and 20-column format (hostname + location)
     

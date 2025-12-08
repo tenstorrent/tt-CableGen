@@ -125,8 +125,11 @@ export class NodeFactory {
      * @private
      */
     _createTray(shelfId, hostIndex, trayNum, nodeType, location) {
+        // Use shelfId in tray ID to ensure uniqueness across instances
+        // Format: {shelfId}:t{trayNum} (e.g., "graph_123_node_0:t1")
+        // This prevents collisions when multiple instances use the same hostIndex
         const trayData = {
-            id: `${hostIndex}:t${trayNum}`,
+            id: `${shelfId}:t${trayNum}`,
             parent: shelfId,
             label: `T${trayNum}`,
             type: 'tray',
@@ -149,8 +152,11 @@ export class NodeFactory {
      * @private
      */
     _createPort(trayId, hostIndex, trayNum, portNum, nodeType, location) {
+        // Use trayId in port ID to ensure uniqueness across instances
+        // Format: {trayId}:p{portNum} (e.g., "graph_123_node_0:t1:p1")
+        // Since trayId already includes shelfId, this ensures uniqueness
         const portData = {
-            id: `${hostIndex}:t${trayNum}:p${portNum}`,
+            id: `${trayId}:p${portNum}`,
             parent: trayId,
             label: `P${portNum}`,
             type: 'port',
@@ -198,7 +204,6 @@ export class NodeFactory {
             type: 'graph',
             template_name: templateName,
             depth,
-            graphType: templateName, // Compatibility field
             child_name: childName || label
         };
         

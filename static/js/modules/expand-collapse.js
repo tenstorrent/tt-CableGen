@@ -5,6 +5,23 @@
 export class ExpandCollapseModule {
     constructor(state) {
         this.state = state;
+        // Cache for visibility checks to avoid repeated ancestor traversals
+        this._visibilityCache = new Map();
+        // Debounce timer for layout refreshes
+        this._layoutRefreshTimer = null;
+        this._curveStylesTimer = null;
+        // Counter for unique rerouted edge IDs
+        this._reroutedEdgeCounter = 0;
+    }
+
+    /**
+     * Generate a unique ID for a rerouted edge
+     * @param {string} originalEdgeId - The ID of the original edge
+     * @returns {string} Unique rerouted edge ID
+     */
+    _generateReroutedEdgeId(originalEdgeId) {
+        this._reroutedEdgeCounter++;
+        return `rerouted_${originalEdgeId}_${Date.now()}_${this._reroutedEdgeCounter}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
     /**
@@ -33,6 +50,9 @@ export class ExpandCollapseModule {
         const nodeId = node.id();
         const isCollapsed = this.state.ui.collapsedGraphs.has(nodeId);
 
+        // Clear visibility cache since we're changing the graph structure
+        this._visibilityCache.clear();
+
         if (isCollapsed) {
             // Expand: restore children and edges
             this.expandNode(node, nodeId);
@@ -41,15 +61,8 @@ export class ExpandCollapseModule {
             this.collapseNode(node, nodeId);
         }
 
-        // Update compound node size by triggering a layout refresh
-        // Use a small delay to ensure style changes are applied
-        setTimeout(() => {
-            this.state.cy.layout({ name: 'preset' }).run();
-            // Update button states
-            if (typeof window.updateExpandCollapseButtons === 'function') {
-                window.updateExpandCollapseButtons();
-            }
-        }, 10);
+        // Debounce layout refresh to avoid multiple recalculations
+        this._scheduleLayoutRefresh();
 
         return true;
     }
@@ -62,16 +75,19 @@ export class ExpandCollapseModule {
     collapseNode(node, nodeId) {
         // Get all descendant nodes (children, grandchildren, etc.) including ports
         const descendants = node.descendants();
+        const descendantIds = new Set(descendants.map(d => d.id()));
 
-        // Find all edges connected to descendants (ports inside this node)
-        const connectedEdges = [];
-        descendants.forEach(descendant => {
-            const edges = this.state.cy.edges(`[source="${descendant.id()}"], [target="${descendant.id()}"]`);
-            edges.forEach(edge => {
-                if (!connectedEdges.includes(edge)) {
-                    connectedEdges.push(edge);
-                }
-            });
+        // Batch query all edges connected to descendants (more efficient than per-descendant queries)
+        // Only include original edges (not rerouted edges) - rerouted edges will be handled separately
+        const connectedEdges = this.state.cy.edges().filter(edge => {
+            // Skip rerouted edges - they'll be handled via their original edges
+            if (edge.data('isRerouted')) {
+                return false;
+            }
+            // For original edges, check current endpoints
+            const sourceId = edge.data('source');
+            const targetId = edge.data('target');
+            return descendantIds.has(sourceId) || descendantIds.has(targetId);
         });
 
         // Add this node to collapsed set for ancestor checking
@@ -85,6 +101,9 @@ export class ExpandCollapseModule {
             edgeMappings: [] // Maps original edge -> rerouted edge
         };
 
+        // Batch DOM operations
+        this.state.cy.startBatch();
+
         // Hide children (use display: none for shrinking visualization)
         node.children().forEach(child => {
             child.style('display', 'none');
@@ -96,9 +115,10 @@ export class ExpandCollapseModule {
         this.state.ui.collapsedGraphs.add(nodeId);
         this.state.ui.expandedGraphs.delete(nodeId);
 
-        // Recalculate all edge routing after collapse
-        // This will handle all edge rerouting based on current collapse state
-        this.recalculateAllEdgeRouting();
+        this.state.cy.endBatch();
+
+        // Only recalculate edges affected by this collapse (not all edges)
+        this.recalculateAffectedEdgeRouting(connectedEdges, collapsedNodeIds);
     }
 
     /**
@@ -107,6 +127,34 @@ export class ExpandCollapseModule {
      * @param {string} nodeId - The node ID
      */
     expandNode(node, nodeId) {
+        // Get edges that were affected by this collapse (if any)
+        const edgeReroutingData = this.state.ui.edgeRerouting.get(nodeId);
+        const affectedOriginalEdges = edgeReroutingData ? edgeReroutingData.originalEdges : [];
+
+        // Also find any rerouted edges that were created for these original edges
+        const affectedReroutedEdges = [];
+        if (affectedOriginalEdges.length > 0) {
+            affectedOriginalEdges.forEach(originalEdge => {
+                const reroutedEdges = this.state.cy.edges(`[originalEdgeId="${originalEdge.id()}"]`);
+                reroutedEdges.forEach(re => affectedReroutedEdges.push(re));
+            });
+        }
+
+        // Combine original and rerouted edges for recalculation
+        const allAffectedEdges = [...affectedOriginalEdges, ...affectedReroutedEdges];
+
+        // Batch DOM operations
+        this.state.cy.startBatch();
+
+        // First, explicitly remove any rerouted edges that were created for this node's collapse
+        // This ensures we start clean before recalculating
+        if (affectedOriginalEdges.length > 0) {
+            affectedOriginalEdges.forEach(originalEdge => {
+                const reroutedEdges = this.state.cy.edges(`[originalEdgeId="${originalEdge.id()}"]`);
+                reroutedEdges.forEach(re => re.remove());
+            });
+        }
+
         // Restore children (display: element for shrinking visualization)
         node.children().forEach(child => {
             child.style('display', 'element');
@@ -119,32 +167,63 @@ export class ExpandCollapseModule {
         // Remove rerouting data for this node
         this.state.ui.edgeRerouting.delete(nodeId);
 
-        // Recalculate all edge routing after expand
-        this.recalculateAllEdgeRouting();
-
         node.removeClass('collapsed-node');
+
+        this.state.cy.endBatch();
+
+        // Recalculate edges that were affected by this expand
+        // Include both original edges and any rerouted edges that were created
+        const collapsedNodeIds = new Set(this.state.ui.collapsedGraphs);
+        if (allAffectedEdges.length > 0) {
+            this.recalculateAffectedEdgeRouting(allAffectedEdges, collapsedNodeIds);
+        } else {
+            // Fallback: recalculate all if we don't have the affected edges cached
+            this.recalculateAllEdgeRouting();
+        }
     }
 
     /**
      * Check if a node is actually visible (not hidden by any ancestor)
+     * Uses caching to avoid repeated ancestor traversals
      * @param {Object} node - The node to check
      * @returns {boolean} True if node is visible, false if hidden
      */
     isNodeActuallyVisible(node) {
+        const nodeId = node.id();
+
+        // Check cache first (cache is cleared when graph structure changes)
+        if (this._visibilityCache.has(nodeId)) {
+            return this._visibilityCache.get(nodeId);
+        }
+
         // Check the node itself
         if (node.style('display') === 'none') {
+            this._visibilityCache.set(nodeId, false);
             return false;
         }
 
         // Check all ancestors - if any ancestor is hidden, this node is hidden
         let ancestor = node.parent();
         while (ancestor && ancestor.length > 0) {
+            const ancestorId = ancestor.id();
+
+            // Check cache for ancestor
+            if (this._visibilityCache.has(ancestorId)) {
+                const ancestorVisible = this._visibilityCache.get(ancestorId);
+                this._visibilityCache.set(nodeId, ancestorVisible);
+                return ancestorVisible;
+            }
+
             if (ancestor.style('display') === 'none') {
+                this._visibilityCache.set(nodeId, false);
+                this._visibilityCache.set(ancestorId, false);
                 return false;
             }
             ancestor = ancestor.parent();
         }
 
+        // Node is visible - cache result
+        this._visibilityCache.set(nodeId, true);
         return true;
     }
 
@@ -280,6 +359,107 @@ export class ExpandCollapseModule {
     }
 
     /**
+     * Recalculate edge routing for a specific set of affected edges
+     * More efficient than recalculating all edges
+     * @param {Array} affectedEdges - Array of edges that need recalculation
+     * @param {Set} collapsedNodeIds - Set of currently collapsed node IDs
+     */
+    recalculateAffectedEdgeRouting(affectedEdges, collapsedNodeIds) {
+        if (!affectedEdges || affectedEdges.length === 0) {
+            return;
+        }
+
+        // Collect original edges from affected edges (skip rerouted edges - we'll handle via originals)
+        const originalEdgesToProcess = [];
+        const originalEdgeIds = new Set();
+
+        affectedEdges.forEach((edge) => {
+            if (edge.data('isRerouted')) {
+                const originalEdgeId = edge.data('originalEdgeId');
+                if (originalEdgeId && !originalEdgeIds.has(originalEdgeId)) {
+                    originalEdgeIds.add(originalEdgeId);
+                    const originalEdge = this.state.cy.getElementById(originalEdgeId);
+                    if (originalEdge.length) {
+                        originalEdgesToProcess.push(originalEdge);
+                    }
+                }
+                // Remove rerouted edge - we'll recreate it if needed
+                edge.remove();
+            } else {
+                if (!originalEdgeIds.has(edge.id())) {
+                    originalEdgeIds.add(edge.id());
+                    originalEdgesToProcess.push(edge);
+                }
+            }
+        });
+
+        // Batch DOM operations
+        this.state.cy.startBatch();
+
+        // Process all original edges and create rerouted edges as needed
+        originalEdgesToProcess.forEach((edge) => {
+            // Find any existing rerouted edges for this original edge and remove them
+            const existingRerouted = this.state.cy.edges(`[originalEdgeId="${edge.id()}"]`);
+            existingRerouted.forEach(e => e.remove());
+
+            // Calculate new routing
+            const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
+
+            if (routing.hide) {
+                // Hide original edge (internal/loopback connection)
+                edge.style('display', 'none');
+            } else {
+                const needsRerouting = routing.source !== routing.originalSource ||
+                    routing.target !== routing.originalTarget;
+
+                if (needsRerouting) {
+                    // Hide original edge and create rerouted edge
+                    edge.style('display', 'none');
+
+                    // Create new rerouted edge for this original edge
+                    // Multiple original edges can reroute to same endpoints - each gets its own rerouted edge
+                    const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
+                    const reroutedEdgeData = {
+                        data: {
+                            id: reroutedEdgeId,
+                            source: routing.source,
+                            target: routing.target,
+                            cable_type: edge.data('cable_type'),
+                            cable_length: edge.data('cable_length'),
+                            connection_number: edge.data('connection_number'),
+                            color: edge.data('color'),
+                            template_name: edge.data('template_name'),
+                            depth: edge.data('depth'),
+                            source_hostname: edge.data('source_hostname'),
+                            destination_hostname: edge.data('destination_hostname'),
+                            originalEdgeId: edge.id(),
+                            originalSource: routing.originalSource,
+                            originalTarget: routing.originalTarget,
+                            isRerouted: true
+                        },
+                        classes: 'connection rerouted-edge'
+                    };
+
+                    const sourceNode = this.state.cy.getElementById(routing.source);
+                    const targetNode = this.state.cy.getElementById(routing.target);
+
+                    if (sourceNode.length && targetNode.length) {
+                        this.state.cy.add(reroutedEdgeData).style('display', 'element');
+                    }
+                } else {
+                    // No rerouting needed, show original edge
+                    edge.style('display', 'element');
+                }
+            }
+        });
+
+        this.state.cy.endBatch();
+
+        // Schedule curve styles update (debounced) - bezier curves will handle overlapping edges
+        this._scheduleCurveStylesUpdate();
+    }
+
+    /**
      * Recalculate all edge routing in the graph based on current collapse state
      * This is called after every collapse/expand operation
      * Reroutes edges when child nodes are collapsed, but applies same styling as regular edges
@@ -290,51 +470,61 @@ export class ExpandCollapseModule {
         // Get all edges (both original and rerouted)
         const allEdges = this.state.cy.edges();
 
-        // Track which original edges we've processed
-        const processedOriginalEdges = new Set();
+        // Batch DOM operations
+        this.state.cy.startBatch();
+
+        // First, collect all original edges and their routing info before making any changes
+        // This ensures we have a clean snapshot of what should exist
+        const originalEdges = [];
+        const originalEdgeRouting = new Map();
 
         allEdges.forEach((edge) => {
-            // Skip if this is a rerouted edge (we'll process it via its original)
-            if (edge.data('isRerouted')) {
-                return;
+            if (!edge.data('isRerouted')) {
+                originalEdges.push(edge);
+                const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
+                originalEdgeRouting.set(edge.id(), { edge, routing });
             }
+        });
 
-            // Skip if already processed
+        // Remove ALL existing rerouted edges first to start clean
+        // This prevents leftover rerouted edges from causing duplicates
+        allEdges.forEach((edge) => {
+            if (edge.data('isRerouted')) {
+                edge.remove();
+            }
+        });
+
+        const processedOriginalEdges = new Set();
+
+        // Process all original edges and create rerouted edges as needed
+        originalEdges.forEach((edge) => {
             if (processedOriginalEdges.has(edge.id())) {
                 return;
             }
 
             processedOriginalEdges.add(edge.id());
 
-            // Find any existing rerouted edge for this original edge
-            const existingRerouted = this.state.cy.edges(`[originalEdgeId="${edge.id()}"]`);
-
-            // Calculate new routing
-            const routing = this.recalculateEdgeRouting(edge, collapsedNodeIds);
+            const { routing } = originalEdgeRouting.get(edge.id());
 
             if (routing.hide) {
-                // Hide original edge and remove any rerouted version
+                // Hide original edge (internal/loopback connection)
                 edge.style('display', 'none');
-                existingRerouted.forEach(e => e.remove());
             } else {
                 const needsRerouting = routing.source !== routing.originalSource ||
                     routing.target !== routing.originalTarget;
 
                 if (needsRerouting) {
-                    // Hide original edge
+                    // Hide original edge and create rerouted edge
                     edge.style('display', 'none');
 
-                    // Remove old rerouted edge if it exists
-                    existingRerouted.forEach(e => e.remove());
-
-                    // Create new rerouted edge
-                    const reroutedEdgeId = `rerouted_${edge.id()}_${Date.now()}`;
+                    // Create new rerouted edge for this original edge
+                    // Multiple original edges can reroute to same endpoints - each gets its own rerouted edge
+                    const reroutedEdgeId = this._generateReroutedEdgeId(edge.id());
                     const reroutedEdgeData = {
                         data: {
                             id: reroutedEdgeId,
                             source: routing.source,
                             target: routing.target,
-                            // Copy all edge properties
                             cable_type: edge.data('cable_type'),
                             cable_length: edge.data('cable_length'),
                             connection_number: edge.data('connection_number'),
@@ -343,7 +533,6 @@ export class ExpandCollapseModule {
                             depth: edge.data('depth'),
                             source_hostname: edge.data('source_hostname'),
                             destination_hostname: edge.data('destination_hostname'),
-                            // Store original edge info
                             originalEdgeId: edge.id(),
                             originalSource: routing.originalSource,
                             originalTarget: routing.originalTarget,
@@ -352,38 +541,57 @@ export class ExpandCollapseModule {
                         classes: 'connection rerouted-edge'
                     };
 
-                    // Verify source and target nodes exist before creating edge
                     const sourceNode = this.state.cy.getElementById(routing.source);
                     const targetNode = this.state.cy.getElementById(routing.target);
 
-                    if (!sourceNode.length || !targetNode.length) {
-                        // Don't create edge if nodes don't exist - keep original hidden
-                        return;
+                    if (sourceNode.length && targetNode.length) {
+                        this.state.cy.add(reroutedEdgeData).style('display', 'element');
                     }
-
-                    const reroutedEdge = this.state.cy.add(reroutedEdgeData);
-                    // Explicitly set display to element to ensure visibility
-                    reroutedEdge.style('display', 'element');
-
-                    // Apply same curve styles as regular edges (no special styling for collapsed state)
-                    // The forceApplyCurveStyles function will be called separately to style all edges uniformly
                 } else {
-                    // No rerouting needed, show original edge and remove any rerouted version
+                    // No rerouting needed, show original edge
                     edge.style('display', 'element');
-                    existingRerouted.forEach(e => e.remove());
                 }
             }
         });
 
-        // Apply curve styles to all edges (including rerouted ones) - ensures consistent styling
-        // regardless of collapsed state
-        // Use a longer delay to ensure all edge operations are complete
-        if (window.forceApplyCurveStyles && typeof window.forceApplyCurveStyles === 'function') {
-            setTimeout(() => {
-                console.log('[recalculateAllEdgeRouting] Calling forceApplyCurveStyles after rerouting');
-                window.forceApplyCurveStyles();
-            }, 100);
+        this.state.cy.endBatch();
+
+        // Schedule curve styles update (debounced) - bezier curves will handle overlapping edges
+        this._scheduleCurveStylesUpdate();
+    }
+
+    /**
+     * Schedule a debounced layout refresh
+     * Prevents multiple layout recalculations when multiple operations happen quickly
+     */
+    _scheduleLayoutRefresh() {
+        if (this._layoutRefreshTimer) {
+            cancelAnimationFrame(this._layoutRefreshTimer);
         }
+
+        this._layoutRefreshTimer = requestAnimationFrame(() => {
+            this.state.cy.layout({ name: 'preset' }).run();
+            // Update button states
+            window.updateExpandCollapseButtons?.();
+            this._layoutRefreshTimer = null;
+        });
+    }
+
+    /**
+     * Schedule a debounced curve styles update
+     * Prevents multiple style recalculations when multiple operations happen quickly
+     */
+    _scheduleCurveStylesUpdate() {
+        if (this._curveStylesTimer) {
+            clearTimeout(this._curveStylesTimer);
+        }
+
+        this._curveStylesTimer = setTimeout(() => {
+            if (this.state && this.state.commonModule) {
+                this.state.commonModule.forceApplyCurveStyles();
+            }
+            this._curveStylesTimer = null;
+        }, 50); // Reduced from 100ms to 50ms for faster response
     }
 
     /**
@@ -434,22 +642,14 @@ export class ExpandCollapseModule {
         const minDepth = Math.min(...nodeDepths.map(nd => nd.depth));
         const shallowestNodes = nodeDepths.filter(nd => nd.depth === minDepth).map(nd => nd.node);
 
-        // Expand all nodes at the shallowest level
-        shallowestNodes.forEach(node => {
-            const nodeId = node.id();
-            if (collapsedGraphs.has(nodeId)) {
-                this.expandNode(node, nodeId);
-            }
-        });
+        // Clear visibility cache before batch operations
+        this._visibilityCache.clear();
 
-        // Trigger layout refresh
-        setTimeout(() => {
-            cy.layout({ name: 'preset' }).run();
-            // Update button states
-            if (typeof window.updateExpandCollapseButtons === 'function') {
-                window.updateExpandCollapseButtons();
-            }
-        }, 10);
+        // Batch expand: collect all affected edges first, then expand all nodes, then recalculate once
+        this._batchExpandNodes(shallowestNodes);
+
+        // Schedule layout refresh (debounced)
+        this._scheduleLayoutRefresh();
     }
 
     /**
@@ -504,22 +704,186 @@ export class ExpandCollapseModule {
         const maxDepth = Math.max(...nodeDepths.map(nd => nd.depth));
         const deepestNodes = nodeDepths.filter(nd => nd.depth === maxDepth).map(nd => nd.node);
 
-        // Collapse all nodes at the deepest level
-        deepestNodes.forEach(node => {
+        // Clear visibility cache before batch operations
+        this._visibilityCache.clear();
+
+        // Batch collapse: collect all affected edges first, then collapse all nodes, then recalculate once
+        this._batchCollapseNodes(deepestNodes);
+
+        // Schedule layout refresh (debounced)
+        this._scheduleLayoutRefresh();
+    }
+
+    /**
+     * Batch collapse multiple nodes efficiently
+     * Collects all affected edges first, then collapses all nodes, then recalculates edges once
+     * @param {Array} nodes - Array of nodes to collapse
+     */
+    _batchCollapseNodes(nodes) {
+        if (!nodes || nodes.length === 0) {
+            return;
+        }
+
+        const collapsedGraphs = this.state.ui.collapsedGraphs;
+        const allAffectedEdges = new Set();
+        const nodesToCollapse = [];
+
+        // First pass: collect all affected edges and prepare nodes for collapse
+        nodes.forEach(node => {
             const nodeId = node.id();
-            if (!collapsedGraphs.has(nodeId)) {
-                this.collapseNode(node, nodeId);
+            if (collapsedGraphs.has(nodeId)) {
+                return; // Already collapsed
             }
+
+            // Get all descendant nodes (children, grandchildren, etc.) including ports
+            const descendants = node.descendants();
+            const descendantIds = new Set(descendants.map(d => d.id()));
+
+            // Find all edges connected to descendants (original edges)
+            const connectedEdges = this.state.cy.edges().filter(edge => {
+                const sourceId = edge.data('source');
+                const targetId = edge.data('target');
+                return descendantIds.has(sourceId) || descendantIds.has(targetId);
+            });
+
+            // Also find rerouted edges that point to this node (edges that were rerouted to this collapsed node)
+            const reroutedEdgesToNode = this.state.cy.edges().filter(edge => {
+                if (!edge.data('isRerouted')) {
+                    return false;
+                }
+                const sourceId = edge.data('source');
+                const targetId = edge.data('target');
+                return sourceId === nodeId || targetId === nodeId;
+            });
+
+            // Add all affected edges to the set
+            connectedEdges.forEach(edge => allAffectedEdges.add(edge));
+            reroutedEdgesToNode.forEach(edge => allAffectedEdges.add(edge));
+
+            nodesToCollapse.push({ node, nodeId, connectedEdges });
         });
 
-        // Trigger layout refresh
-        setTimeout(() => {
-            cy.layout({ name: 'preset' }).run();
-            // Update button states
-            if (typeof window.updateExpandCollapseButtons === 'function') {
-                window.updateExpandCollapseButtons();
+        if (nodesToCollapse.length === 0) {
+            return;
+        }
+
+        // Build the complete set of collapsed node IDs (including new ones)
+        const collapsedNodeIds = new Set(this.state.ui.collapsedGraphs);
+        nodesToCollapse.forEach(({ nodeId }) => {
+            collapsedNodeIds.add(nodeId);
+        });
+
+        // Batch DOM operations: collapse all nodes
+        this.state.cy.startBatch();
+
+        nodesToCollapse.forEach(({ node, nodeId, connectedEdges }) => {
+            // Store original edge data and rerouted edges
+            const edgeReroutingData = {
+                originalEdges: connectedEdges,
+                reroutedEdges: [],
+                edgeMappings: []
+            };
+
+            // Hide children (use display: none for shrinking visualization)
+            node.children().forEach(child => {
+                child.style('display', 'none');
+            });
+
+            // Store rerouting data
+            this.state.ui.edgeRerouting.set(nodeId, edgeReroutingData);
+            node.addClass('collapsed-node');
+            this.state.ui.collapsedGraphs.add(nodeId);
+            this.state.ui.expandedGraphs.delete(nodeId);
+        });
+
+        this.state.cy.endBatch();
+
+        // Recalculate all affected edges with the complete collapsed set
+        // Convert Set to Array for the recalculation function
+        this.recalculateAffectedEdgeRouting(Array.from(allAffectedEdges), collapsedNodeIds);
+    }
+
+    /**
+     * Batch expand multiple nodes efficiently
+     * Collects all affected edges first, then expands all nodes, then recalculates edges once
+     * @param {Array} nodes - Array of nodes to expand
+     */
+    _batchExpandNodes(nodes) {
+        if (!nodes || nodes.length === 0) {
+            return;
+        }
+
+        const collapsedGraphs = this.state.ui.collapsedGraphs;
+        const allAffectedEdges = new Set();
+        const nodesToExpand = [];
+
+        // First pass: collect all affected edges from nodes being expanded
+        nodes.forEach(node => {
+            const nodeId = node.id();
+            if (!collapsedGraphs.has(nodeId)) {
+                return; // Not collapsed
             }
-        }, 10);
+
+            // Get edges that were affected by this collapse (if cached)
+            const edgeReroutingData = this.state.ui.edgeRerouting.get(nodeId);
+            const connectedEdges = edgeReroutingData ? edgeReroutingData.originalEdges : [];
+
+            // If we don't have cached edges, find them by descendants
+            if (connectedEdges.length === 0) {
+                const descendants = node.descendants();
+                const descendantIds = new Set(descendants.map(d => d.id()));
+                const foundEdges = this.state.cy.edges().filter(edge => {
+                    const sourceId = edge.data('source');
+                    const targetId = edge.data('target');
+                    return descendantIds.has(sourceId) || descendantIds.has(targetId);
+                });
+                foundEdges.forEach(edge => allAffectedEdges.add(edge));
+            } else {
+                connectedEdges.forEach(edge => allAffectedEdges.add(edge));
+            }
+
+            nodesToExpand.push({ node, nodeId });
+        });
+
+        if (nodesToExpand.length === 0) {
+            return;
+        }
+
+        // Build the collapsed set after expansion (removing nodes being expanded)
+        const collapsedNodeIds = new Set(this.state.ui.collapsedGraphs);
+        nodesToExpand.forEach(({ nodeId }) => {
+            collapsedNodeIds.delete(nodeId);
+        });
+
+        // Batch DOM operations: expand all nodes
+        this.state.cy.startBatch();
+
+        nodesToExpand.forEach(({ node, nodeId }) => {
+            // Restore children (display: element for shrinking visualization)
+            node.children().forEach(child => {
+                child.style('display', 'element');
+            });
+
+            // Remove this node from collapsed set
+            this.state.ui.collapsedGraphs.delete(nodeId);
+            this.state.ui.expandedGraphs.add(nodeId);
+
+            // Remove rerouting data for this node
+            this.state.ui.edgeRerouting.delete(nodeId);
+
+            node.removeClass('collapsed-node');
+        });
+
+        this.state.cy.endBatch();
+
+        // Recalculate all affected edges with the updated collapsed set
+        // If we have affected edges, recalculate them; otherwise do full recalculation
+        if (allAffectedEdges.size > 0) {
+            this.recalculateAffectedEdgeRouting(Array.from(allAffectedEdges), collapsedNodeIds);
+        } else {
+            // Fallback: full recalculation if we couldn't determine affected edges
+            this.recalculateAllEdgeRouting();
+        }
     }
 }
 
