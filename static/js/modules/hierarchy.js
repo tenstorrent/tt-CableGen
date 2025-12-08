@@ -879,6 +879,9 @@ export class HierarchyModule {
         const hasLogicalTopology = shelfDataList.some(shelfInfo =>
             shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0
         );
+        
+        // Track if we're creating extracted_topology root (for connection tagging)
+        let rootTemplateName = null;
 
         if (hasLogicalTopology) {
             // Find and recreate the root node from saved hierarchy state
@@ -1023,13 +1026,39 @@ export class HierarchyModule {
                 });
             });
         } else {
-            // No logical topology - let nodes float as parentless graphs
-            // Add all shelves without a parent (they will be top-level nodes)
+            // No logical topology - create "extracted_topology" root container
+            // This wraps the flat structure so it can be exported hierarchically
+            rootTemplateName = "extracted_topology";
+            const rootGraphId = "graph_extracted_topology";
+            
+            // Get template color for the root
+            const rootTemplateColor = this.common.getTemplateColor(rootTemplateName);
+            
+            // Create root graph node
+            newElements.push({
+                data: {
+                    id: rootGraphId,
+                    label: rootTemplateName,
+                    type: 'graph',
+                    template_name: rootTemplateName,
+                    parent: null,
+                    depth: 0,
+                    templateColor: rootTemplateColor
+                },
+                classes: 'graph'
+            });
+            
+            // Add all shelves as children of the extracted_topology root
             shelfDataList.forEach((shelfInfo, index) => {
+                // Determine child_name - use hostname if available, otherwise use host_index
+                let childName = shelfInfo.data.child_name;
+                if (!childName) {
+                    // Use hostname as child_name for flat structures
+                    childName = shelfInfo.data.hostname || `host_${shelfInfo.data.host_index ?? index}`;
+                }
+                
                 // Format label for hierarchy mode: "child_name (host_index)"
-                // This is the standard hierarchy mode format for shelf nodes
                 let hierarchyLabel = shelfInfo.data.label; // Default to existing label
-                const childName = shelfInfo.data.child_name;
                 const hostIndex = shelfInfo.data.host_index;
 
                 if (childName && hostIndex !== undefined && hostIndex !== null) {
@@ -1043,9 +1072,11 @@ export class HierarchyModule {
                 newElements.push({
                     data: {
                         ...shelfInfo.data,
-                        parent: undefined,  // No parent - nodes float freely
+                        parent: rootGraphId,  // Parent is the extracted_topology root
                         type: 'shelf',
-                        label: hierarchyLabel  // Set hierarchy mode label format
+                        label: hierarchyLabel,
+                        child_name: childName,  // Ensure child_name is set
+                        logical_path: []  // Empty logical_path - flat structure under root
                     },
                     classes: shelfInfo.classes,
                     position: { x: 200 + index * 50, y: 200 + index * 50 }
@@ -1101,9 +1132,24 @@ export class HierarchyModule {
         });
 
         // Re-create connections with all preserved data
+        // If we created extracted_topology root, tag all connections with that template
+        const shouldTagWithExtractedTopology = !hasLogicalTopology && rootTemplateName === "extracted_topology";
+        
         connections.forEach(conn => {
+            const connectionData = { ...conn.data };
+            
+            // Tag connections with extracted_topology template if we're in flat structure mode
+            if (shouldTagWithExtractedTopology) {
+                connectionData.template_name = "extracted_topology";
+                connectionData.containerTemplate = "extracted_topology";
+                // Set depth to 0 since they're at the root template level
+                if (connectionData.depth === undefined || connectionData.depth === null) {
+                    connectionData.depth = 0;
+                }
+            }
+            
             newElements.push({
-                data: conn.data,
+                data: connectionData,
                 classes: conn.classes
             });
         });

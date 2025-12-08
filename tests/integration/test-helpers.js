@@ -172,6 +172,98 @@ print(result)`;
 }
 
 /**
+ * Parse exported textproto and count nodes and connections
+ * @param {string} textprotoContent - Textproto content from export
+ * @returns {Object} Object with nodeCount and connectionCount
+ */
+export function parseExportedTextproto(textprotoContent) {
+    const tempTextprotoFile = path.join(PROJECT_ROOT, '.test_parse_textproto.textproto');
+    const tempScript = path.join(PROJECT_ROOT, '.test_parse_textproto_script.py');
+
+    try {
+        // Write textproto to temp file
+        fs.writeFileSync(tempTextprotoFile, textprotoContent);
+
+        const pythonScript = `import sys
+import json
+import os
+sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
+
+# Add protobuf directory to path (same as export_descriptors.py does)
+tt_metal_home = os.environ.get("TT_METAL_HOME")
+if tt_metal_home:
+    protobuf_dir = os.path.join(tt_metal_home, "build", "tools", "scaleout", "protobuf")
+    if os.path.exists(protobuf_dir):
+        sys.path.append(protobuf_dir)
+
+try:
+    import cluster_config_pb2
+    from google.protobuf import text_format
+    
+    # Read and parse textproto
+    with open(r'${tempTextprotoFile.replace(/\\/g, '/')}', 'r') as f:
+        textproto_content = f.read()
+    
+    cluster_desc = cluster_config_pb2.ClusterDescriptor()
+    text_format.Parse(textproto_content, cluster_desc)
+    
+    # Count nodes (children in templates that are node_ref, not graph_ref)
+    node_count = 0
+    connection_count = 0
+    
+    # Traverse all templates to count nodes
+    for template_name, template in cluster_desc.graph_templates.items():
+        for child in template.children:
+            if child.HasField('node_ref'):
+                node_count += 1
+    
+    # Count connections in all templates
+    for template_name, template in cluster_desc.graph_templates.items():
+        if 'QSFP_DD' in template.internal_connections:
+            port_conns = template.internal_connections['QSFP_DD']
+            connection_count += len(port_conns.connections)
+    
+    result = {
+        'node_count': node_count,
+        'connection_count': connection_count,
+        'template_count': len(cluster_desc.graph_templates),
+        'root_template': cluster_desc.root_instance.template_name
+    }
+    
+    print(json.dumps(result))
+except Exception as e:
+    print(json.dumps({'error': str(e)}))
+    sys.exit(1)`;
+
+        // Write script to temp file
+        fs.writeFileSync(tempScript, pythonScript);
+
+        // Execute Python script
+        const result = execSync(`python3 "${tempScript}"`, {
+            encoding: 'utf-8',
+            cwd: PROJECT_ROOT,
+            maxBuffer: 10 * 1024 * 1024
+        });
+
+        const parsed = JSON.parse(result.trim());
+        if (parsed.error) {
+            throw new Error(`Failed to parse textproto: ${parsed.error}`);
+        }
+        return parsed;
+    } catch (error) {
+        throw new Error(`Python textproto parsing failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
+    } finally {
+        // Clean up temp files
+        if (fs.existsSync(tempTextprotoFile)) {
+            fs.unlinkSync(tempTextprotoFile);
+        }
+        if (fs.existsSync(tempScript)) {
+            fs.unlinkSync(tempScript);
+        }
+    }
+}
+
+/**
  * Count shelf nodes in Cytoscape data
  * @param {Object} cytoscapeData - Cytoscape visualization data
  * @returns {number} Count of shelf nodes
@@ -297,56 +389,36 @@ connections = parser.extract_connections()
 # Build a map of shelf node IDs to their location data
 shelf_nodes = {}
 for element in cytoscape_data.get('elements', []):
-    node_data = element.get('data', {})
-    if node_data.get('type') == 'shelf':
-        shelf_id = node_data.get('id')
-        shelf_nodes[shelf_id] = {
-            'hostname': node_data.get('hostname', ''),
-            'hall': node_data.get('hall', ''),
-            'aisle': node_data.get('aisle', ''),
-            'rack': node_data.get('rack', '') or node_data.get('rack_num', ''),
-            'shelf_u': node_data.get('shelf_u', ''),
-            'node_type': node_data.get('node_type', '')
-        }
+    if 'data' in element:
+        data = element['data']
+        if data.get('type') == 'shelf':
+            shelf_id = data.get('id')
+            shelf_nodes[shelf_id] = {
+                'hostname': data.get('hostname', ''),
+                'hall': data.get('hall', ''),
+                'aisle': data.get('aisle', ''),
+                'rack': data.get('rack_num') or data.get('rack', 0),
+                'shelf_u': data.get('shelf_u', 0),
+                'node_type': data.get('shelf_node_type') or data.get('node_type', '')
+            }
 
-# Helper to get location from shelf node
-def get_location_from_shelf(shelf_id, shelf_nodes):
-    shelf = shelf_nodes.get(shelf_id, {})
-    return {
-        'hostname': shelf.get('hostname', ''),
-        'hall': shelf.get('hall', ''),
-        'aisle': shelf.get('aisle', ''),
-        'rack': str(shelf.get('rack', '')),
-        'shelf_u': str(shelf.get('shelf_u', '')),
-        'node_type': shelf.get('node_type', '')
-    }
-
-# Format as CSV
+# Generate CSV lines
 csv_lines = []
-csv_lines.append("Source,,,,,,,,,Destination,,,,,,,,,Cable Length,Cable Type")
-csv_lines.append("Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,,")
-
 for conn in connections:
-    source = conn.get('source', {})
-    target = conn.get('target', {})
+    source = conn['source']
+    target = conn['target']
     
-    # Get shelf IDs from connection
-    source_shelf_id = source.get('shelf_id', '')
-    target_shelf_id = target.get('shelf_id', '')
+    source_hostname = source.get('hostname', '')
+    target_hostname = target.get('hostname', '')
     
     # Get location data from shelf nodes
-    source_loc = get_location_from_shelf(source_shelf_id, shelf_nodes)
-    target_loc = get_location_from_shelf(target_shelf_id, shelf_nodes)
+    source_loc = shelf_nodes.get(source.get('shelf_id', ''), {})
+    target_loc = shelf_nodes.get(target.get('shelf_id', ''), {})
     
-    # Use connection data for hostname if available, otherwise use shelf location
-    source_hostname = source.get('hostname') or source_loc.get('hostname', '')
-    target_hostname = target.get('hostname') or target_loc.get('hostname', '')
-    
-    # Get tray and port from connection
-    source_tray = str(source.get('tray_id', ''))
-    source_port = str(source.get('port_id', ''))
-    target_tray = str(target.get('tray_id', ''))
-    target_port = str(target.get('port_id', ''))
+    source_tray = source.get('tray_id', '')
+    source_port = source.get('port_id', '')
+    target_tray = target.get('tray_id', '')
+    target_port = target.get('port_id', '')
     
     # Get node type from connection or shelf
     source_node_type = source.get('node_type') or source_loc.get('node_type', '')
@@ -491,7 +563,6 @@ except Exception as e:
         }
     }
 }
-
 
 /**
  * Parse deployment descriptor textproto file and convert to format expected by updateShelfLocations

@@ -34,7 +34,8 @@ import {
     saveTestArtifact,
     parseDeploymentDescriptorHostnames,
     parseDeploymentDescriptor,
-    loadExpectedOutput
+    loadExpectedOutput,
+    parseExportedTextproto
 } from './test-helpers.js';
 
 // Use real Cytoscape.js - it's installed as npm package and works in Node.js with jsdom
@@ -168,6 +169,23 @@ describe('Import/Export Flow Integration Tests', () => {
             headless: true, // Run in headless mode (no DOM rendering needed)
             elements: []
         });
+        
+        // Mock style() method for headless mode (some methods need it)
+        if (!state.cy.style || typeof state.cy.style !== 'function') {
+            state.cy.style = jest.fn(() => ({
+                update: jest.fn()
+            }));
+        } else {
+            // If style() exists but update() doesn't, mock update
+            const originalStyle = state.cy.style.bind(state.cy);
+            state.cy.style = jest.fn(() => {
+                const styleObj = originalStyle();
+                if (!styleObj || typeof styleObj.update !== 'function') {
+                    return { update: jest.fn() };
+                }
+                return styleObj;
+            });
+        }
     });
 
     afterEach(() => {
@@ -3142,6 +3160,185 @@ describe('Import/Export Flow Integration Tests', () => {
             saveTestArtifact('apply_deployment_descriptor_export', exportedDeployment, 'textproto');
             saveTestArtifact('apply_deployment_descriptor_csv', exportedCSV, 'csv');
             console.log(`✅ Verified: Applied deployment descriptor to ${updatedCount} shelves, created ${uniqueHalls.size} halls, ${uniqueAisles.size} aisles, ${uniqueRacks.size} racks without duplicates`);
+        });
+
+        test('Location mode -> hierarchy mode switch -> export cabling descriptor -> verify all nodes and connections accounted for', () => {
+            // Step 1: Import CSV file (starts in location mode)
+            const csvFiles = getTestDataFiles('.csv', 'cabling-guides');
+            if (csvFiles.length === 0) {
+                console.log('Skipping test: No CSV test files found');
+                return;
+            }
+
+            const csvFile = path.join(TEST_DATA_DIR, csvFiles[0]);
+            const importedData = callPythonImport(csvFile);
+            
+            // Initialize visualization in location mode
+            state.setMode('location');
+            state.cy.elements().remove();
+            state.cy.add(importedData.elements);
+            state.data.currentData = {
+                elements: importedData.elements,
+                metadata: importedData.metadata || {}
+            };
+
+            // Step 2: Count nodes and connections in location mode
+            const locationModeData = {
+                elements: state.cy.elements().jsons(),
+                metadata: state.data.currentData.metadata
+            };
+            const locationShelfCount = countShelfNodes(locationModeData);
+            const locationConnectionCount = countConnections(locationModeData);
+
+            expect(locationShelfCount).toBeGreaterThan(0);
+            expect(locationConnectionCount).toBeGreaterThan(0);
+
+            console.log(`Location mode: ${locationShelfCount} shelves, ${locationConnectionCount} connections`);
+
+            // Step 3: Set up hierarchyModeState (simulating that we're switching FROM location mode)
+            // This is what locationModule.switchMode() does - it saves the current state
+            state.data.hierarchyModeState = {
+                elements: state.cy.elements().jsons(),
+                metadata: state.data.currentData.metadata || {}
+            };
+            
+            // Now switch to hierarchy mode (creates extracted_topology root)
+            state.setMode('hierarchy');
+            hierarchyModule.switchMode();
+
+            // Verify extracted_topology root was created
+            const rootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0; // No parent = root level
+            });
+
+            expect(rootGraphs.length).toBe(1);
+            const rootGraph = rootGraphs[0];
+            expect(rootGraph.data('template_name')).toBe('extracted_topology');
+            expect(rootGraph.data('id')).toBe('graph_extracted_topology');
+
+            // Step 4: Count nodes and connections in hierarchy mode
+            const hierarchyModeData = {
+                elements: state.cy.elements().jsons(),
+                metadata: state.data.currentData.metadata || {}
+            };
+            const hierarchyShelfCount = countShelfNodes(hierarchyModeData);
+            const hierarchyConnectionCount = countConnections(hierarchyModeData);
+
+            // Verify all nodes and connections are preserved
+            expect(hierarchyShelfCount).toBe(locationShelfCount);
+            expect(hierarchyConnectionCount).toBe(locationConnectionCount);
+
+            console.log(`Hierarchy mode: ${hierarchyShelfCount} shelves, ${hierarchyConnectionCount} connections`);
+
+            // Step 5: Debug - Check all connections before export
+            const allConnections = state.cy.edges();
+            const connectionDetails = [];
+            allConnections.forEach(edge => {
+                const edgeData = edge.data();
+                const sourceNode = state.cy.getElementById(edgeData.source);
+                const targetNode = state.cy.getElementById(edgeData.target);
+                
+                // Get host_id from source and target ports
+                let sourceHostId = null;
+                let targetHostId = null;
+                
+                if (sourceNode.length > 0) {
+                    const sourceParent = sourceNode.parent();
+                    if (sourceParent.length > 0) {
+                        const sourceTray = sourceParent;
+                        const sourceShelf = sourceTray.parent();
+                        if (sourceShelf.length > 0) {
+                            sourceHostId = sourceShelf.data('host_index') ?? sourceShelf.data('host_id');
+                        }
+                    }
+                }
+                
+                if (targetNode.length > 0) {
+                    const targetParent = targetNode.parent();
+                    if (targetParent.length > 0) {
+                        const targetTray = targetParent;
+                        const targetShelf = targetTray.parent();
+                        if (targetShelf.length > 0) {
+                            targetHostId = targetShelf.data('host_index') ?? targetShelf.data('host_id');
+                        }
+                    }
+                }
+                
+                connectionDetails.push({
+                    id: edgeData.id,
+                    source: edgeData.source,
+                    target: edgeData.target,
+                    template_name: edgeData.template_name,
+                    sourceHostId: sourceHostId,
+                    targetHostId: targetHostId,
+                    sourceHostname: edgeData.source_hostname,
+                    targetHostname: edgeData.destination_hostname || edgeData.destination_hostname
+                });
+            });
+            
+            console.log(`\n📊 Connection Analysis:`);
+            console.log(`Total connections: ${connectionDetails.length}`);
+            const taggedConnections = connectionDetails.filter(c => c.template_name === 'extracted_topology');
+            console.log(`Tagged with extracted_topology: ${taggedConnections.length}`);
+            const withHostIds = connectionDetails.filter(c => c.sourceHostId !== null && c.targetHostId !== null);
+            console.log(`With both host_ids: ${withHostIds.length}`);
+            const missingHostIds = connectionDetails.filter(c => c.sourceHostId === null || c.targetHostId === null);
+            if (missingHostIds.length > 0) {
+                console.log(`⚠️ Connections missing host_id: ${missingHostIds.length}`);
+                missingHostIds.slice(0, 5).forEach(c => {
+                    console.log(`  - ${c.id}: sourceHostId=${c.sourceHostId}, targetHostId=${c.targetHostId}`);
+                });
+            }
+
+            // Step 6: Export cabling descriptor
+            const exportedTextproto = callPythonExport(hierarchyModeData);
+            expect(exportedTextproto).toBeTruthy();
+            expect(exportedTextproto.length).toBeGreaterThan(0);
+
+            // Step 7: Parse exported textproto and verify counts
+            const exportedStats = parseExportedTextproto(exportedTextproto);
+            
+            expect(exportedStats.node_count).toBe(locationShelfCount);
+            expect(exportedStats.connection_count).toBe(locationConnectionCount);
+            expect(exportedStats.root_template).toBe('extracted_topology');
+            expect(exportedStats.template_count).toBeGreaterThan(0);
+            
+            // If connection count doesn't match, investigate
+            const connectionDiff = locationConnectionCount - exportedStats.connection_count;
+            if (connectionDiff > 0) {
+                console.log(`\n❌ ERROR: ${connectionDiff} connection(s) missing from export!`);
+                console.log(`Expected: ${locationConnectionCount}, Got: ${exportedStats.connection_count}`);
+                
+                // Save exported textproto for inspection
+                saveTestArtifact('location_to_hierarchy_export_missing_connections', exportedTextproto, 'textproto');
+                
+                // This should fail the test - all connections must be preserved
+                throw new Error(`Connection preservation failed: ${connectionDiff} out of ${locationConnectionCount} connections are missing from export. Check debug output above for details.`);
+            }
+
+            console.log(`Exported textproto: ${exportedStats.node_count} nodes, ${exportedStats.connection_count} connections, root template: ${exportedStats.root_template}`);
+
+            // Step 8: Verify all connections are tagged with extracted_topology template
+            const taggedConnectionsCount = connectionDetails.filter(c => c.template_name === 'extracted_topology').length;
+            expect(taggedConnectionsCount).toBe(locationConnectionCount);
+            console.log(`✅ Verified: All ${taggedConnectionsCount} connections are tagged with extracted_topology template`);
+
+            // Step 8: Verify all shelves are children of extracted_topology root
+            const shelves = state.cy.nodes('[type="shelf"]');
+            let shelvesUnderRoot = 0;
+            shelves.forEach(shelf => {
+                const parent = shelf.parent();
+                if (parent && parent.length > 0 && parent.data('id') === 'graph_extracted_topology') {
+                    shelvesUnderRoot++;
+                }
+            });
+
+            expect(shelvesUnderRoot).toBe(locationShelfCount);
+            console.log(`✅ Verified: All ${shelvesUnderRoot} shelves are children of extracted_topology root`);
+
+            saveTestArtifact('location_to_hierarchy_export', exportedTextproto, 'textproto');
+            console.log(`✅ Verified: Location mode -> hierarchy mode switch preserves all ${locationShelfCount} nodes and ${locationConnectionCount} connections in exported cabling descriptor`);
         });
     });
 });
