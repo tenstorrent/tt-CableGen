@@ -60,12 +60,11 @@ import { StateObserver } from './state/state-observer.js';
 import { NodeFactory } from './factories/node-factory.js';
 import { ConnectionFactory } from './factories/connection-factory.js';
 import { CommonModule } from './modules/common.js';
-// Lazy-loaded modules (loaded on-demand to improve initial load time)
-// import { LocationModule } from './modules/location.js';
-// import { HierarchyModule } from './modules/hierarchy.js';
-// import { ExportModule } from './modules/export.js';
+import { LocationModule } from './modules/location.js';
+import { HierarchyModule } from './modules/hierarchy.js';
+import { ExportModule } from './modules/export.js';
 import { UIDisplayModule } from './modules/ui-display.js';
-// import { FileManagementModule } from './modules/file-management.js';
+import { FileManagementModule } from './modules/file-management.js';
 import { deleteMultipleSelected as deleteMultipleSelectedUtil, deleteConnectionFromAllTemplateInstances as deleteConnectionFromAllTemplateInstancesUtil } from './utils/node-management.js';
 import { verifyCytoscapeExtensions as verifyCytoscapeExtensionsUtil } from './utils/cytoscape-utils.js';
 import { ApiClient } from './api/api-client.js';
@@ -103,106 +102,21 @@ const notificationManager = new NotificationManager();
 const modalManager = new ModalManager();
 const statusManager = new StatusManager();
 
-// ===== Lazy Loading Module Cache =====
-// Store loaded modules to avoid re-loading
-const moduleCache = {
-    locationModule: null,
-    hierarchyModule: null,
-    exportModule: null,
-    fileManagementModule: null
-};
+// ===== Initialize Modules Eagerly =====
+// Initialize location and hierarchy modules immediately (no lazy loading)
+const locationModule = new LocationModule(state, commonModule);
+const hierarchyModule = new HierarchyModule(state, commonModule);
+const exportModule = new ExportModule(state, commonModule, apiClient, notificationManager, statusManager);
 
-// ===== Lazy Loading Functions =====
-/**
- * Lazy load LocationModule (only needed in location mode)
- * @returns {Promise<LocationModule>}
- */
-async function loadLocationModule() {
-    if (moduleCache.locationModule) {
-        return moduleCache.locationModule;
-    }
-    const { LocationModule } = await import('./modules/location.js');
-    moduleCache.locationModule = new LocationModule(state, commonModule);
-    window.locationModule = moduleCache.locationModule;
-    // Update UIDisplayModule if it exists
-    if (uiDisplayModule) {
-        uiDisplayModule.locationModule = moduleCache.locationModule;
-    }
-    return moduleCache.locationModule;
-}
+// Expose modules to window for debugging and external access
+window.locationModule = locationModule;
+window.hierarchyModule = hierarchyModule;
 
-/**
- * Lazy load HierarchyModule (only needed in hierarchy mode)
- * @returns {Promise<HierarchyModule>}
- */
-async function loadHierarchyModule() {
-    if (moduleCache.hierarchyModule) {
-        return moduleCache.hierarchyModule;
-    }
-    const { HierarchyModule } = await import('./modules/hierarchy.js');
-    moduleCache.hierarchyModule = new HierarchyModule(state, commonModule);
-    window.hierarchyModule = moduleCache.hierarchyModule;
-    // Update UIDisplayModule if it exists
-    if (uiDisplayModule) {
-        uiDisplayModule.hierarchyModule = moduleCache.hierarchyModule;
-    }
-    return moduleCache.hierarchyModule;
-}
+// Initialize UI display module with both modules
+const uiDisplayModule = new UIDisplayModule(state, commonModule, locationModule, hierarchyModule, notificationManager, statusManager);
 
-/**
- * Lazy load ExportModule (only needed when exporting)
- * @returns {Promise<ExportModule>}
- */
-async function loadExportModule() {
-    if (moduleCache.exportModule) {
-        return moduleCache.exportModule;
-    }
-    const { ExportModule } = await import('./modules/export.js');
-    moduleCache.exportModule = new ExportModule(state, commonModule, apiClient, notificationManager, statusManager);
-    return moduleCache.exportModule;
-}
-
-/**
- * Lazy load FileManagementModule (needed for file upload)
- * @returns {Promise<FileManagementModule>}
- */
-async function loadFileManagementModule() {
-    if (moduleCache.fileManagementModule) {
-        return moduleCache.fileManagementModule;
-    }
-    const { FileManagementModule } = await import('./modules/file-management.js');
-    // Ensure uiDisplayModule is initialized before creating FileManagementModule
-    await ensureUIDisplayModule();
-    moduleCache.fileManagementModule = new FileManagementModule(state, apiClient, uiDisplayModule, notificationManager);
-    return moduleCache.fileManagementModule;
-}
-
-/**
- * Ensure UIDisplayModule is initialized with both mode modules
- * This loads both modules in parallel for better performance
- * @returns {Promise<UIDisplayModule>}
- */
-async function ensureUIDisplayModule() {
-    if (uiDisplayModule && uiDisplayModule.locationModule && uiDisplayModule.hierarchyModule) {
-        return uiDisplayModule;
-    }
-    // Load both modules in parallel (they're often both needed)
-    const [locationModule, hierarchyModule] = await Promise.all([
-        loadLocationModule(),
-        loadHierarchyModule()
-    ]);
-    if (!uiDisplayModule) {
-        uiDisplayModule = new UIDisplayModule(state, commonModule, locationModule, hierarchyModule, notificationManager, statusManager);
-    } else {
-        // Update existing module references
-        uiDisplayModule.locationModule = locationModule;
-        uiDisplayModule.hierarchyModule = hierarchyModule;
-    }
-    return uiDisplayModule;
-}
-
-// Initialize UI display module with null modules initially (will be loaded on-demand)
-let uiDisplayModule = new UIDisplayModule(state, commonModule, null, null, notificationManager, statusManager);
+// Initialize file management module (depends on uiDisplayModule)
+const fileManagementModule = new FileManagementModule(state, apiClient, uiDisplayModule, notificationManager);
 
 // Expose commonModule for debugging
 window.commonModule = commonModule;
@@ -221,20 +135,14 @@ stateObserver.subscribe('data.currentData', (newVal) => { window.currentData = n
 stateObserver.subscribe('data.initialVisualizationData', (newVal) => { window.initialVisualizationData = newVal; });
 
 // ===== Visualization Mode Management =====
-async function setVisualizationMode(mode) {
+function setVisualizationMode(mode) {
     state.setMode(mode);
     document.body.classList.remove('mode-location', 'mode-hierarchy');
     if (mode === 'location') {
         document.body.classList.add('mode-location');
-        // Pre-load location module when switching to location mode
-        await loadLocationModule();
     } else if (mode === 'hierarchy') {
         document.body.classList.add('mode-hierarchy');
-        // Pre-load hierarchy module when switching to hierarchy mode
-        await loadHierarchyModule();
     }
-    // Ensure UI display module has both modules loaded
-    await ensureUIDisplayModule();
     updateModeIndicator();
     if (state.cy && typeof populateNodeFilterDropdown === 'function') populateNodeFilterDropdown();
     if (state.cy && mode === 'hierarchy' && typeof populateTemplateFilterDropdown === 'function') populateTemplateFilterDropdown();
@@ -243,20 +151,16 @@ function getVisualizationMode() { return state.mode; }
 function updateModeIndicator() { return uiDisplayModule.updateModeIndicator(); }
 function extractGraphTemplates(data) { return uiDisplayModule.extractGraphTemplates(data); }
 function populateGraphTemplateDropdown() { return uiDisplayModule.populateGraphTemplateDropdown(); }
-async function toggleVisualizationMode() {
-    await ensureUIDisplayModule();
+function toggleVisualizationMode() {
     return uiDisplayModule.toggleVisualizationMode();
 }
-async function location_switchMode() {
-    const locationModule = await loadLocationModule();
+function location_switchMode() {
     return locationModule.switchMode();
 }
-async function hierarchy_switchMode() {
-    const hierarchyModule = await loadHierarchyModule();
+function hierarchy_switchMode() {
     return hierarchyModule.switchMode();
 }
-async function organizeInGrid() {
-    const locationModule = await loadLocationModule();
+function organizeInGrid() {
     return locationModule.organizeInGrid();
 }
 
@@ -270,16 +174,13 @@ function getEthChannelMapping(nodeType, portNumber) { return commonModule.getEth
 function updateDeleteButtonState() { return uiDisplayModule.updateDeleteButtonState(); }
 function updateDeleteNodeButtonState() { return uiDisplayModule.updateDeleteButtonState(); }
 
-async function formatRackNum(rackNum) {
-    const locationModule = await loadLocationModule();
+function formatRackNum(rackNum) {
     return locationModule.formatRackNum(rackNum);
 }
-async function formatShelfU(shelfU) {
-    const locationModule = await loadLocationModule();
+function formatShelfU(shelfU) {
     return locationModule.formatShelfU(shelfU);
 }
-async function location_buildLabel(hall, aisle, rackNum, shelfU = null) {
-    const locationModule = await loadLocationModule();
+function location_buildLabel(hall, aisle, rackNum, shelfU = null) {
     return locationModule.buildLabel(hall, aisle, rackNum, shelfU);
 }
 
@@ -329,84 +230,65 @@ function location_getNodeData(node) {
     };
 }
 
-async function getNodeDisplayLabel(nodeData) {
-    const locationModule = await loadLocationModule();
+function getNodeDisplayLabel(nodeData) {
     return commonModule.getNodeDisplayLabel(nodeData, locationModule);
 }
-async function hierarchy_getPath(node) {
-    const hierarchyModule = await loadHierarchyModule();
+function hierarchy_getPath(node) {
     return hierarchyModule.getPath(node);
 }
-async function handlePortClickEditMode(node, evt) {
-    const hierarchyModule = await loadHierarchyModule();
+function handlePortClickEditMode(node, evt) {
     return commonModule.handlePortClickEditMode(node, evt, hierarchyModule);
 }
 function handlePortClickViewMode(node, evt) { return commonModule.handlePortClickViewMode(node, evt); }
 function clearAllSelections() { return commonModule.clearAllSelections(); }
-async function getPortLocationInfo(portNode) {
-    const locationModule = await loadLocationModule();
+function getPortLocationInfo(portNode) {
     return commonModule.getPortLocationInfo(portNode, locationModule);
 }
-async function updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel) {
-    const hierarchyModule = await loadHierarchyModule();
+function updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel) {
     return hierarchyModule.updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel);
 }
-async function recalculateHostIndicesForTemplates() {
-    const hierarchyModule = await loadHierarchyModule();
+function recalculateHostIndicesForTemplates() {
     return hierarchyModule.recalculateHostIndicesForTemplates();
 }
-async function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName, childTemplateName) {
-    const hierarchyModule = await loadHierarchyModule();
+function deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName, childTemplateName) {
     return hierarchyModule.deleteChildGraphFromAllTemplateInstances(childName, parentTemplateName, childTemplateName);
 }
-async function deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, childType) {
-    const hierarchyModule = await loadHierarchyModule();
+function deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, childType) {
     return hierarchyModule.deleteChildNodeFromAllTemplateInstances(childName, parentTemplateName, childType);
 }
-async function findCommonAncestorGraph(node1, node2) {
-    const hierarchyModule = await loadHierarchyModule();
+function findCommonAncestorGraph(node1, node2) {
     return hierarchyModule.findCommonAncestor(node1, node2);
 }
-async function enumerateValidParentTemplates(node) {
-    const hierarchyModule = await loadHierarchyModule();
+function enumerateValidParentTemplates(node) {
     return hierarchyModule.enumerateValidParentTemplates(node);
 }
-async function enumeratePlacementLevels(sourcePort, targetPort) {
-    const hierarchyModule = await loadHierarchyModule();
+function enumeratePlacementLevels(sourcePort, targetPort) {
     return hierarchyModule.enumeratePlacementLevels(sourcePort, targetPort);
 }
-async function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, sourceShelf, targetShelf) {
-    const hierarchyModule = await loadHierarchyModule();
+function isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, sourceShelf, targetShelf) {
     return hierarchyModule.isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, sourceShelf, targetShelf);
 }
-async function calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
-    const hierarchyModule = await loadHierarchyModule();
+function calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
     return hierarchyModule.calculateDuplicationCount(graphNode, sourceShelf, targetShelf);
 }
-async function deleteMultipleSelected() {
-    const hierarchyModule = await loadHierarchyModule();
+function deleteMultipleSelected() {
     return deleteMultipleSelectedUtil(state, hierarchyModule, commonModule);
 }
-async function deleteSelectedElement() { return deleteMultipleSelected(); }
+function deleteSelectedElement() { return deleteMultipleSelected(); }
 function updatePortConnectionStatus() { return commonModule.updatePortConnectionStatus(); }
-async function createConnection(sourceId, targetId) {
-    const hierarchyModule = await loadHierarchyModule();
+function createConnection(sourceId, targetId) {
     return commonModule.createConnection(sourceId, targetId, hierarchyModule);
 }
-async function showConnectionPlacementModal(sourceNode, targetNode, placementLevels) {
-    const hierarchyModule = await loadHierarchyModule();
+function showConnectionPlacementModal(sourceNode, targetNode, placementLevels) {
     return hierarchyModule.showConnectionPlacementModal(sourceNode, targetNode, placementLevels);
 }
-async function handleConnectionPlacementModalClick(event) {
-    const hierarchyModule = await loadHierarchyModule();
+function handleConnectionPlacementModalClick(event) {
     return hierarchyModule.handleConnectionPlacementModalClick(event);
 }
-async function selectConnectionPlacementLevel(sourceNode, targetNode, selectedLevel) {
-    const hierarchyModule = await loadHierarchyModule();
+function selectConnectionPlacementLevel(sourceNode, targetNode, selectedLevel) {
     return hierarchyModule.selectConnectionPlacementLevel(sourceNode, targetNode, selectedLevel);
 }
-async function cancelConnectionPlacement() {
-    const hierarchyModule = await loadHierarchyModule();
+function cancelConnectionPlacement() {
     return hierarchyModule.cancelConnectionPlacement();
 }
 
@@ -427,13 +309,11 @@ function applyPhysicalLayout() { return uiDisplayModule.applyPhysicalLayout(); }
 
 
 
-async function createConnectionAtLevel(sourceNode, targetNode, selectedLevel) {
-    const hierarchyModule = await loadHierarchyModule();
+function createConnectionAtLevel(sourceNode, targetNode, selectedLevel) {
     return commonModule.createConnectionAtLevel(sourceNode, targetNode, selectedLevel, hierarchyModule);
 }
 function createSingleConnection(sourceNode, targetNode, template_name, depth) { return commonModule.createSingleConnection(sourceNode, targetNode, template_name, depth); }
-async function createConnectionInAllTemplateInstances(sourceNode, targetNode, template_name, depth) {
-    const hierarchyModule = await loadHierarchyModule();
+function createConnectionInAllTemplateInstances(sourceNode, targetNode, template_name, depth) {
     return hierarchyModule.createConnectionInAllTemplateInstances(sourceNode, targetNode, template_name, depth);
 }
 function updateAddNodeButtonState() { return uiDisplayModule.updateAddNodeButtonState(); }
@@ -441,7 +321,7 @@ function createEmptyVisualization() { return uiDisplayModule.createEmptyVisualiz
 function resetLayout() { return uiDisplayModule.resetLayout(); }
 
 
-async function addNewNode() {
+function addNewNode() {
     const nodeTypeSelect = document.getElementById('nodeTypeSelect');
     const hostnameInput = document.getElementById('nodeHostnameInput');
     const hallInput = document.getElementById('nodeHallInput');
@@ -464,12 +344,10 @@ async function addNewNode() {
 
     // Delegate to appropriate module based on mode
     if (state.mode === 'hierarchy') {
-        const hierarchyModule = await loadHierarchyModule();
         hierarchyModule.addNode(nodeType, nodeTypeSelect);
         return;
     } else {
         // Location mode
-        const locationModule = await loadLocationModule();
         locationModule.addNode(nodeType, {
             hostnameInput,
             hallInput,
@@ -480,27 +358,22 @@ async function addNewNode() {
         return;
     }
 }
-async function templateContainsTemplate(parentTemplateName, childTemplateName) {
-    const hierarchyModule = await loadHierarchyModule();
+function templateContainsTemplate(parentTemplateName, childTemplateName) {
     return hierarchyModule.templateContainsTemplate(parentTemplateName, childTemplateName);
 }
-async function addNewGraph() {
+function addNewGraph() {
     const graphTemplateSelect = document.getElementById('graphTemplateSelect');
-    const hierarchyModule = await loadHierarchyModule();
     hierarchyModule.addGraph(graphTemplateSelect);
 }
-async function createNewTemplate() {
-    const hierarchyModule = await loadHierarchyModule();
+function createNewTemplate() {
     return hierarchyModule.createNewTemplate();
 }
 function toggleEdgeHandles() { return uiDisplayModule.toggleEdgeHandles(); }
 function updatePortEditingHighlight() { return commonModule.updatePortEditingHighlight(); }
-async function setupFileUploadDragAndDrop() {
-    const fileManagementModule = await loadFileManagementModule();
+function setupFileUploadDragAndDrop() {
     return fileManagementModule.setupDragAndDrop();
 }
-async function uploadFile() {
-    const fileManagementModule = await loadFileManagementModule();
+function uploadFile() {
     return fileManagementModule.uploadFile();
 }
 
@@ -518,9 +391,7 @@ function checkSameShelf(sourceId, targetId) { return commonModule.checkSameShelf
 function getParentAtLevel(node, level) { return commonModule.getParentAtLevel(node, level); }
 function getCytoscapeStyles() { return commonModule.getCytoscapeStyles(); }
 function addCytoscapeEventHandlers() { return commonModule.addCytoscapeEventHandlers(); }
-async function addConnectionTypeEventHandlers() {
-    const locationModule = await loadLocationModule();
-    const hierarchyModule = await loadHierarchyModule();
+function addConnectionTypeEventHandlers() {
     locationModule.addConnectionTypeEventHandlers();
     commonModule.addNodeFilterHandler();
     hierarchyModule.addTemplateFilterHandler();
@@ -530,12 +401,10 @@ function getParentShelfNode(node) { return commonModule.getParentShelfNode(node)
 function extractShelfIdFromNodeId(nodeId) { return commonModule.extractShelfIdFromNodeId(nodeId); }
 function getOriginalEdgeEndpoints(edge) { return commonModule.getOriginalEdgeEndpoints(edge); }
 function applyNodeFilter() { return commonModule.applyNodeFilter(); }
-async function populateNodeFilterDropdown() {
-    const locationModule = await loadLocationModule();
+function populateNodeFilterDropdown() {
     return commonModule.populateNodeFilterDropdown(locationModule);
 }
-async function populateTemplateFilterDropdown() {
-    const hierarchyModule = await loadHierarchyModule();
+function populateTemplateFilterDropdown() {
     if (hierarchyModule && typeof hierarchyModule.populateTemplateFilterDropdown === 'function') {
         hierarchyModule.populateTemplateFilterDropdown();
     }
@@ -543,85 +412,65 @@ async function populateTemplateFilterDropdown() {
 function showNodeInfo(node, position) { return commonModule.showNodeInfo(node, position); }
 function hideNodeInfo() { return commonModule.hideNodeInfo(); }
 function showConnectionInfo(edge, position) { return commonModule.showConnectionInfo(edge, position); }
-async function enableShelfEditing(node, position) {
-    // Ensure location module is loaded for shelf editing
-    await loadLocationModule();
+function enableShelfEditing(node, position) {
     return commonModule.enableShelfEditing(node, position);
 }
 function updateNodeAndDescendants(node, property, value) { return commonModule.updateNodeAndDescendants(node, property, value); }
 
 // Window function assignments (backward compatibility for HTML inline scripts)
-window.saveShelfEdit = async (nodeId) => {
-    const locationModule = await loadLocationModule();
+window.saveShelfEdit = (nodeId) => {
     locationModule.saveShelfEdit(nodeId);
 };
-window.cancelShelfEdit = async () => {
-    const locationModule = await loadLocationModule();
+window.cancelShelfEdit = () => {
     locationModule.cancelShelfEdit();
 };
-window.enableHallEditing = async (node, position) => {
-    const locationModule = await loadLocationModule();
+window.enableHallEditing = (node, position) => {
     locationModule.enableHallEditing(node, position);
 };
-window.enableAisleEditing = async (node, position) => {
-    const locationModule = await loadLocationModule();
+window.enableAisleEditing = (node, position) => {
     locationModule.enableAisleEditing(node, position);
 };
-window.enableRackEditing = async (node, position) => {
-    const locationModule = await loadLocationModule();
+window.enableRackEditing = (node, position) => {
     locationModule.enableRackEditing(node, position);
 };
-window.saveHallEdit = async (nodeId) => {
-    const locationModule = await loadLocationModule();
+window.saveHallEdit = (nodeId) => {
     locationModule.saveHallEdit(nodeId);
 };
-window.saveAisleEdit = async (nodeId) => {
-    const locationModule = await loadLocationModule();
+window.saveAisleEdit = (nodeId) => {
     locationModule.saveAisleEdit(nodeId);
 };
-window.saveRackEdit = async (nodeId) => {
-    const locationModule = await loadLocationModule();
+window.saveRackEdit = (nodeId) => {
     locationModule.saveRackEdit(nodeId);
 };
-window.saveGraphTemplateEdit = async (nodeId) => {
-    const hierarchyModule = await loadHierarchyModule();
+window.saveGraphTemplateEdit = (nodeId) => {
     hierarchyModule.saveGraphTemplateEdit(nodeId);
 };
-window.cancelGraphTemplateEdit = async (nodeId) => {
-    const hierarchyModule = await loadHierarchyModule();
+window.cancelGraphTemplateEdit = (nodeId) => {
     hierarchyModule.cancelGraphTemplateEdit(nodeId);
 };
-window.executeMoveToTemplate = async (nodeId) => {
-    const hierarchyModule = await loadHierarchyModule();
+window.executeMoveToTemplate = (nodeId) => {
     hierarchyModule.executeMoveToTemplate(nodeId);
 };
 
-async function enableGraphTemplateEditing(node, position) {
-    const hierarchyModule = await loadHierarchyModule();
+function enableGraphTemplateEditing(node, position) {
     return hierarchyModule.enableGraphTemplateEditing(node, position);
 }
-async function populateMoveTargetTemplates(node) {
-    const hierarchyModule = await loadHierarchyModule();
+function populateMoveTargetTemplates(node) {
     return hierarchyModule.populateMoveTargetTemplates(node);
 }
-async function validateHostnames() {
-    const exportModule = await loadExportModule();
+function validateHostnames() {
     return exportModule.validateHostnames();
 }
-async function exportCablingDescriptor() {
-    const exportModule = await loadExportModule();
+function exportCablingDescriptor() {
     return exportModule.exportCablingDescriptor();
 }
-async function exportDeploymentDescriptor() {
-    const exportModule = await loadExportModule();
+function exportDeploymentDescriptor() {
     return exportModule.exportDeploymentDescriptor();
 }
-async function generateCablingGuide() {
-    const exportModule = await loadExportModule();
+function generateCablingGuide() {
     return exportModule.generateCablingGuide();
 }
-async function generateFSD() {
-    const exportModule = await loadExportModule();
+function generateFSD() {
     return exportModule.generateFSD();
 }
 function showExportStatus(message, type) { return uiDisplayModule.showExportStatus(message, type); }
@@ -659,7 +508,7 @@ document.addEventListener('keydown', function (event) {
             if ((state.editing.selectedConnection && state.editing.selectedConnection.length > 0) ||
                 (state.editing.selectedNode && state.editing.selectedNode.length > 0)) {
                 event.preventDefault();
-                deleteSelectedElement().catch(err => console.error('Error deleting element:', err));
+                deleteSelectedElement();
             }
         }
     }
@@ -689,10 +538,8 @@ function toggleNodeCollapse(node) { console.log('toggleNodeCollapse: TODO - impl
 // Initialize node configurations when the page loads
 initializeNodeConfigs();
 
-// Setup file upload drag-and-drop handlers (lazy-loaded)
-setupFileUploadDragAndDrop().catch(err => {
-    console.error('Failed to setup file upload drag-and-drop:', err);
-});
+// Setup file upload drag-and-drop handlers
+setupFileUploadDragAndDrop();
 
 // Helper function to safely attach event listeners
 function attachEventListener(selector, event, handler) {
@@ -733,12 +580,12 @@ function setupEventListeners() {
 
     // Cabling editor buttons
     attachEventListener('toggleEdgeHandlesBtn', 'click', () => toggleEdgeHandles());
-    attachEventListener('deleteElementBtn', 'click', () => deleteSelectedElement().catch(err => console.error('Error deleting element:', err)));
+    attachEventListener('deleteElementBtn', 'click', () => deleteSelectedElement());
 
     // Node/graph editing buttons
-    attachEventListener('addNodeBtn', 'click', () => addNewNode().catch(err => console.error('Error adding node:', err)));
-    attachEventListener('addGraphBtn', 'click', () => addNewGraph().catch(err => console.error('Error adding graph:', err)));
-    attachEventListener('createTemplateBtn', 'click', () => createNewTemplate().catch(err => console.error('Error creating template:', err)));
+    attachEventListener('addNodeBtn', 'click', () => addNewNode());
+    attachEventListener('addGraphBtn', 'click', () => addNewGraph());
+    attachEventListener('createTemplateBtn', 'click', () => createNewTemplate());
 
     // Connection filter reset button
     const resetFiltersBtn = document.getElementById('resetFiltersBtn');
@@ -991,7 +838,6 @@ async function applyDeploymentDescriptor(file) {
         const response = await fetch('/apply_deployment_descriptor', { method: 'POST', body: formData });
         const result = await response.json();
         if (response.ok && result.success) {
-            const locationModule = await loadLocationModule();
             if (locationModule?.updateShelfLocations) {
                 const updatedCount = locationModule.updateShelfLocations(result.data);
                 console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
@@ -1061,7 +907,6 @@ async function applyDeploymentDescriptorFromModal() {
         const result = await response.json();
         if (response.ok && result.success) {
             state.data.currentData = result.data;
-            const locationModule = await loadLocationModule();
             if (locationModule?.updateShelfLocations) {
                 const updatedCount = locationModule.updateShelfLocations(result.data);
                 console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);

@@ -785,16 +785,35 @@ export class HierarchyModule {
             this.common.clearAllSelections();
         }
 
-        if (!this.state.data.hierarchyModeState || !this.state.data.hierarchyModeState.elements) {
-            alert('Cannot restore logical topology - no saved state available. Please switch to location mode first or re-upload your file.');
-            return;
-        }
-
         // Extract shelf nodes with their logical topology data
         const shelfNodes = this.state.cy.nodes('[type="shelf"]');
         if (shelfNodes.length === 0) {
             console.warn('No shelf nodes found');
             return;
+        }
+
+        // Check if there are already root-level graph nodes (from textproto import or existing hierarchy)
+        // If root graphs exist, we should NOT create extracted_topology
+        const existingRootGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
+            const parent = node.parent();
+            return parent.length === 0; // Root level (no parent)
+        });
+
+        // Check if we have saved hierarchy state (from previous hierarchy mode session)
+        // If not, we'll create extracted_topology from current location mode state
+        const hasSavedHierarchyState = this.state.data.hierarchyModeState && this.state.data.hierarchyModeState.elements;
+
+        if (!hasSavedHierarchyState && existingRootGraphs.length > 0) {
+            // Root graphs already exist (likely from textproto import) - don't create extracted_topology
+            // Just rebuild the visualization using the existing graph structure
+            console.log(`Found ${existingRootGraphs.length} existing root graph(s) - will rebuild using existing hierarchy structure`);
+            // We'll handle this in the hasLogicalTopology branch below
+        } else if (!hasSavedHierarchyState) {
+            // No saved hierarchy state and no existing root graphs - this happens when:
+            // 1. CSV import starts in location mode (no previous hierarchy state)
+            // 2. User switches to hierarchy mode for the first time
+            // In this case, we'll create extracted_topology from current shelf nodes
+            console.log('No saved hierarchy state - will create extracted_topology from current location mode state');
         }
 
         // Extract all relevant data from shelf nodes (preserve ALL fields for round-trip)
@@ -868,6 +887,27 @@ export class HierarchyModule {
             });
         });
 
+        // Extract existing graph nodes if they exist (before clearing)
+        // This handles the case where we're switching modes but already have a hierarchy structure
+        const existingGraphNodes = [];
+        if (existingRootGraphs.length > 0) {
+            // Extract all graph nodes (not just roots) to preserve the hierarchy
+            this.state.cy.nodes('[type="graph"]').forEach(graphNode => {
+                const graphData = {};
+                const data = graphNode.data();
+                for (const key in data) {
+                    graphData[key] = data[key];
+                }
+                existingGraphNodes.push({
+                    data: graphData,
+                    classes: graphNode.classes(),
+                    position: graphNode.position(),
+                    parentId: graphNode.parent().length > 0 ? graphNode.parent().id() : null
+                });
+            });
+            console.log(`Extracted ${existingGraphNodes.length} existing graph nodes to preserve hierarchy structure`);
+        }
+
         // Clear the entire graph
         this.state.cy.elements().remove();
 
@@ -875,20 +915,85 @@ export class HierarchyModule {
         const newElements = [];
         const graphNodeMap = {}; // Maps logical path strings to graph node IDs
 
-        // Check if we have logical topology information
+        // Check if we have logical topology information OR existing root graphs
+        // If root graphs exist, we should rebuild using existing structure, not create extracted_topology
         const hasLogicalTopology = shelfDataList.some(shelfInfo =>
             shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0
-        );
+        ) || existingRootGraphs.length > 0;
 
         // Track if we're creating extracted_topology template (for connection tagging)
         // Template name: "extracted_topology", Instance name: "extracted_topology_0"
         let rootTemplateName = null;
 
         if (hasLogicalTopology) {
-            // Find and recreate the root node from saved hierarchy state
+            // Find and recreate the root node from saved hierarchy state OR existing graph nodes
             // The root is not in logical_path arrays since those only store parent paths
             let rootNode = null;
-            if (this.state.data.hierarchyModeState && this.state.data.hierarchyModeState.elements) {
+            
+            // First, try to use existing graph nodes if they exist (from textproto import)
+            if (existingGraphNodes.length > 0) {
+                // Recreate all graph nodes from existing structure
+                const graphNodeIdMap = {}; // Map old IDs to new IDs (in case we need to regenerate)
+                
+                // First, recreate root graphs
+                existingGraphNodes.filter(g => g.parentId === null).forEach(graphInfo => {
+                    const graphData = graphInfo.data;
+                    const rootGraphId = graphData.id;
+                    const rootTemplateColor = this.common.getTemplateColor(graphData.template_name);
+                    
+                    newElements.push({
+                        data: {
+                            id: rootGraphId,
+                            label: graphData.label,
+                            type: 'graph',
+                            template_name: graphData.template_name,
+                            child_name: graphData.child_name || graphData.label,
+                            parent: null,
+                            depth: graphData.depth || 0,
+                            templateColor: rootTemplateColor
+                        },
+                        classes: graphInfo.classes || 'graph'
+                    });
+                    
+                    graphNodeIdMap[rootGraphId] = rootGraphId;
+                    if (graphData.label) {
+                        graphNodeMap[graphData.label] = rootGraphId;
+                    }
+                    if (!rootNode) {
+                        rootNode = graphData; // Use first root as the primary root
+                    }
+                });
+                
+                // Then, recreate non-root graph nodes
+                existingGraphNodes.filter(g => g.parentId !== null).forEach(graphInfo => {
+                    const graphData = graphInfo.data;
+                    const graphId = graphData.id;
+                    const parentId = graphNodeIdMap[graphInfo.parentId] || graphInfo.parentId;
+                    const templateColor = this.common.getTemplateColor(graphData.template_name);
+                    
+                    newElements.push({
+                        data: {
+                            id: graphId,
+                            label: graphData.label,
+                            type: 'graph',
+                            template_name: graphData.template_name,
+                            child_name: graphData.child_name || graphData.label,
+                            parent: parentId,
+                            depth: graphData.depth || 0,
+                            templateColor: templateColor
+                        },
+                        classes: graphInfo.classes || 'graph'
+                    });
+                    
+                    graphNodeIdMap[graphId] = graphId;
+                    if (graphData.label) {
+                        graphNodeMap[graphData.label] = graphId;
+                    }
+                });
+                
+                console.log(`Recreated ${existingGraphNodes.length} graph nodes from existing hierarchy structure`);
+            } else if (this.state.data.hierarchyModeState && this.state.data.hierarchyModeState.elements) {
+                // Fall back to saved hierarchy state
                 // Find the root graph node (depth 0, no parent)
                 const savedRootNodes = this.state.data.hierarchyModeState.elements.filter(el =>
                     el.data && el.data.type === 'graph' && el.data.depth === 0 && !el.data.parent
@@ -995,7 +1100,11 @@ export class HierarchyModule {
             shelfDataList.forEach((shelfInfo, index) => {
                 let parentId = null;
 
-                if (shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0) {
+                // If we have existing graph nodes, use the preserved parent relationship
+                if (existingGraphNodes.length > 0 && shelfInfo.parentGraphId) {
+                    // Use the preserved parent graph ID
+                    parentId = shelfInfo.parentGraphId;
+                } else if (shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0) {
                     // Find the parent graph node from logical_path
                     const parentPathStr = shelfInfo.data.logical_path.join('/');
                     parentId = graphNodeMap[parentPathStr];

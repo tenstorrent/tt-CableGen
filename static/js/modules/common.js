@@ -2112,8 +2112,6 @@ export class CommonModule {
         // This prevents step-size from changing when viewport changes (zoom, pan, layout)
         const controlPointStepSize = 40; // Fixed value for consistent curve appearance
 
-        console.log(`[forceApplyCurveStyles] Processing ${edges.length} edges, base stepSize: ${controlPointStepSize} (fixed)`);
-
         this.state.cy.startBatch();
 
         let sameShelfCount = 0;
@@ -2249,8 +2247,6 @@ export class CommonModule {
         });
 
         this.state.cy.endBatch();
-
-        console.log(`[forceApplyCurveStyles] Summary: ${sameShelfCount} same-shelf (unbundled-bezier), ${crossShelfCount} cross-shelf/cross-graph (bezier), ${crossGraphCount} cross-graph (reduced magnitude)`);
 
         // Force render to ensure changes take effect
         // NOTE: Do NOT call style().update() here as it can reset styles to stylesheet defaults
@@ -2787,9 +2783,23 @@ export class CommonModule {
         // If so, show placement level selection modal
         const hasGraphHierarchy = this.state.cy.nodes('[type="graph"]').length > 0;
 
-        if (hasGraphHierarchy && hierarchyModule) {
+        if (hasGraphHierarchy) {
+            // Ensure hierarchyModule is available and has the required method
+            let moduleToUse = hierarchyModule;
+            if (!moduleToUse || typeof moduleToUse.enumeratePlacementLevels !== 'function') {
+                // Try to get it from window (lazy-loaded module)
+                if (window.hierarchyModule && typeof window.hierarchyModule.enumeratePlacementLevels === 'function') {
+                    moduleToUse = window.hierarchyModule;
+                } else {
+                    console.warn('[createConnection] hierarchyModule not available or missing enumeratePlacementLevels method. Falling back to direct connection creation.');
+                    // Fallback: create connection without template logic
+                    this.createConnectionAtLevel(sourceNode, targetNode, null, null);
+                    return;
+                }
+            }
+
             // Enumerate all possible placement levels
-            const placementLevels = hierarchyModule.enumeratePlacementLevels(sourceNode, targetNode);
+            const placementLevels = moduleToUse.enumeratePlacementLevels(sourceNode, targetNode);
 
             if (placementLevels.length === 0) {
                 // No valid placement levels available
@@ -2799,13 +2809,18 @@ export class CommonModule {
 
             if (placementLevels.length > 1) {
                 // Multiple placement options available - show modal
-                hierarchyModule.showConnectionPlacementModal(sourceNode, targetNode, placementLevels);
+                if (typeof moduleToUse.showConnectionPlacementModal === 'function') {
+                    moduleToUse.showConnectionPlacementModal(sourceNode, targetNode, placementLevels);
+                } else {
+                    console.warn('[createConnection] showConnectionPlacementModal not available. Using first placement level.');
+                    this.createConnectionAtLevel(sourceNode, targetNode, placementLevels[0], moduleToUse);
+                }
                 return;
             }
 
             // Only one option available - use it directly (no modal needed)
             console.log(`[createConnection] Only one placement level available: ${placementLevels[0].label} (${placementLevels[0].template_name})`);
-            this.createConnectionAtLevel(sourceNode, targetNode, placementLevels[0], hierarchyModule);
+            this.createConnectionAtLevel(sourceNode, targetNode, placementLevels[0], moduleToUse);
             return;
         }
 
