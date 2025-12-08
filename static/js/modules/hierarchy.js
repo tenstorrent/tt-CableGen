@@ -881,6 +881,7 @@ export class HierarchyModule {
         );
         
         // Track if we're creating extracted_topology root (for connection tagging)
+        // Will be set to "extracted_topology_0" (template-name_instance# notation) if we create it
         let rootTemplateName = null;
 
         if (hasLogicalTopology) {
@@ -1026,10 +1027,11 @@ export class HierarchyModule {
                 });
             });
         } else {
-            // No logical topology - create "extracted_topology" root container
+            // No logical topology - create "extracted_topology_0" root container
             // This wraps the flat structure so it can be exported hierarchically
-            rootTemplateName = "extracted_topology";
-            const rootGraphId = "graph_extracted_topology";
+            // Use template-name_instance# notation (instance 0 since it's the first/only instance)
+            rootTemplateName = "extracted_topology_0";
+            const rootGraphId = "graph_extracted_topology_0";
             
             // Get template color for the root
             const rootTemplateColor = this.common.getTemplateColor(rootTemplateName);
@@ -1048,7 +1050,7 @@ export class HierarchyModule {
                 classes: 'graph'
             });
             
-            // Add all shelves as children of the extracted_topology root
+            // Add all shelves as children of the extracted_topology_0 root
             shelfDataList.forEach((shelfInfo, index) => {
                 // Determine child_name - use hostname if available, otherwise use host_index
                 let childName = shelfInfo.data.child_name;
@@ -1072,7 +1074,7 @@ export class HierarchyModule {
                 newElements.push({
                     data: {
                         ...shelfInfo.data,
-                        parent: rootGraphId,  // Parent is the extracted_topology root
+                        parent: rootGraphId,  // Parent is the extracted_topology_0 root
                         type: 'shelf',
                         label: hierarchyLabel,
                         child_name: childName,  // Ensure child_name is set
@@ -1132,16 +1134,16 @@ export class HierarchyModule {
         });
 
         // Re-create connections with all preserved data
-        // If we created extracted_topology root, tag all connections with that template
-        const shouldTagWithExtractedTopology = !hasLogicalTopology && rootTemplateName === "extracted_topology";
+        // If we created extracted_topology_0 root, tag all connections with that template
+        const shouldTagWithExtractedTopology = !hasLogicalTopology && rootTemplateName && rootTemplateName.startsWith("extracted_topology");
         
         connections.forEach(conn => {
             const connectionData = { ...conn.data };
             
-            // Tag connections with extracted_topology template if we're in flat structure mode
+            // Tag connections with extracted_topology_0 template if we're in flat structure mode
             if (shouldTagWithExtractedTopology) {
-                connectionData.template_name = "extracted_topology";
-                connectionData.containerTemplate = "extracted_topology";
+                connectionData.template_name = rootTemplateName;
+                connectionData.containerTemplate = rootTemplateName;
                 // Set depth to 0 since they're at the root template level
                 if (connectionData.depth === undefined || connectionData.depth === null) {
                     connectionData.depth = 0;

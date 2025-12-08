@@ -3202,11 +3202,11 @@ describe('Import/Export Flow Integration Tests', () => {
                 metadata: state.data.currentData.metadata || {}
             };
             
-            // Now switch to hierarchy mode (creates extracted_topology root)
+            // Now switch to hierarchy mode (creates extracted_topology_0 root)
             state.setMode('hierarchy');
             hierarchyModule.switchMode();
 
-            // Verify extracted_topology root was created
+            // Verify extracted_topology_0 root was created (using template-name_instance# notation)
             const rootGraphs = state.cy.nodes('[type="graph"]').filter(node => {
                 const parent = node.parent();
                 return parent.length === 0; // No parent = root level
@@ -3214,8 +3214,8 @@ describe('Import/Export Flow Integration Tests', () => {
 
             expect(rootGraphs.length).toBe(1);
             const rootGraph = rootGraphs[0];
-            expect(rootGraph.data('template_name')).toBe('extracted_topology');
-            expect(rootGraph.data('id')).toBe('graph_extracted_topology');
+            expect(rootGraph.data('template_name')).toBe('extracted_topology_0');
+            expect(rootGraph.data('id')).toBe('graph_extracted_topology_0');
 
             // Step 4: Count nodes and connections in hierarchy mode
             const hierarchyModeData = {
@@ -3279,7 +3279,7 @@ describe('Import/Export Flow Integration Tests', () => {
             
             console.log(`\n📊 Connection Analysis:`);
             console.log(`Total connections: ${connectionDetails.length}`);
-            const taggedConnections = connectionDetails.filter(c => c.template_name === 'extracted_topology');
+            const taggedConnections = connectionDetails.filter(c => c.template_name && c.template_name.startsWith('extracted_topology'));
             console.log(`Tagged with extracted_topology: ${taggedConnections.length}`);
             const withHostIds = connectionDetails.filter(c => c.sourceHostId !== null && c.targetHostId !== null);
             console.log(`With both host_ids: ${withHostIds.length}`);
@@ -3301,7 +3301,7 @@ describe('Import/Export Flow Integration Tests', () => {
             
             expect(exportedStats.node_count).toBe(locationShelfCount);
             expect(exportedStats.connection_count).toBe(locationConnectionCount);
-            expect(exportedStats.root_template).toBe('extracted_topology');
+            expect(exportedStats.root_template).toBe('extracted_topology_0');
             expect(exportedStats.template_count).toBeGreaterThan(0);
             
             // If connection count doesn't match, investigate
@@ -3319,23 +3319,23 @@ describe('Import/Export Flow Integration Tests', () => {
 
             console.log(`Exported textproto: ${exportedStats.node_count} nodes, ${exportedStats.connection_count} connections, root template: ${exportedStats.root_template}`);
 
-            // Step 8: Verify all connections are tagged with extracted_topology template
-            const taggedConnectionsCount = connectionDetails.filter(c => c.template_name === 'extracted_topology').length;
+            // Step 8: Verify all connections are tagged with extracted_topology_0 template
+            const taggedConnectionsCount = connectionDetails.filter(c => c.template_name && c.template_name.startsWith('extracted_topology')).length;
             expect(taggedConnectionsCount).toBe(locationConnectionCount);
             console.log(`✅ Verified: All ${taggedConnectionsCount} connections are tagged with extracted_topology template`);
 
-            // Step 8: Verify all shelves are children of extracted_topology root
+            // Step 9: Verify all shelves are children of extracted_topology_0 root
             const shelves = state.cy.nodes('[type="shelf"]');
             let shelvesUnderRoot = 0;
             shelves.forEach(shelf => {
                 const parent = shelf.parent();
-                if (parent && parent.length > 0 && parent.data('id') === 'graph_extracted_topology') {
+                if (parent && parent.length > 0 && parent.data('id') === 'graph_extracted_topology_0') {
                     shelvesUnderRoot++;
                 }
             });
 
             expect(shelvesUnderRoot).toBe(locationShelfCount);
-            console.log(`✅ Verified: All ${shelvesUnderRoot} shelves are children of extracted_topology root`);
+            console.log(`✅ Verified: All ${shelvesUnderRoot} shelves are children of extracted_topology_0 root`);
 
             saveTestArtifact('location_to_hierarchy_export', exportedTextproto, 'textproto');
             console.log(`✅ Verified: Location mode -> hierarchy mode switch preserves all ${locationShelfCount} nodes and ${locationConnectionCount} connections in exported cabling descriptor`);
