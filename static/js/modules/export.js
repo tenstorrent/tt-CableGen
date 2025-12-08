@@ -403,6 +403,39 @@ export class ExportModule {
             }
             this.statusManager.show('Generating cabling guide...', 'info');
 
+            // Check if we have graph nodes (required for cabling descriptor export)
+            // If in location mode without graph nodes, automatically switch to hierarchy mode
+            const hasGraphNodes = this.state.cy.nodes('[type="graph"]').length > 0;
+            const isLocationMode = this.state.mode === 'location';
+            
+            if (!hasGraphNodes) {
+                // No graph nodes found - need to create hierarchy structure
+                if (isLocationMode) {
+                    // In location mode - switch to hierarchy mode to create extracted_topology
+                    this.statusManager.show('Switching to topology mode to create hierarchy structure...', 'info');
+                    
+                    // Switch to hierarchy mode (this creates extracted_topology if needed)
+                    // Use hierarchyModule directly since it's exposed on window
+                    if (window.hierarchyModule && typeof window.hierarchyModule.switchMode === 'function') {
+                        window.hierarchyModule.switchMode();
+                    } else if (typeof window.hierarchy_switchMode === 'function') {
+                        // Fallback to global function if available
+                        window.hierarchy_switchMode();
+                    } else {
+                        throw new Error('Cannot switch to hierarchy mode. Please switch to topology mode manually first.');
+                    }
+                } else {
+                    // Already in hierarchy mode but no graph nodes - this shouldn't happen
+                    throw new Error('No graph nodes found in hierarchy mode. Please switch to location mode and back to topology mode, or re-upload your file.');
+                }
+                
+                // Verify graph nodes were created
+                const graphNodesAfterSwitch = this.state.cy.nodes('[type="graph"]').length;
+                if (graphNodesAfterSwitch === 0) {
+                    throw new Error('Failed to create hierarchy structure. Please switch to topology mode manually and try again.');
+                }
+            }
+
             // Get current cytoscape data and sanitize to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
