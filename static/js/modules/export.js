@@ -414,6 +414,122 @@ export class ExportModule {
     }
 
     /**
+     * Enrich cytoscape data with implicit hierarchy fields for shelf nodes
+     * This creates an extracted_topology structure if needed without switching modes
+     * @param {Array} elements - Array of cytoscape element data
+     * @param {Object} metadata - Optional metadata object to enrich
+     * @returns {Object} Object with enriched elements and metadata
+     */
+    enrichWithImplicitHierarchy(elements, metadata = {}) {
+        // Check if we already have graph nodes
+        const hasGraphNodes = elements.some(el => el.data && el.data.type === 'graph');
+        
+        // Check if shelf nodes already have logical_path/child_name (from existing hierarchy)
+        const shelfNodes = elements.filter(el => el.data && el.data.type === 'shelf');
+        const hasLogicalTopology = shelfNodes.some(shelf => 
+            shelf.data.logical_path && shelf.data.logical_path.length > 0
+        ) || hasGraphNodes;
+
+        // If we already have hierarchy structure, return as-is
+        if (hasLogicalTopology) {
+            return { elements, metadata };
+        }
+
+        // No hierarchy structure - create implicit extracted_topology
+        console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected, creating implicit extracted_topology structure');
+        
+        const templateName = "extracted_topology";
+        const instanceName = "extracted_topology_0";
+        const rootGraphId = "graph_extracted_topology_0";
+
+        // Create root graph node
+        const rootGraphNode = {
+            data: {
+                id: rootGraphId,
+                label: instanceName,
+                type: 'graph',
+                template_name: templateName,
+                child_name: instanceName,
+                parent: null,
+                depth: 0
+            },
+            classes: 'graph'
+        };
+
+        // Sort shelves by host_index for consistent ordering
+        const sortedShelves = [...shelfNodes].sort((a, b) => {
+            const hostIndexA = a.data.host_index;
+            const hostIndexB = b.data.host_index;
+            
+            if (hostIndexA === undefined || hostIndexA === null) {
+                if (hostIndexB === undefined || hostIndexB === null) return 0;
+                return 1;
+            }
+            if (hostIndexB === undefined || hostIndexB === null) return -1;
+            return hostIndexA - hostIndexB;
+        });
+
+        // Enrich shelf nodes and connections with hierarchy fields
+        const enrichedElements = elements.map(el => {
+            if (el.data && el.data.type === 'shelf') {
+                // Determine child_name - use existing or derive from hostname/host_index
+                let childName = el.data.child_name;
+                if (!childName) {
+                    childName = el.data.hostname || `host_${el.data.host_index ?? 0}`;
+                }
+
+                // Return enriched shelf node
+                return {
+                    ...el,
+                    data: {
+                        ...el.data,
+                        child_name: childName,
+                        logical_path: [], // Empty logical_path - flat structure under root
+                        parent: rootGraphId // Parent is the extracted_topology_0 root
+                    }
+                };
+            } else if (el.data && el.data.type === 'edge') {
+                // Tag connections with extracted_topology template if not already tagged
+                if (!el.data.template_name) {
+                    return {
+                        ...el,
+                        data: {
+                            ...el.data,
+                            template_name: templateName
+                        }
+                    };
+                }
+            }
+            return el;
+        });
+
+        // Add root graph node at the beginning
+        enrichedElements.unshift(rootGraphNode);
+
+        // Enrich metadata with extracted_topology template
+        const enrichedMetadata = { ...metadata };
+        if (!enrichedMetadata.graph_templates) {
+            enrichedMetadata.graph_templates = {};
+        }
+        // Add extracted_topology template if it doesn't exist
+        if (!enrichedMetadata.graph_templates[templateName]) {
+            enrichedMetadata.graph_templates[templateName] = {
+                name: templateName,
+                children: sortedShelves.map((shelf, index) => {
+                    const childName = shelf.data.child_name || shelf.data.hostname || `host_${shelf.data.host_index ?? index}`;
+                    return {
+                        name: childName,
+                        type: shelf.data.shelf_node_type || 'N300_LB'
+                    };
+                })
+            };
+        }
+
+        console.log(`[export.enrichWithImplicitHierarchy] Enriched ${sortedShelves.length} shelf nodes with extracted_topology structure`);
+        return { elements: enrichedElements, metadata: enrichedMetadata };
+    }
+
+    /**
      * Generate Cabling Guide
      */
     async generateCablingGuide() {
@@ -432,44 +548,22 @@ export class ExportModule {
             }
             this.statusManager.show('Generating cabling guide...', 'info');
 
-            // Check if we have graph nodes (required for cabling descriptor export)
-            // If in location mode without graph nodes, automatically switch to hierarchy mode
-            const hasGraphNodes = this.state.cy.nodes('[type="graph"]').length > 0;
-            const isLocationMode = this.state.mode === 'location';
-            
-            if (!hasGraphNodes) {
-                // No graph nodes found - need to create hierarchy structure
-                if (isLocationMode) {
-                    // In location mode - switch to hierarchy mode to create extracted_topology
-                    this.statusManager.show('Switching to topology mode to create hierarchy structure...', 'info');
-                    
-                    // Switch to hierarchy mode (this creates extracted_topology if needed)
-                    // Use hierarchyModule directly since it's exposed on window
-                    if (window.hierarchyModule && typeof window.hierarchyModule.switchMode === 'function') {
-                        window.hierarchyModule.switchMode();
-                    } else if (typeof window.hierarchy_switchMode === 'function') {
-                        // Fallback to global function if available
-                        window.hierarchy_switchMode();
-                    } else {
-                        throw new Error('Cannot switch to hierarchy mode. Please switch to topology mode manually first.');
-                    }
-                } else {
-                    // Already in hierarchy mode but no graph nodes - this shouldn't happen
-                    throw new Error('No graph nodes found in hierarchy mode. Please switch to location mode and back to topology mode, or re-upload your file.');
-                }
-                
-                // Verify graph nodes were created
-                const graphNodesAfterSwitch = this.state.cy.nodes('[type="graph"]').length;
-                if (graphNodesAfterSwitch === 0) {
-                    throw new Error('Failed to create hierarchy structure. Please switch to topology mode manually and try again.');
-                }
-            }
-
             // Get current cytoscape data and sanitize to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
+            
+            // Get metadata if available
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata 
+                ? this.state.data.currentData.metadata 
+                : {};
+            const sanitizedMetadata = this.sanitizeForJSON(rawMetadata);
+            
+            // Enrich with implicit hierarchy fields if needed (without switching modes)
+            const enriched = this.enrichWithImplicitHierarchy(sanitizedElements, sanitizedMetadata);
+            
             const cytoscapeData = {
-                elements: sanitizedElements
+                elements: enriched.elements,
+                metadata: enriched.metadata
             };
 
             // Get input prefix for the generator
