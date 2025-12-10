@@ -2107,6 +2107,7 @@ export class CommonModule {
     /**
      * Show detailed information about a connection
      * Always shows full path regardless of collapsed state
+     * Uses original endpoints for rerouted edges (from collapsed nodes)
      * @param {Object} edge - Cytoscape edge element
      * @param {Object} position - Position to display the info panel
      */
@@ -2119,10 +2120,9 @@ export class CommonModule {
         }
 
         const edgeData = edge.data();
-        // Always use the original port IDs from edge data, not the visual source/target
-        // which might point to collapsed parents
-        const sourceNode = this.state.cy.getElementById(edgeData.source);
-        const targetNode = this.state.cy.getElementById(edgeData.target);
+        // Use getOriginalEdgeEndpoints to get the original port nodes, not the rerouted endpoints
+        // This handles both regular edges and rerouted edges from collapsed nodes
+        const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
 
         // Get detailed location info for both endpoints - always full path
         let sourceInfo = '';
@@ -2136,23 +2136,75 @@ export class CommonModule {
             targetInfo = targetNode && targetNode.length ? targetNode.id() : 'Unknown';
         }
 
+        // In hierarchy mode, also show instance paths to the endpoints
+        const isHierarchyMode = this.state.mode === 'hierarchy';
+        let sourcePath = '';
+        let targetPath = '';
+        if (isHierarchyMode) {
+            // Get shelf nodes from port nodes (buildTemplatePath works on shelf/graph nodes, not ports)
+            let sourceShelfNode = null;
+            let targetShelfNode = null;
+
+            if (sourceNode && sourceNode.length) {
+                const sourceType = sourceNode.data('type');
+                if (sourceType === 'port' || sourceType === 'tray') {
+                    sourceShelfNode = this.getParentShelfNode(sourceNode);
+                } else if (sourceType === 'shelf' || sourceType === 'graph') {
+                    sourceShelfNode = sourceNode;
+                }
+
+                if (sourceShelfNode && sourceShelfNode.length) {
+                    const pathParts = this.buildTemplatePath(sourceShelfNode);
+                    if (pathParts.length > 0) {
+                        sourcePath = pathParts.join(' › ');
+                    }
+                }
+            }
+
+            if (targetNode && targetNode.length) {
+                const targetType = targetNode.data('type');
+                if (targetType === 'port' || targetType === 'tray') {
+                    targetShelfNode = this.getParentShelfNode(targetNode);
+                } else if (targetType === 'shelf' || targetType === 'graph') {
+                    targetShelfNode = targetNode;
+                }
+
+                if (targetShelfNode && targetShelfNode.length) {
+                    const pathParts = this.buildTemplatePath(targetShelfNode);
+                    if (pathParts.length > 0) {
+                        targetPath = pathParts.join(' › ');
+                    }
+                }
+            }
+        }
+
         // Build HTML content
         let html = `<strong>Connection Details</strong><br><br>`;
 
         html += `<strong>Source:</strong><br>`;
-        html += `${sourceInfo}<br><br>`;
+        html += `${sourceInfo}`;
+        if (isHierarchyMode && sourcePath) {
+            html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${sourcePath}</span>`;
+        }
+        html += `<br><br>`;
 
         html += `<strong>Target:</strong><br>`;
-        html += `${targetInfo}<br><br>`;
+        html += `${targetInfo}`;
+        if (isHierarchyMode && targetPath) {
+            html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${targetPath}</span>`;
+        }
+        html += `<br><br>`;
 
-        // Show cable information
-        html += `<strong>Cable Info:</strong><br>`;
-        html += `Type: ${edgeData.cable_type || 'Unknown'}<br>`;
-        html += `Length: ${edgeData.cable_length || 'Unknown'}<br>`;
+        // Show cable information (only in location mode, not hierarchy mode)
+        if (!isHierarchyMode) {
+            html += `<strong>Cable Info:</strong><br>`;
+            html += `Type: ${edgeData.cable_type || 'Unknown'}<br>`;
+            html += `Length: ${edgeData.cable_length || 'Unknown'}<br>`;
 
-        // Show connection number if available
-        if (edgeData.connection_number !== undefined) {
-            html += `Connection #: ${edgeData.connection_number}<br>`;
+            // Show connection number if available
+            if (edgeData.connection_number !== undefined) {
+                html += `Connection #: ${edgeData.connection_number}<br>`;
+            }
         }
 
         content.innerHTML = html;
@@ -2479,24 +2531,31 @@ export class CommonModule {
         }
 
         // Always add host_index, tray, and port at the end - regardless of collapse/expand state
-        // Format: ... › host_{hostIndex} › T{trayNum} › P{portNum}
+        // Format: ... › host {hostIndex}:t{trayNum}:p{portNum}
         // This ensures consistent endpoint description that doesn't change with collapse/expand
-        if (hostIndex !== undefined && hostIndex !== null) {
-            locationParts.push(`host_${hostIndex}`);
-        }
+        // Use compact descriptor format when host_index, tray, and port are all available
+        if (hostIndex !== undefined && hostIndex !== null && trayNum !== undefined && trayNum !== null && portNum !== undefined && portNum !== null) {
+            // Compact format: "host 1:t1:p1"
+            locationParts.push(`host ${hostIndex}:t${trayNum}:p${portNum}`);
+        } else {
+            // Fallback to separate parts if any component is missing
+            if (hostIndex !== undefined && hostIndex !== null) {
+                locationParts.push(`host_${hostIndex}`);
+            }
 
-        // Add tray info (use tray number if available, otherwise tray label)
-        if (trayNum !== undefined && trayNum !== null) {
-            locationParts.push(`T${trayNum}`);
-        } else if (trayLabel) {
-            locationParts.push(trayLabel);
-        }
+            // Add tray info (use tray number if available, otherwise tray label)
+            if (trayNum !== undefined && trayNum !== null) {
+                locationParts.push(`T${trayNum}`);
+            } else if (trayLabel) {
+                locationParts.push(trayLabel);
+            }
 
-        // Add port info (use port number if available, otherwise port label)
-        if (portNum !== undefined && portNum !== null) {
-            locationParts.push(`P${portNum}`);
-        } else if (portLabel) {
-            locationParts.push(portLabel);
+            // Add port info (use port number if available, otherwise port label)
+            if (portNum !== undefined && portNum !== null) {
+                locationParts.push(`P${portNum}`);
+            } else if (portLabel) {
+                locationParts.push(portLabel);
+            }
         }
 
         return locationParts.join(' › ');

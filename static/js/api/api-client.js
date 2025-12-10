@@ -11,21 +11,11 @@ import { API_ENDPOINTS, API_DEFAULTS, getStatusMessage, isSuccessStatus } from '
  */
 function safeStringify(obj) {
     const seen = new WeakSet();
-    const circularRefs = []; // Track circular references for logging
-    
-    const result = JSON.stringify(obj, (key, value) => {
-        // Handle circular references - skip them entirely (don't replace with string)
-        // This prevents "[Circular Reference]" strings from ending up in path arrays
+    return JSON.stringify(obj, (key, value) => {
+        // Handle circular references
         if (typeof value === 'object' && value !== null) {
             if (seen.has(value)) {
-                // Log circular/shared reference detection
-                const refInfo = {
-                    key: key || '(root)',
-                    type: Array.isArray(value) ? 'array' : 'object',
-                    constructor: value.constructor?.name || 'Unknown'
-                };
-                circularRefs.push(refInfo);
-                return undefined; // Skip circular references instead of replacing with string
+                return '[Circular Reference]';
             }
             seen.add(value);
         }
@@ -35,20 +25,6 @@ function safeStringify(obj) {
         }
         return value;
     });
-    
-    // Log if any circular/shared references were detected
-    if (circularRefs.length > 0) {
-        console.warn(`[safeStringify] Detected ${circularRefs.length} circular/shared reference(s) that were skipped:`, circularRefs);
-        // Log details about the first few for debugging
-        circularRefs.slice(0, 5).forEach((ref, idx) => {
-            console.warn(`  [${idx + 1}] Key: "${ref.key}", Type: ${ref.type}, Constructor: ${ref.constructor}`);
-        });
-        if (circularRefs.length > 5) {
-            console.warn(`  ... and ${circularRefs.length - 5} more`);
-        }
-    }
-    
-    return result;
 }
 
 export class ApiClient {
