@@ -242,15 +242,15 @@ export class ExportModule {
             // Sanitize elements to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
-            
+
             // Sanitize metadata to remove circular references (but preserve structure)
             // This prevents "[Circular Reference]" strings from ending up in path arrays
-            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata 
-                ? this.state.data.currentData.metadata 
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                ? this.state.data.currentData.metadata
                 : {};
             const metadataCircularRefs = [];
             const sanitizedMetadata = this.sanitizeForJSON(rawMetadata, new WeakSet(), 'metadata', metadataCircularRefs);
-            
+
             // Log if any circular references were detected in metadata
             if (metadataCircularRefs.length > 0) {
                 console.warn(`[exportCablingDescriptor] Detected ${metadataCircularRefs.length} circular/shared reference(s) in metadata that were removed:`, metadataCircularRefs);
@@ -262,7 +262,7 @@ export class ExportModule {
                     console.warn(`  ... and ${metadataCircularRefs.length - 5} more`);
                 }
             }
-            
+
             const fullCytoscapeData = {
                 elements: sanitizedElements,
                 metadata: {
@@ -279,7 +279,7 @@ export class ExportModule {
 
             // Create and download file
             const customFileName = this.getCustomFileName();
-            const filename = customFileName 
+            const filename = customFileName
                 ? `${customFileName}_cabling_descriptor.textproto`
                 : 'cabling_descriptor.textproto';
             const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -394,7 +394,7 @@ export class ExportModule {
 
             // Create and download file
             const customFileName = this.getCustomFileName();
-            const filename = customFileName 
+            const filename = customFileName
                 ? `${customFileName}_deployment_descriptor.textproto`
                 : 'deployment_descriptor.textproto';
             const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -423,10 +423,10 @@ export class ExportModule {
     enrichWithImplicitHierarchy(elements, metadata = {}) {
         // Check if we already have graph nodes
         const hasGraphNodes = elements.some(el => el.data && el.data.type === 'graph');
-        
+
         // Check if shelf nodes already have logical_path/child_name (from existing hierarchy)
         const shelfNodes = elements.filter(el => el.data && el.data.type === 'shelf');
-        const hasLogicalTopology = shelfNodes.some(shelf => 
+        const hasLogicalTopology = shelfNodes.some(shelf =>
             shelf.data.logical_path && shelf.data.logical_path.length > 0
         ) || hasGraphNodes;
 
@@ -435,98 +435,34 @@ export class ExportModule {
             return { elements, metadata };
         }
 
-        // No hierarchy structure - create implicit extracted_topology
-        console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected, creating implicit extracted_topology structure');
-        
-        const templateName = "extracted_topology";
-        const instanceName = "extracted_topology_0";
-        const rootGraphId = "graph_extracted_topology_0";
+        // No hierarchy structure - this is a CSV import
+        // The backend will use flat export which doesn't need complex metadata or graph nodes
+        // Just ensure host_index is set on shelf nodes for proper host_id mapping
+        console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected - CSV import, backend will use flat export');
 
-        // Create root graph node
-        const rootGraphNode = {
-            data: {
-                id: rootGraphId,
-                label: instanceName,
-                type: 'graph',
-                template_name: templateName,
-                child_name: instanceName,
-                parent: null,
-                depth: 0
-            },
-            classes: 'graph'
-        };
-
-        // Sort shelves by host_index for consistent ordering
-        const sortedShelves = [...shelfNodes].sort((a, b) => {
-            const hostIndexA = a.data.host_index;
-            const hostIndexB = b.data.host_index;
-            
-            if (hostIndexA === undefined || hostIndexA === null) {
-                if (hostIndexB === undefined || hostIndexB === null) return 0;
-                return 1;
-            }
-            if (hostIndexB === undefined || hostIndexB === null) return -1;
-            return hostIndexA - hostIndexB;
-        });
-
-        // Enrich shelf nodes and connections with hierarchy fields
+        // Assign host_index to shelves that don't have one (needed for host_id mapping in flat export)
+        let hostIndexCounter = 0;
         const enrichedElements = elements.map(el => {
             if (el.data && el.data.type === 'shelf') {
-                // Determine child_name - use existing or derive from hostname/host_index
-                let childName = el.data.child_name;
-                if (!childName) {
-                    childName = el.data.hostname || `host_${el.data.host_index ?? 0}`;
+                // Ensure host_index is set (required for host_id mapping in export)
+                let hostIndex = el.data.host_index;
+                if (hostIndex === undefined || hostIndex === null) {
+                    hostIndex = hostIndexCounter++;
                 }
 
-                // Return enriched shelf node
                 return {
                     ...el,
                     data: {
                         ...el.data,
-                        child_name: childName,
-                        logical_path: [], // Empty logical_path - flat structure under root
-                        parent: rootGraphId // Parent is the extracted_topology_0 root
+                        host_index: hostIndex
                     }
                 };
-            } else if (el.data && el.data.type === 'edge') {
-                // Tag connections with extracted_topology template if not already tagged
-                if (!el.data.template_name) {
-                    return {
-                        ...el,
-                        data: {
-                            ...el.data,
-                            template_name: templateName
-                        }
-                    };
-                }
             }
             return el;
         });
 
-        // Add root graph node at the beginning
-        enrichedElements.unshift(rootGraphNode);
-
-        // Enrich metadata with extracted_topology template
-        const enrichedMetadata = { ...metadata };
-        if (!enrichedMetadata.graph_templates) {
-            enrichedMetadata.graph_templates = {};
-        }
-        // Add extracted_topology template if it doesn't exist
-        if (!enrichedMetadata.graph_templates[templateName]) {
-            enrichedMetadata.graph_templates[templateName] = {
-                name: templateName,
-                children: sortedShelves.map((shelf, index) => {
-                    const childName = shelf.data.child_name || shelf.data.hostname || `host_${shelf.data.host_index ?? index}`;
-                    return {
-                        name: childName,
-                        type: shelf.data.shelf_node_type || 'N300_LB'
-                    };
-                })
-            };
-        }
-
-        console.log(`[export.enrichWithImplicitHierarchy] Enriched ${sortedShelves.length} shelf nodes with extracted_topology structure`);
-        return { elements: enrichedElements, metadata: enrichedMetadata };
+        console.log(`[export.enrichWithImplicitHierarchy] Ensured host_index is set on ${shelfNodes.length} shelf nodes for flat export`);
+        return { elements: enrichedElements, metadata };
     }
 
     /**
@@ -551,16 +487,16 @@ export class ExportModule {
             // Get current cytoscape data and sanitize to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
-            
+
             // Get metadata if available
-            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata 
-                ? this.state.data.currentData.metadata 
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                ? this.state.data.currentData.metadata
                 : {};
             const sanitizedMetadata = this.sanitizeForJSON(rawMetadata);
-            
+
             // Enrich with implicit hierarchy fields if needed (without switching modes)
             const enriched = this.enrichWithImplicitHierarchy(sanitizedElements, sanitizedMetadata);
-            
+
             const cytoscapeData = {
                 elements: enriched.elements,
                 metadata: enriched.metadata

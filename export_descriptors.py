@@ -643,12 +643,83 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
         )
 
 
+def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
+    """Export CablingDescriptor using flat/simple structure (for CSV imports)
+    
+    This is a simplified export that creates a single "extracted_topology" template
+    with all shelves as direct children. Used when exporting from CSV imports where
+    there's no hierarchical structure to preserve.
+    
+    This matches the old flat export behavior before hierarchical support was added.
+    """
+    if cluster_config_pb2 is None:
+        raise ImportError("cluster_config_pb2 not available")
+
+    # Get connections for building the topology
+    parser = VisualizerCytoscapeDataParser(cytoscape_data)
+    connections = parser.extract_connections()
+
+    # Get the common sorted host list (shared with DeploymentDescriptor)
+    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+
+    # Create ClusterDescriptor with full structure
+    cluster_desc = cluster_config_pb2.ClusterDescriptor()
+
+    # Create graph template
+    template_name = "extracted_topology"
+    graph_template = cluster_config_pb2.GraphTemplate()
+    
+    # Add child instances (one per host) using ACTUAL HOSTNAMES as child names
+    # This avoids confusion and makes connections clearly map to the right hosts
+    for i, (hostname, node_type) in enumerate(sorted_hosts):
+        child = graph_template.children.add()
+        child.name = hostname  # Use actual hostname instead of generic "host_i"
+        # Normalize node_type: uppercase and strip _DEFAULT suffix
+        normalized_node_type = node_type.upper()
+        if normalized_node_type.endswith('_DEFAULT'):
+            normalized_node_type = normalized_node_type[:-8]  # Remove '_DEFAULT' suffix
+        child.node_ref.node_descriptor = normalized_node_type
+
+    # Add connections to graph template
+    port_connections = graph_template.internal_connections["QSFP_DD"]  # Default port type
+    for connection in connections:
+        conn = port_connections.connections.add()
+
+        # Source port - use actual hostname directly
+        conn.port_a.path.append(connection["source"]["hostname"])
+        conn.port_a.tray_id = connection["source"]["tray_id"]
+        conn.port_a.port_id = connection["source"]["port_id"]
+
+        # Target port - use actual hostname directly
+        conn.port_b.path.append(connection["target"]["hostname"])
+        conn.port_b.tray_id = connection["target"]["tray_id"]
+        conn.port_b.port_id = connection["target"]["port_id"]
+
+    # Add graph template to cluster descriptor
+    cluster_desc.graph_templates[template_name].CopyFrom(graph_template)
+
+    # Create root instance
+    root_instance = cluster_config_pb2.GraphInstance()
+    root_instance.template_name = template_name
+
+    # Map each child (by actual hostname) to its host_id (using the same sorted host list)
+    for i, (hostname, node_type) in enumerate(sorted_hosts):
+        child_mapping = cluster_config_pb2.ChildMapping()
+        child_mapping.host_id = i
+        root_instance.child_mappings[hostname].CopyFrom(child_mapping)  # Use actual hostname as key
+
+    cluster_desc.root_instance.CopyFrom(root_instance)
+
+    # Return the content directly
+    return text_format.MessageToString(cluster_desc)
+
+
 def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_prefix: str = "cabling_descriptor") -> str:
     """Export CablingDescriptor from Cytoscape data
     
     Strategy:
-    - Export using graph templates structure (hierarchical)
-    - All structures are now wrapped in proper hierarchy (including "extracted_topology" template with instance "extracted_topology_0")
+    - For CSV imports (flat structure): Use simple flat export
+    - For hierarchical imports: Export using graph templates structure (hierarchical)
     """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
@@ -684,18 +755,17 @@ def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_pref
         metadata = cytoscape_data.get("metadata", {})
         graph_templates_meta = metadata.get("graph_templates")
         
-        if graph_templates_meta:
+        # Check if graph_templates exists and is not empty (empty dict {} is falsy in Python)
+        if graph_templates_meta and len(graph_templates_meta) > 0:
             # Use metadata templates for exact round-trip
             return export_from_metadata_templates(cytoscape_data, graph_templates_meta)
         else:
             # Build hierarchy from logical_path data
             return export_hierarchical_cabling_descriptor(cytoscape_data)
     else:
-        # No graph nodes found - this should not happen as mode switching creates "extracted_topology" template
-        raise ValueError(
-            "Cannot export cabling descriptor: No graph nodes found. "
-            "Please switch to topology mode first, which will create the proper hierarchy structure."
-        )
+        # No logical topology - this is a CSV import, use flat export
+        # This is simpler and doesn't require the complex hierarchy building
+        return export_flat_cabling_descriptor(cytoscape_data)
 
 
 def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: Dict) -> str:
@@ -931,7 +1001,8 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     metadata = cytoscape_data.get("metadata", {})
     graph_templates_meta = metadata.get("graph_templates")
     
-    if graph_templates_meta:
+    # Check if graph_templates exists and is not empty (empty dict {} is falsy in Python)
+    if graph_templates_meta and len(graph_templates_meta) > 0:
         # Use metadata templates - this preserves the original descriptor structure
         return export_from_metadata_templates(cytoscape_data, graph_templates_meta)
     
@@ -1030,16 +1101,18 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
     initial_root_template = metadata.get("initialRootTemplate")
     initial_root_id = metadata.get("initialRootId")
     
+    # Initialize use_initial_root to False (default)
+    use_initial_root = False
     
     # Use initial root template if:
     # 1. No top-level additions tracked (flag is False)
     # 2. Initial root template name is available
     # 3. Initial root node still exists in the graph
-    use_initial_root = (not has_top_level_additions and 
-                        initial_root_template and 
-                        initial_root_id and
-                        initial_root_id in element_map)
-    
+    if (not has_top_level_additions and 
+        initial_root_template and 
+        initial_root_id and
+        initial_root_id in element_map):
+        use_initial_root = True
     
     if use_initial_root:
         # No changes at top level - use original root template directly

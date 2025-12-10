@@ -976,6 +976,7 @@ export class HierarchyModule {
         // Track if we're creating extracted_topology template (for connection tagging)
         // Template name: "extracted_topology", Instance name: "extracted_topology_0"
         let rootTemplateName = null;
+        let rootGraphId = null; // Track root graph ID for metadata updates
 
         if (hasLogicalTopology) {
             // Find and recreate the root node from saved hierarchy state OR existing graph nodes
@@ -1273,7 +1274,7 @@ export class HierarchyModule {
             const templateName = "extracted_topology";
             const instanceName = "extracted_topology_0";
             rootTemplateName = templateName; // Use template name for connection tagging
-            const rootGraphId = "graph_extracted_topology_0";
+            rootGraphId = "graph_extracted_topology_0"; // Set root graph ID (declared at function scope)
 
             console.log('[hierarchy.switchMode] Setting extracted_topology root instance:');
             console.log('[hierarchy.switchMode]   - Template name:', templateName);
@@ -1441,6 +1442,81 @@ export class HierarchyModule {
 
         // Add all elements back to cytoscape
         this.state.cy.add(newElements);
+
+        // Update initial_root metadata and create graph_templates when creating extracted_topology root (CSV -> hierarchy mode switch)
+        // This allows the export code to recognize the root graph as valid and use metadata-based export
+        if (!hasLogicalTopology && rootTemplateName === "extracted_topology") {
+            if (!this.state.data.currentData) {
+                this.state.data.currentData = {};
+            }
+            if (!this.state.data.currentData.metadata) {
+                this.state.data.currentData.metadata = {};
+            }
+            // Set initial_root fields to track the extracted_topology root we just created
+            this.state.data.currentData.metadata.initialRootTemplate = rootTemplateName;
+            this.state.data.currentData.metadata.initialRootId = rootGraphId;
+            this.state.data.currentData.metadata.hasTopLevelAdditions = false;
+
+            // Create graph_templates metadata structure (same as textproto import)
+            // This allows export to use export_from_metadata_templates for consistency
+            if (!this.state.data.currentData.metadata.graph_templates) {
+                this.state.data.currentData.metadata.graph_templates = {};
+            }
+
+            // Build the extracted_topology template structure from sorted shelves
+            if (!this.state.data.currentData.metadata.graph_templates[rootTemplateName]) {
+                const templateStructure = {
+                    name: rootTemplateName,
+                    children: sortedShelfDataList.map((shelf, index) => {
+                        // Determine child_name - use existing or derive from hostname/host_index
+                        let childName = shelf.data.child_name;
+                        if (!childName) {
+                            childName = shelf.data.hostname || `host_${shelf.data.host_index ?? index}`;
+                        }
+
+                        // Get node descriptor and normalize (uppercase, strip _DEFAULT suffix)
+                        let nodeDescriptor = shelf.data.shelf_node_type || shelf.data.node_type || 'N300_LB';
+                        nodeDescriptor = nodeDescriptor.toUpperCase();
+                        if (nodeDescriptor.endsWith('_DEFAULT')) {
+                            nodeDescriptor = nodeDescriptor.slice(0, -8); // Remove '_DEFAULT' suffix
+                        }
+
+                        return {
+                            name: childName,
+                            type: 'node',  // Indicates this is a node type child
+                            node_descriptor: nodeDescriptor  // The actual node descriptor name (normalized)
+                        };
+                    })
+                };
+
+                // Add to metadata.graph_templates (for export)
+                this.state.data.currentData.metadata.graph_templates[rootTemplateName] = templateStructure;
+
+                // Also add to availableGraphTemplates (for UI recognition - dropdowns, filters, etc.)
+                if (!this.state.data.availableGraphTemplates) {
+                    this.state.data.availableGraphTemplates = {};
+                }
+                this.state.data.availableGraphTemplates[rootTemplateName] = templateStructure;
+            }
+
+            console.log(`[hierarchy.switchMode] Updated initial_root metadata: template="${rootTemplateName}", id="${rootGraphId}"`);
+            console.log(`[hierarchy.switchMode] Created graph_templates metadata with ${sortedShelfDataList.length} children`);
+            console.log(`[hierarchy.switchMode] Added "${rootTemplateName}" to availableGraphTemplates for UI recognition`);
+            
+            // Update UI dropdowns to show the new template (if UI display module is available)
+            // This ensures the template appears in template selection dropdowns and filters
+            if (this.state.uiDisplayModule && typeof this.state.uiDisplayModule.populateGraphTemplateDropdown === 'function') {
+                this.state.uiDisplayModule.populateGraphTemplateDropdown();
+            }
+            // Also update template filter dropdown
+            this.populateTemplateFilterDropdown();
+            
+            // Update connection legend to show extracted_topology template
+            // This ensures the template appears in the legend after mode switch
+            if (this.state.data.currentData && window.updateConnectionLegend) {
+                window.updateConnectionLegend(this.state.data.currentData);
+            }
+        }
 
         // Apply drag restrictions
         this.common.applyDragRestrictions();

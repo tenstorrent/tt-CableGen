@@ -931,17 +931,23 @@ export class UIDisplayModule {
                 return elType === 'graph' && !hasParent;
             });
 
+            // Always initialize these fields to prevent undefined errors
             if (topLevelGraphs.length === 1) {
                 const rootNode = topLevelGraphs[0].data;
                 this.state.data.currentData.metadata.initialRootTemplate = rootNode.template_name || 'unknown_template';
                 this.state.data.currentData.metadata.initialRootId = rootNode.id;
                 this.state.data.currentData.metadata.hasTopLevelAdditions = false;
             } else {
-                // Multiple roots on import - already modified, set flag
+                // Zero or multiple roots on import - set to null (explicitly, not undefined)
+                // This prevents "Cannot read property" errors when these fields are accessed
                 this.state.data.currentData.metadata.initialRootTemplate = null;
                 this.state.data.currentData.metadata.initialRootId = null;
-                this.state.data.currentData.metadata.hasTopLevelAdditions = true;
-                console.log(`Multiple top-level nodes on import (${topLevelGraphs.length}) - flagging as modified`);
+                this.state.data.currentData.metadata.hasTopLevelAdditions = (topLevelGraphs.length > 1);
+                if (topLevelGraphs.length === 0) {
+                    console.log(`No top-level graph nodes on import (CSV/location mode) - initialRoot fields set to null`);
+                } else {
+                    console.log(`Multiple top-level nodes on import (${topLevelGraphs.length}) - flagging as modified`);
+                }
             }
         }
 
