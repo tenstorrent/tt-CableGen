@@ -513,20 +513,44 @@ document.addEventListener('keydown', function (event) {
         }
     }
 
-    // Ctrl+N to focus on new node hostname input
-    if ((event.ctrlKey || event.metaKey) && event.key === 'n') {
+    // Ctrl+S (or Cmd+S on Mac) to save/export based on mode
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        // Prevent default browser save dialog
         event.preventDefault();
-        const hostnameInput = document.getElementById('nodeHostnameInput');
-        if (hostnameInput) {
-            hostnameInput.focus();
-            hostnameInput.select();
-        }
-    }
 
-    // Ctrl+E to create empty visualization
-    if ((event.ctrlKey || event.metaKey) && event.key === 'e') {
-        event.preventDefault();
-        createEmptyVisualization();
+        // Don't trigger save action if typing in an input field
+        const activeElement = document.activeElement;
+        if (['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) {
+            return;
+        }
+
+        // Only proceed if visualization is loaded
+        if (!state.cy) {
+            return;
+        }
+
+        // Focus and expand the Export Section
+        const exportSection = document.getElementById('exportOptions');
+        const exportHeader = document.querySelector('[data-section="exportOptions"]');
+
+        if (exportSection && exportHeader) {
+            // Expand the section if it's collapsed
+            if (exportSection.classList.contains('collapsed')) {
+                toggleCollapsible('exportOptions');
+            }
+
+            // Scroll to the export section
+            exportHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            // Trigger appropriate export based on mode
+            if (state.mode === 'location') {
+                // Location mode: export cabling guide
+                generateCablingGuide().catch(err => console.error('Error generating cabling guide:', err));
+            } else if (state.mode === 'hierarchy') {
+                // Hierarchy mode: export cabling descriptor
+                exportCablingDescriptor().catch(err => console.error('Error exporting cabling descriptor:', err));
+            }
+        }
     }
 });
 
