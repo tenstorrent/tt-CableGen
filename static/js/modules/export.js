@@ -33,7 +33,7 @@ export class ExportModule {
      * @param {WeakSet} seen - WeakSet of already seen objects (for circular reference detection)
      * @returns {*} Sanitized object
      */
-    sanitizeForJSON(obj, seen = new WeakSet()) {
+    sanitizeForJSON(obj, seen = new WeakSet(), path = 'root', circularRefs = []) {
         // Handle null and undefined
         if (obj === null || obj === undefined) {
             return obj;
@@ -57,6 +57,12 @@ export class ExportModule {
 
         // Check for circular reference
         if (seen.has(obj)) {
+            // Track circular reference for logging
+            circularRefs.push({
+                path: path,
+                type: Array.isArray(obj) ? 'array' : 'object',
+                constructor: obj.constructor?.name || 'Unknown'
+            });
             return undefined; // Remove circular references
         }
 
@@ -67,8 +73,9 @@ export class ExportModule {
             // Handle arrays
             if (Array.isArray(obj)) {
                 const sanitized = [];
-                for (const item of obj) {
-                    const sanitizedItem = this.sanitizeForJSON(item, seen);
+                for (let i = 0; i < obj.length; i++) {
+                    const itemPath = `${path}[${i}]`;
+                    const sanitizedItem = this.sanitizeForJSON(obj[i], seen, itemPath, circularRefs);
                     // Only push non-undefined items (but allow null)
                     if (sanitizedItem !== undefined) {
                         sanitized.push(sanitizedItem);
@@ -82,7 +89,8 @@ export class ExportModule {
             for (const key in obj) {
                 if (obj.hasOwnProperty(key)) {
                     try {
-                        const value = this.sanitizeForJSON(obj[key], seen);
+                        const valuePath = path === 'root' ? key : `${path}.${key}`;
+                        const value = this.sanitizeForJSON(obj[key], seen, valuePath, circularRefs);
                         // Only include non-undefined values (but allow null)
                         if (value !== undefined) {
                             sanitized[key] = value;
@@ -234,10 +242,31 @@ export class ExportModule {
             // Sanitize elements to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
+            
+            // Sanitize metadata to remove circular references (but preserve structure)
+            // This prevents "[Circular Reference]" strings from ending up in path arrays
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata 
+                ? this.state.data.currentData.metadata 
+                : {};
+            const metadataCircularRefs = [];
+            const sanitizedMetadata = this.sanitizeForJSON(rawMetadata, new WeakSet(), 'metadata', metadataCircularRefs);
+            
+            // Log if any circular references were detected in metadata
+            if (metadataCircularRefs.length > 0) {
+                console.warn(`[exportCablingDescriptor] Detected ${metadataCircularRefs.length} circular/shared reference(s) in metadata that were removed:`, metadataCircularRefs);
+                // Log details about the first few for debugging
+                metadataCircularRefs.slice(0, 5).forEach((ref, idx) => {
+                    console.warn(`  [${idx + 1}] Path: "${ref.path}", Type: ${ref.type}, Constructor: ${ref.constructor}`);
+                });
+                if (metadataCircularRefs.length > 5) {
+                    console.warn(`  ... and ${metadataCircularRefs.length - 5} more`);
+                }
+            }
+            
             const fullCytoscapeData = {
                 elements: sanitizedElements,
                 metadata: {
-                    ...(this.state.data.currentData && this.state.data.currentData.metadata ? this.state.data.currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
+                    ...sanitizedMetadata,  // Include sanitized metadata (graph_templates, etc.)
                     visualization_mode: this.state.mode  // Current mode
                 }
             };

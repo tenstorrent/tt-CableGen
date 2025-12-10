@@ -718,18 +718,55 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     # The visualizer should have stored this during import
     metadata = cytoscape_data.get("metadata", {})
     
-    # Try to find root template name - it should be the template that contains graph refs
-    root_template_name = None
-    for template_name, template_info in graph_templates_meta.items():
-        children = template_info.get('children', [])
-        # Root template has children that are graph references
-        if any(child.get('type') == 'graph' for child in children):
-            root_template_name = template_name
-            break
+    # Find root graph nodes (nodes without parents) to determine actual root template
+    elements = cytoscape_data.get("elements", [])
+    root_nodes = [el for el in elements 
+                  if el.get("data", {}).get("type") == "graph" 
+                  and not el.get("data", {}).get("parent")]
     
+    # Determine root template name from actual root node(s) in the graph
+    root_template_name = None
+    if len(root_nodes) == 1:
+        # Single root node - use its template_name
+        root_node_data = root_nodes[0].get("data", {})
+        root_template_name = root_node_data.get("template_name")
+        if root_template_name:
+            print(f"Using root template '{root_template_name}' from actual root node '{root_node_data.get('id')}'")
+    elif len(root_nodes) > 1:
+        # Multiple root nodes - check if they all have the same template
+        root_template_names = set()
+        for root_node in root_nodes:
+            template_name = root_node.get("data", {}).get("template_name")
+            if template_name:
+                root_template_names.add(template_name)
+        
+        if len(root_template_names) == 1:
+            root_template_name = root_template_names.pop()
+            print(f"Using root template '{root_template_name}' from {len(root_nodes)} root nodes")
+        else:
+            # Multiple different templates - this is an error case
+            template_names_str = ", ".join(sorted(root_template_names))
+            raise ValueError(
+                f"Cannot export CablingDescriptor: Multiple root templates found in graph ({template_names_str}). "
+                f"A singular root template is required for CablingDescriptor export."
+            )
+    
+    # Fallback: if no root nodes found or root node has no template_name, 
+    # try to find root template from metadata (template that contains graph refs)
     if not root_template_name:
-        # If no graph references found, use the first template as root
+        print("No root template found in graph nodes, falling back to metadata detection")
+        for template_name, template_info in graph_templates_meta.items():
+            children = template_info.get('children', [])
+            # Root template has children that are graph references
+            if any(child.get('type') == 'graph' for child in children):
+                root_template_name = template_name
+                print(f"Using root template '{root_template_name}' from metadata (has graph refs)")
+                break
+    
+    # Final fallback: use the first template as root
+    if not root_template_name:
         root_template_name = list(graph_templates_meta.keys())[0]
+        print(f"Using first template '{root_template_name}' as root (fallback)")
     
     # Build all graph templates from metadata (excluding empty ones)
     for template_name, template_info in graph_templates_meta.items():
@@ -747,24 +784,71 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                 # Graph reference
                 child.graph_ref.graph_template = child_info['graph_template']
         
-        # Add connections
+        # Add connections (with deduplication)
         connections_list = template_info.get('connections', [])
         if connections_list:
             port_connections = graph_template.internal_connections["QSFP_DD"]
+            seen_connections = set()  # Track seen connections to prevent duplicates
+            duplicate_count = 0
+            
             for conn_info in connections_list:
+                # Skip connections with invalid paths (e.g., containing "[Circular Reference]")
+                port_a_path = conn_info.get('port_a', {}).get('path', [])
+                port_b_path = conn_info.get('port_b', {}).get('path', [])
+                
+                # Check if paths contain "[Circular Reference]" or are invalid
+                if not isinstance(port_a_path, list) or not isinstance(port_b_path, list):
+                    print(f"    Warning: Skipping connection with invalid path types in template '{template_name}'")
+                    continue
+                
+                # Filter out "[Circular Reference]" strings and other invalid path elements
+                port_a_path_clean = [p for p in port_a_path if isinstance(p, str) and p != "[Circular Reference]"]
+                port_b_path_clean = [p for p in port_b_path if isinstance(p, str) and p != "[Circular Reference]"]
+                
+                # Skip if paths are empty after cleaning
+                if not port_a_path_clean or not port_b_path_clean:
+                    print(f"    Warning: Skipping connection with empty or invalid path in template '{template_name}'")
+                    continue
+                
+                # Create a normalized connection key for deduplication (order-independent)
+                port_a_tray = conn_info['port_a']['tray_id']
+                port_a_port = conn_info['port_a']['port_id']
+                port_b_tray = conn_info['port_b']['tray_id']
+                port_b_port = conn_info['port_b']['port_id']
+                
+                # Normalize: use lexicographically smaller path as first element
+                # This makes A->B and B->A connections compare as equal
+                path_a_tuple = tuple(port_a_path_clean)
+                path_b_tuple = tuple(port_b_path_clean)
+                
+                if path_a_tuple < path_b_tuple or (path_a_tuple == path_b_tuple and (port_a_tray, port_a_port) < (port_b_tray, port_b_port)):
+                    conn_key = (path_a_tuple, port_a_tray, port_a_port, path_b_tuple, port_b_tray, port_b_port)
+                else:
+                    conn_key = (path_b_tuple, port_b_tray, port_b_port, path_a_tuple, port_a_tray, port_a_port)
+                
+                # Skip if we've already seen this connection
+                if conn_key in seen_connections:
+                    duplicate_count += 1
+                    continue
+                
+                seen_connections.add(conn_key)
+                
                 conn = port_connections.connections.add()
                 
                 # Port A
-                for path_elem in conn_info['port_a']['path']:
+                for path_elem in port_a_path_clean:
                     conn.port_a.path.append(path_elem)
-                conn.port_a.tray_id = conn_info['port_a']['tray_id']
-                conn.port_a.port_id = conn_info['port_a']['port_id']
+                conn.port_a.tray_id = port_a_tray
+                conn.port_a.port_id = port_a_port
                 
                 # Port B
-                for path_elem in conn_info['port_b']['path']:
+                for path_elem in port_b_path_clean:
                     conn.port_b.path.append(path_elem)
-                conn.port_b.tray_id = conn_info['port_b']['tray_id']
-                conn.port_b.port_id = conn_info['port_b']['port_id']
+                conn.port_b.tray_id = port_b_tray
+                conn.port_b.port_id = port_b_port
+            
+            if duplicate_count > 0:
+                print(f"    Removed {duplicate_count} duplicate connection(s) from template '{template_name}'")
         
         # Only add non-empty templates
         if len(graph_template.children) > 0:

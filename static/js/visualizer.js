@@ -602,7 +602,13 @@ function setupEventListeners() {
     attachEventListener('generateFSDBtn', 'click', () => generateFSD().catch(err => console.error('Error generating FSD:', err)));
 
     // Modal buttons
-    attachEventListener('cancelConnectionPlacementBtn', 'click', () => cancelConnectionPlacement().catch(err => console.error('Error canceling connection placement:', err)));
+    attachEventListener('cancelConnectionPlacementBtn', 'click', () => {
+        try {
+            cancelConnectionPlacement();
+        } catch (err) {
+            console.error('Error canceling connection placement:', err);
+        }
+    });
     attachEventListener('manualLayoutTab', 'click', () => switchLayoutTab('manual'));
     attachEventListener('uploadLayoutTab', 'click', () => switchLayoutTab('upload'));
     attachEventListener('cancelPhysicalLayoutModalBtn', 'click', () => cancelPhysicalLayoutModal());

@@ -219,16 +219,36 @@ export class CommonModule {
             });
 
             // Calculate grid dimensions - aim for roughly square aspect ratio
+            // Use column-major ordering only in hierarchy mode, row-major in location mode
             const numShelves = shelves.length;
+            const isHierarchyMode = this.state.mode === 'hierarchy';
+            let gridRows;
             let gridCols;
 
-            if (numShelves <= 3) {
-                // For 1-3 shelves, arrange horizontally
-                gridCols = numShelves;
+            if (isHierarchyMode) {
+                // Column-major ordering for hierarchy mode: calculate rows first, then columns
+                if (numShelves <= 3) {
+                    // For 1-3 shelves, arrange vertically (column-major)
+                    gridRows = numShelves;
+                    gridCols = 1;
+                } else {
+                    // For 4+ shelves, calculate optimal grid (column-major)
+                    // Calculate rows first for column-major ordering
+                    gridRows = Math.ceil(Math.sqrt(numShelves * 1.2)); // 1.2 factor prefers taller grids
+                    gridCols = Math.ceil(numShelves / gridRows);
+                }
             } else {
-                // For 4+ shelves, calculate optimal grid
-                // Try to make it roughly square, slightly preferring more columns
-                gridCols = Math.ceil(Math.sqrt(numShelves * 1.2)); // 1.2 factor prefers wider grids
+                // Row-major ordering for location mode: calculate columns first, then rows
+                if (numShelves <= 3) {
+                    // For 1-3 shelves, arrange horizontally (row-major)
+                    gridCols = numShelves;
+                    gridRows = 1;
+                } else {
+                    // For 4+ shelves, calculate optimal grid (row-major)
+                    // Calculate columns first for row-major ordering
+                    gridCols = Math.ceil(Math.sqrt(numShelves * 1.2)); // 1.2 factor prefers wider grids
+                    gridRows = Math.ceil(numShelves / gridCols);
+                }
             }
 
             // Get actual shelf dimensions for proper spacing
@@ -255,9 +275,18 @@ export class CommonModule {
             const verticalSpacing = maxShelfHeight * 1.1; // 10% vertical padding
 
             // Position shelves in grid
+            // Column-major ordering for hierarchy mode, row-major for location mode
             shelves.forEach((shelf, index) => {
-                const row = Math.floor(index / gridCols);
-                const col = index % gridCols;
+                let row, col;
+                if (isHierarchyMode) {
+                    // Column-major: fill columns first, then move to next column
+                    row = index % gridRows;  // Column-major: row changes faster
+                    col = Math.floor(index / gridRows);  // Column-major: col changes slower
+                } else {
+                    // Row-major: fill rows first, then move to next row
+                    row = Math.floor(index / gridCols);  // Row-major: row changes slower
+                    col = index % gridCols;  // Row-major: col changes faster
+                }
 
                 const x = startX + (col * horizontalSpacing);
                 const y = startY + (row * verticalSpacing);
@@ -271,8 +300,19 @@ export class CommonModule {
 
         if (nestedGraphs.length > 0) {
             // Calculate grid dimensions - aim for square-ish layout
-            const gridCols = Math.ceil(Math.sqrt(nestedGraphs.length));
-            const gridRows = Math.ceil(nestedGraphs.length / gridCols);
+            // Use column-major ordering only in hierarchy mode, row-major in location mode
+            const isHierarchyMode = this.state.mode === 'hierarchy';
+            let gridRows, gridCols;
+
+            if (isHierarchyMode) {
+                // Column-major: calculate rows first
+                gridRows = Math.ceil(Math.sqrt(nestedGraphs.length));
+                gridCols = Math.ceil(nestedGraphs.length / gridRows);
+            } else {
+                // Row-major: calculate columns first
+                gridCols = Math.ceil(Math.sqrt(nestedGraphs.length));
+                gridRows = Math.ceil(nestedGraphs.length / gridCols);
+            }
 
             // Starting position
             const startX = graphPos.x + (graphBBox.w * 0.05); // 5% padding from left
@@ -284,8 +324,16 @@ export class CommonModule {
 
             // First pass: position nodes and calculate max dimensions
             nestedGraphs.forEach((graph, index) => {
-                const row = Math.floor(index / gridCols);
-                const col = index % gridCols;
+                let row, col;
+                if (isHierarchyMode) {
+                    // Column-major: row changes faster
+                    row = index % gridRows;
+                    col = Math.floor(index / gridRows);
+                } else {
+                    // Row-major: col changes faster
+                    row = Math.floor(index / gridCols);
+                    col = index % gridCols;
+                }
 
                 // Calculate position based on accumulated widths/heights
                 let x = startX;
@@ -314,8 +362,16 @@ export class CommonModule {
 
             // Second pass: reposition with correct spacing
             nestedGraphs.forEach((graph, index) => {
-                const row = Math.floor(index / gridCols);
-                const col = index % gridCols;
+                let row, col;
+                if (isHierarchyMode) {
+                    // Column-major: row changes faster
+                    row = index % gridRows;
+                    col = Math.floor(index / gridRows);
+                } else {
+                    // Row-major: col changes faster
+                    row = Math.floor(index / gridCols);
+                    col = index % gridCols;
+                }
 
                 let x = startX;
                 for (let c = 0; c < col; c++) {
@@ -745,18 +801,14 @@ export class CommonModule {
      */
     handleRightClickEdit(evt, node) {
         if (!node || !node.data) {
-            console.log('[right-click] Invalid node');
             return;
         }
 
         const data = node.data();
         const nodeType = data.type;
 
-        console.log('[right-click] Node:', node.id(), 'Type:', nodeType, 'Template:', node.data('template_name'));
-
         // Don't allow editing for trays and ports
         if (nodeType === 'tray' || nodeType === 'port') {
-            console.log('[right-click] Tray/port node - editing not allowed');
             return;
         }
 
@@ -769,7 +821,6 @@ export class CommonModule {
 
         // Check if editing mode is enabled - all editing popups require it
         if (!this.state.editing.isEdgeCreationMode) {
-            console.log('[right-click] Editing mode not enabled - showing notification');
             window.showNotificationBanner?.('⚠️ Editing mode must be enabled to edit nodes. Please click "Enable Editing" button first.', 'warning');
             return;
         }
@@ -778,8 +829,7 @@ export class CommonModule {
         if (nodeType === 'shelf') {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
-                console.log('[right-click] Opening shelf editing popup');
-                window.enableShelfEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableShelfEditing function not available');
+                window.enableShelfEditing?.(node, evt.renderedPosition || evt.position);
             }
             return;
         }
@@ -788,8 +838,7 @@ export class CommonModule {
         if (nodeType === 'hall') {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
-                console.log('[right-click] Opening hall editing popup');
-                window.enableHallEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableHallEditing function not available');
+                window.enableHallEditing?.(node, evt.renderedPosition || evt.position);
             }
             return;
         }
@@ -798,8 +847,7 @@ export class CommonModule {
         if (nodeType === 'aisle') {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
-                console.log('[right-click] Opening aisle editing popup');
-                window.enableAisleEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableAisleEditing function not available');
+                window.enableAisleEditing?.(node, evt.renderedPosition || evt.position);
             }
             return;
         }
@@ -808,41 +856,30 @@ export class CommonModule {
         if (nodeType === 'rack') {
             const isEditing = node.data('isEditing') === true;
             if (!isEditing) {
-                console.log('[right-click] Opening rack editing popup');
-                window.enableRackEditing?.(node, evt.renderedPosition || evt.position) || console.warn('[right-click] enableRackEditing function not available');
+                window.enableRackEditing?.(node, evt.renderedPosition || evt.position);
             }
             return;
         }
 
         // For graph template nodes: enable editing in hierarchy mode
         if (nodeType === 'graph' && node.data('template_name')) {
-            console.log('[right-click] Graph template node detected');
-
             if (!window.getVisualizationMode) {
-                console.warn('[right-click] getVisualizationMode function not available');
                 return;
             }
 
             const currentMode = window.getVisualizationMode();
-            console.log('[right-click] Current visualization mode:', currentMode);
 
             if (currentMode === 'hierarchy') {
                 const isEditing = node.data('isEditing') === true;
-                console.log('[right-click] Node isEditing flag:', isEditing);
 
                 if (!isEditing) {
-                    console.log('[right-click] Opening graph template editing popup');
-                    window.enableGraphTemplateEditing?.(node, evt.renderedPosition || evt.position) || console.error('[right-click] enableGraphTemplateEditing function not available!');
-                } else {
-                    console.log('[right-click] Node is already being edited');
+                    if (typeof window.enableGraphTemplateEditing === 'function') {
+                        window.enableGraphTemplateEditing(node, evt.renderedPosition || evt.position);
+                    }
                 }
-            } else {
-                console.log('[right-click] Not in hierarchy mode, skipping graph template editing');
             }
             return;
         }
-
-        console.log('[right-click] No handler for node type:', nodeType);
     }
 
     /**
@@ -1730,6 +1767,50 @@ export class CommonModule {
     }
 
     /**
+     * Build template/hierarchy path from a node up to the root graph
+     * @param {Object} node - Cytoscape node
+     * @returns {Array<string>} Array of labels representing the path from root to node
+     */
+    buildTemplatePath(node) {
+        const pathParts = [];
+        let current = node;
+
+        // Traverse up the hierarchy, collecting graph instance labels
+        while (current && current.length > 0) {
+            const currentData = current.data();
+
+            // For graph nodes, use child_name or label
+            if (currentData.type === 'graph') {
+                const label = currentData.child_name || currentData.label;
+                if (label) {
+                    pathParts.unshift(label);
+                }
+            }
+            // For shelf nodes, use child_name if available
+            else if (currentData.type === 'shelf' && currentData.child_name) {
+                pathParts.unshift(currentData.child_name);
+            }
+
+            // Move to parent
+            const parent = current.parent();
+            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                current = parent;
+            } else {
+                // Reached root level - include root graph if it's a graph
+                if (current.data('type') === 'graph') {
+                    const rootLabel = current.data('child_name') || current.data('label');
+                    if (rootLabel && !pathParts.includes(rootLabel)) {
+                        pathParts.unshift(rootLabel);
+                    }
+                }
+                break;
+            }
+        }
+
+        return pathParts;
+    }
+
+    /**
      * Show node information in the info panel
      * @param {Object} node - Cytoscape node
      * @param {Object} position - Position for the info panel (optional)
@@ -1766,8 +1847,15 @@ export class CommonModule {
             data.type === 'pod' || data.type === 'cluster') &&
             currentMode === 'hierarchy';
 
-        if (isGraphHierarchyNode && node.isParent()) {
+        if (isGraphHierarchyNode) {
             html += `<br><strong>Graph Hierarchy Info:</strong><br>`;
+
+            // Show instance path with indexing (for all graph instances)
+            const templatePath = this.buildTemplatePath(node);
+            if (templatePath.length > 0) {
+                const indexedPath = templatePath.map((label, index) => `[${index}] ${label}`).join(' → ');
+                html += `<strong>Instance Path:</strong> ${indexedPath}<br>`;
+            }
 
             // Show template name if available
             if (data.template_name) {
@@ -1784,9 +1872,11 @@ export class CommonModule {
                 html += `Label: ${data.label}<br>`;
             }
 
-            // Show child count
-            const childCount = node.children().length;
-            html += `Children: ${childCount}<br>`;
+            // Show child count (only if parent)
+            if (node.isParent()) {
+                const childCount = node.children().length;
+                html += `Children: ${childCount}<br>`;
+            }
 
             // Show depth in hierarchy
             let depth = 0;
@@ -1849,7 +1939,15 @@ export class CommonModule {
                 if (data.child_name) {
                     html += `<br><strong>Template Position:</strong> ${data.child_name}<br>`;
                 }
-                // Show logical path if available, including root graph
+
+                // Show instance path with indexing (built from graph hierarchy)
+                const templatePath = this.buildTemplatePath(node);
+                if (templatePath.length > 0) {
+                    const indexedPath = templatePath.map((label, index) => `[${index}] ${label}`).join(' → ');
+                    html += `<strong>Instance Path:</strong> ${indexedPath}<br>`;
+                }
+
+                // Show logical path if available, including root graph (for imported data)
                 if (data.logical_path && Array.isArray(data.logical_path) && data.logical_path.length > 0) {
                     // Find the root graph node (graph with no parent)
                     let rootGraphLabel = '';
@@ -2225,7 +2323,6 @@ export class CommonModule {
                     'control-point-distance': controlPointDistance,  // Distance from straight line (reduced)
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
-                console.log(`[forceApplyCurveStyles] Edge ${index + 1}/${edges.length} (conn#${connectionNumber || 'N/A'}, id: ${edgeId.substring(0, 20)}...): SAME-SHELF -> ${curveStyle}, control-point-distance: ${controlPointDistance.toFixed(2)}`);
             } else {
                 crossShelfCount++;
                 curveStyle = 'bezier';
@@ -2236,7 +2333,6 @@ export class CommonModule {
                     'control-point-step-size': stepSize
                 };
                 const connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
-                console.log(`[forceApplyCurveStyles] Edge ${index + 1}/${edges.length} (conn#${connectionNumber || 'N/A'}, id: ${edgeId.substring(0, 20)}...): ${connectionType} -> ${curveStyle}, control-point-step-size: ${stepSize.toFixed(2)} (base: ${controlPointStepSize.toFixed(2)}, ${isCrossGraph ? 'reduced 50%' : 'full'}), sourceGraph: ${sourceGraphNodeId || 'N/A'}, targetGraph: ${targetGraphNodeId || 'N/A'}, isRerouted: ${isRerouted}`);
                 if (isCrossGraph) {
                     crossGraphCount++;
                 }
