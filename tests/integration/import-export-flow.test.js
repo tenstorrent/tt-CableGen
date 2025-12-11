@@ -785,8 +785,8 @@ describe('Import/Export Flow Integration Tests', () => {
                 });
             }
 
-            // Step 3: Python Export - Should fail because we're in location mode
-            // Cabling descriptor export requires hierarchy mode (with graph nodes)
+            // Step 3: Python Export - Should succeed using flat export (for CSV imports)
+            // CSV imports in location mode can export using flat export method
             const cytoscapeData = getCytoscapeData();
 
             // Verify we're in location mode (no graph nodes)
@@ -795,18 +795,10 @@ describe('Import/Export Flow Integration Tests', () => {
             );
             expect(graphNodes.length).toBe(0); // Should be in location mode
 
-            // Attempting to export should fail
-            expect(() => {
-                exportToPython(cytoscapeData);
-            }).toThrow();
-
-            // Verify the error message
-            try {
-                exportToPython(cytoscapeData);
-            } catch (error) {
-                expect(error.message).toContain('No graph nodes found');
-                expect(error.message).toContain('switch to topology mode');
-            }
+            // Export should succeed using flat export method
+            const exportedTextproto = exportToPython(cytoscapeData);
+            expect(exportedTextproto).toBeTruthy();
+            expect(exportedTextproto).toContain('graph_templates');
 
             // Verify connection count increased or stayed same
             const modifiedConnections = countConnections();

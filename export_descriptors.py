@@ -369,7 +369,8 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                         return hostname.strip()
                     # If no hostname, the host_id itself might be used as identifier
                     # This happens in CSV imports where hostname might not be set initially
-                    break
+                    # Return host_id_str as fallback identifier (consistent with _handle_descriptor_port)
+                    return host_id_str
         
         # Find the port node in the cytoscape data
         for element in self.data.get("elements", []):
@@ -891,10 +892,25 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     elif len(root_nodes) > 1:
         # Multiple root nodes - check if they all have the same template
         root_template_names = set()
+        empty_root_templates = []
         for root_node in root_nodes:
             template_name = root_node.get("data", {}).get("template_name")
             if template_name:
                 root_template_names.add(template_name)
+                # Check if this root node is empty (has no children)
+                root_node_id = root_node.get("data", {}).get("id")
+                root_node_children = [el for el in elements 
+                                     if el.get("data", {}).get("parent") == root_node_id]
+                if len(root_node_children) == 0:
+                    empty_root_templates.append(template_name)
+        
+        # Prioritize empty root template error over multiple root templates error
+        if empty_root_templates:
+            empty_templates_str = ", ".join(sorted(set(empty_root_templates)))
+            raise ValueError(
+                f"Cannot export CablingDescriptor: Empty root template(s) found: {empty_templates_str}. "
+                f"Root templates must contain at least one child node or graph reference."
+            )
         
         if len(root_template_names) == 1:
             root_template_name = root_template_names.pop()

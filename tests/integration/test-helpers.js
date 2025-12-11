@@ -137,6 +137,14 @@ export function callPythonExport(cytoscapeData) {
 
         const pythonScript = `import sys
 import json
+# Redirect print statements to stderr to avoid polluting stdout with debug messages
+import builtins
+original_print = builtins.print
+def print_to_stderr(*args, **kwargs):
+    kwargs.setdefault('file', sys.stderr)
+    original_print(*args, **kwargs)
+builtins.print = print_to_stderr
+
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
 
 from export_descriptors import export_cabling_descriptor_for_visualizer
@@ -145,7 +153,8 @@ with open(r'${tempDataFile.replace(/\\/g, '/')}', 'r') as f:
     cytoscape_data = json.load(f)
 
 result = export_cabling_descriptor_for_visualizer(cytoscape_data)
-print(result)`;
+# Use original print for the actual result (to stdout)
+original_print(result)`;
 
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
@@ -307,6 +316,14 @@ export function callPythonExportDeployment(cytoscapeData) {
 
         const pythonScript = `import sys
 import json
+# Redirect print statements to stderr to avoid polluting stdout with debug messages
+import builtins
+original_print = builtins.print
+def print_to_stderr(*args, **kwargs):
+    kwargs.setdefault('file', sys.stderr)
+    original_print(*args, **kwargs)
+builtins.print = print_to_stderr
+
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
 
 from export_descriptors import export_deployment_descriptor_for_visualizer
@@ -315,7 +332,8 @@ with open(r'${tempDataFile.replace(/\\/g, '/')}', 'r') as f:
     cytoscape_data = json.load(f)
 
 result = export_deployment_descriptor_for_visualizer(cytoscape_data)
-print(result)`;
+# Use original print for the actual result (to stdout)
+original_print(result)`;
 
         // Write script to temp file
         fs.writeFileSync(tempScript, pythonScript);
