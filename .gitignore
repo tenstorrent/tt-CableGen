@@ -4,4 +4,3 @@ __pycache__/
 *.md
 coverage/
 tests/integration/debug_output/
-tests/integration/test-data/
