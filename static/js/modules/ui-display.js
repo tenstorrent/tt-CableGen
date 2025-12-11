@@ -627,8 +627,8 @@ export class UIDisplayModule {
             manualContent.style.display = 'block';
         }
         // Switch to manual tab to ensure form is visible
-        if (typeof switchLayoutTab === 'function') {
-            switchLayoutTab('manual');
+        if (typeof window.switchLayoutTab === 'function') {
+            window.switchLayoutTab('manual');
         }
 
         // Get all input elements with null checks
@@ -855,7 +855,6 @@ export class UIDisplayModule {
                 total_nodes: 0
             }
         };
-        this.state.data.currentData = this.state.data.currentData;
 
         // Initialize Cytoscape with empty data
         this.initVisualization(this.state.data.currentData);

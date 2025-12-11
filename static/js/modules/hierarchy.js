@@ -455,7 +455,7 @@ export class HierarchyModule {
      */
     processDeferredConnections(deferredConnections, edgesToAdd) {
         deferredConnections.forEach(deferred => {
-            const { graphLabel, connections, pathMapping, templateName } = deferred;
+            const { graphLabel: _graphLabel, connections, pathMapping, templateName } = deferred;
 
             // Find ALL instances of this template (not just the one being instantiated)
             const allTemplateInstances = this.state.cy.nodes().filter(node =>
@@ -498,8 +498,8 @@ export class HierarchyModule {
                     const connectionColor = this.common.getTemplateColor(templateName);
 
                     // Apply this connection pattern to ALL instances of the template
-                    let createdCount = 0;
-                    let skippedCount = 0;
+                    let _createdCount = 0;
+                    let _skippedCount = 0;
 
                     allTemplateInstances.forEach(instanceGraph => {
                         // Find ports in this instance using the template-relative paths
@@ -517,7 +517,7 @@ export class HierarchyModule {
                         );
 
                         if (!sourcePortNode || !targetPortNode) {
-                            skippedCount++;
+                            _skippedCount++;
                             return;
                         }
 
@@ -530,7 +530,7 @@ export class HierarchyModule {
                         );
 
                         if (sourcePortConnections.length > 0 || targetPortConnections.length > 0) {
-                            skippedCount++;
+                            _skippedCount++;
                             return;
                         }
 
@@ -545,7 +545,7 @@ export class HierarchyModule {
                         });
 
                         if (alreadyInBatch) {
-                            skippedCount++;
+                            _skippedCount++;
                             return;
                         }
 
@@ -565,7 +565,7 @@ export class HierarchyModule {
                             }
                         };
                         edgesToAdd.push(edge);
-                        createdCount++;
+                        _createdCount++;
                     });
 
                 } catch (error) {
@@ -1938,7 +1938,7 @@ export class HierarchyModule {
 
         // Build unique path from parent hierarchy (matching import behavior)
         // Traverse up the parent chain to build a unique path, including root-level graphs
-        let pathParts = [];
+        const pathParts = [];
         if (parentNode) {
             let current = parentNode;
             while (current && current.length > 0) {
@@ -2067,11 +2067,11 @@ export class HierarchyModule {
                 let instancesUpdated = 0;
                 parentTemplateInstances.forEach(parentInstance => {
                     const instanceId = parentInstance.id();
-                    const instanceLabel = parentInstance.data('label');
+                    const _instanceLabel = parentInstance.data('label');
 
                     // Build unique path from parent hierarchy (matching import behavior)
                     // Traverse up including root-level graphs to ensure uniqueness
-                    let pathParts = [];
+                    const pathParts = [];
                     let current = parentInstance;
                     while (current && current.length > 0) {
                         const childName = current.data('child_name') || current.data('label');
@@ -2373,8 +2373,8 @@ export class HierarchyModule {
             }
 
             // Use the selection captured at the start of the function
-            let templateChildren = [];
-            let templateConnections = [];
+            const templateChildren = [];
+            const templateConnections = [];
 
             console.log(`[createNewTemplate] Processing captured selection. Total selected: ${allSelectedNodes.length}`);
 
@@ -2388,7 +2388,7 @@ export class HierarchyModule {
                 })));
 
                 // First, get all shelf and graph nodes that are directly selected
-                let selectedShelfAndGraphNodes = allSelectedNodes.filter(node => {
+                const selectedShelfAndGraphNodes = allSelectedNodes.filter(node => {
                     const nodeType = node.data('type');
                     return nodeType === 'shelf' || nodeType === 'graph';
                 });
@@ -2612,7 +2612,7 @@ export class HierarchyModule {
 
             // Build unique path from parent hierarchy (matching import behavior)
             // Traverse up including root-level graphs to ensure uniqueness
-            let pathParts = [];
+            const pathParts = [];
             if (parentNode) {
                 let current = parentNode;
                 while (current && current.length > 0) {
@@ -2673,11 +2673,11 @@ export class HierarchyModule {
                     // Add the new empty graph instance to each parent instance
                     parentTemplateInstances.forEach(parentInstance => {
                         const parentInstanceId = parentInstance.id();
-                        const parentInstanceLabel = parentInstance.data('label');
+                        const _parentInstanceLabel = parentInstance.data('label');
 
                         // Build unique path from parent hierarchy (matching import behavior)
                         // Traverse up including root-level graphs to ensure uniqueness
-                        let pathParts = [];
+                        const pathParts = [];
                         let current = parentInstance;
                         while (current && current.length > 0) {
                             const childName = current.data('child_name') || current.data('label');
@@ -2968,6 +2968,9 @@ export class HierarchyModule {
 
         // Track the global host_index counter
         let nextHostIndex = 0;
+
+        // Track processed nodes to avoid processing the same node twice
+        const processedNodes = new Set();
 
         /**
          * DFS traversal function to process a graph node and its children
@@ -4985,7 +4988,7 @@ export class HierarchyModule {
      * @param {Object} targetShelf - Target shelf node
      * @returns {boolean} True if the level is available
      */
-    isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, sourceShelf, targetShelf) {
+    isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, _sourceShelf, _targetShelf) {
         // If placementTemplateName is defined, it's a template-level connection
         const isTemplateLevel = placementTemplateName !== null && placementTemplateName !== 'unknown';
 
@@ -5067,7 +5070,7 @@ export class HierarchyModule {
      * @param {Object} targetShelf - Target shelf node
      * @returns {number} Number of template instances
      */
-    calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
+    calculateDuplicationCount(graphNode, _sourceShelf, _targetShelf) {
         // Get the template name of this placement level
         const placementTemplateName = graphNode.data('template_name');
 
@@ -5092,7 +5095,7 @@ export class HierarchyModule {
         container.innerHTML = '';
 
         // Generate placement options
-        placementLevels.forEach((level, index) => {
+        placementLevels.forEach((level, _index) => {
             const optionDiv = document.createElement('div');
             optionDiv.className = 'placement-option';
 

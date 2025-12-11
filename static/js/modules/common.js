@@ -2358,17 +2358,17 @@ export class CommonModule {
 
         this.state.cy.startBatch();
 
-        let sameShelfCount = 0;
-        let crossShelfCount = 0;
-        let crossGraphCount = 0;
+        let _sameShelfCount = 0;
+        let _crossShelfCount = 0;
+        let _crossGraphCount = 0;
 
-        edges.forEach((edge, index) => {
+        edges.forEach((edge, _index) => {
             let sourceNode, targetNode;
-            let isSameTemplate = false;
+            let _isSameTemplate = false;
             let isSameShelf = false;
             const isRerouted = edge.data('isRerouted');
-            const edgeId = edge.id();
-            const connectionNumber = edge.data('connection_number');
+            const _edgeId = edge.id();
+            const _connectionNumber = edge.data('connection_number');
 
             // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
             if (isRerouted) {
@@ -2383,7 +2383,7 @@ export class CommonModule {
                 const targetIsGraph = targetNode.data('type') === 'graph';
 
                 if (sourceIsGraph && targetIsGraph && sourceTemplateName && targetTemplateName) {
-                    isSameTemplate = sourceTemplateName === targetTemplateName;
+                    _isSameTemplate = sourceTemplateName === targetTemplateName;
                 }
 
                 // Check if original endpoints (ports) are on the same shelf for curve styling
@@ -2457,7 +2457,7 @@ export class CommonModule {
             }
 
             if (isSameShelf) {
-                sameShelfCount++;
+                _sameShelfCount++;
                 curveStyle = 'unbundled-bezier';
                 // Ensure unbundled-bezier has visible but subtle curvature
                 // control-point-distance controls how far control points are from the straight line
@@ -2470,7 +2470,7 @@ export class CommonModule {
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
             } else {
-                crossShelfCount++;
+                _crossShelfCount++;
                 curveStyle = 'bezier';
                 // Reduce magnitude for cross-graph connections (between different graph nodes)
                 const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
@@ -2478,9 +2478,9 @@ export class CommonModule {
                     'curve-style': curveStyle,
                     'control-point-step-size': stepSize
                 };
-                const connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
+                const _connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
                 if (isCrossGraph) {
-                    crossGraphCount++;
+                    _crossGraphCount++;
                 }
             }
 
