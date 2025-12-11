@@ -279,6 +279,9 @@ class NetworkCablingCytoscapeVisualizer:
 
         # Location information for nodes (hall, aisle info)
         self.node_locations = {}  # Will store hall/aisle info keyed by shelf_key
+        
+        # Hostname to host_index mapping for port ID generation
+        self.hostname_to_host_index = {}  # Will be populated during hierarchy creation
 
     def set_shelf_unit_type(self, shelf_unit_type):
         """Set the shelf unit type and initialize templates"""
@@ -2684,6 +2687,9 @@ class NetworkCablingCytoscapeVisualizer:
     
     def _create_shelf_hierarchy(self):
         """Create shelf-only hierarchy nodes (shelves -> trays -> ports)"""
+        # Build a mapping from hostname to host_index for port ID generation
+        self.hostname_to_host_index = {}
+        
         # Get sorted hostnames for consistent ordering
         hostnames = sorted(self.shelf_units.keys())
 
@@ -2692,6 +2698,8 @@ class NetworkCablingCytoscapeVisualizer:
         for shelf_idx, hostname in enumerate(hostnames):
             shelf_x, shelf_y = self.calculate_position_in_sequence("shelf", shelf_idx)
             shelf_positions.append((hostname, shelf_x, shelf_y))
+            # Map hostname to host_index for port ID generation
+            self.hostname_to_host_index[hostname] = shelf_idx
 
         # Create all nodes using template-based approach (no racks)
         for shelf_idx, (hostname, shelf_x, shelf_y) in enumerate(shelf_positions):
@@ -2760,7 +2768,10 @@ class NetworkCablingCytoscapeVisualizer:
             if node_name is not None:
                 tray_data["node_name"] = node_name
             
-            tray_node_id = self.generate_node_id("tray", shelf_id, tray_id)
+            # Use numeric host_id for ID generation if available (for consistency with edge generation)
+            # Otherwise use shelf_id (for descriptor format where host_id might not be set)
+            tray_shelf_id = str(host_id) if host_id is not None else shelf_id
+            tray_node_id = self.generate_node_id("tray", tray_shelf_id, tray_id)
             tray_node = self.create_node_from_template(
                 "tray",
                 tray_node_id,
@@ -2798,7 +2809,9 @@ class NetworkCablingCytoscapeVisualizer:
                 if node_name is not None:
                     port_data["node_name"] = node_name
                 
-                port_node_id = self.generate_node_id("port", shelf_id, tray_id, port_id)
+                # Use the same shelf_id format as tray for consistency
+                # (tray_shelf_id is already calculated above: numeric host_id if available, else shelf_id)
+                port_node_id = self.generate_node_id("port", tray_shelf_id, tray_id, port_id)
                 port_node = self.create_node_from_template(
                     "port",
                     port_node_id,

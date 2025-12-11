@@ -621,6 +621,16 @@ export class UIDisplayModule {
             return;
         }
 
+        // Ensure manual tab is active and visible before accessing form elements
+        const manualContent = document.getElementById('manualLayoutContent');
+        if (manualContent) {
+            manualContent.style.display = 'block';
+        }
+        // Switch to manual tab to ensure form is visible
+        if (typeof switchLayoutTab === 'function') {
+            switchLayoutTab('manual');
+        }
+
         // Get all input elements with null checks
         const hallNamesInput = document.getElementById('hallNames');
         const aisleNamesInput = document.getElementById('aisleNames');
@@ -641,9 +651,9 @@ export class UIDisplayModule {
             return;
         }
 
-        // Reset to default values
-        hallNamesInput.value = 'Building-A';
-        aisleNamesInput.value = 'A';
+        // Reset to default values (set before showing modal to avoid empty flash)
+        hallNamesInput.value = '';
+        aisleNamesInput.value = '';
         rackNumbersInput.value = '1-10';
         shelfUnitNumbersInput.value = '1-42';
 
@@ -661,7 +671,7 @@ export class UIDisplayModule {
         modal.removeEventListener('click', (e) => this.handlePhysicalLayoutModalClick(e));
         modal.addEventListener('click', (e) => this.handlePhysicalLayoutModalClick(e));
 
-        // Show modal
+        // Show modal after values are set
         console.log('Adding active class to modal');
         modal.classList.add('active');
         console.log('Modal should now be visible, classes:', modal.classList.toString());

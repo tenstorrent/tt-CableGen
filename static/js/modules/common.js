@@ -1811,6 +1811,67 @@ export class CommonModule {
     }
 
     /**
+     * Build physical location path for a shelf node in location mode
+     * Returns a formatted string like "Hall Name > Aisle F > Rack # > Shelf #"
+     * Only includes fields that are available
+     * @param {Object} node - Cytoscape shelf node
+     * @returns {string} Formatted location path or empty string if no location data
+     */
+    buildLocationPath(node) {
+        if (!node || !node.length) {
+            return '';
+        }
+
+        const nodeData = node.data();
+        let hall = nodeData.hall;
+        let aisle = nodeData.aisle;
+        let rackNum = nodeData.rack_num;
+        const shelfU = nodeData.shelf_u;
+
+        // If hall/aisle/rack_num are not on the shelf node, try to get them from parent rack node
+        if ((!hall || !aisle || rackNum === undefined || rackNum === null) && node.parent().length > 0) {
+            const parent = node.parent();
+            const parentData = parent.data();
+            if (parentData.type === 'rack') {
+                if (!hall || hall === '') {
+                    hall = parentData.hall;
+                }
+                if (!aisle || aisle === '') {
+                    aisle = parentData.aisle;
+                }
+                if (rackNum === undefined || rackNum === null) {
+                    rackNum = parentData.rack_num;
+                }
+            }
+        }
+
+        const pathParts = [];
+
+        // Hall name (if available and not empty)
+        if (hall !== undefined && hall !== null && hall !== '') {
+            pathParts.push(hall);
+        }
+
+        // Aisle (if available and not empty)
+        if (aisle !== undefined && aisle !== null && aisle !== '') {
+            pathParts.push(aisle);
+        }
+
+        // Rack number (if available)
+        if (rackNum !== undefined && rackNum !== null && rackNum !== '') {
+            pathParts.push(`Rack ${rackNum}`);
+        }
+
+        // Shelf unit number (if available)
+        if (shelfU !== undefined && shelfU !== null && shelfU !== '') {
+            pathParts.push(`Shelf ${shelfU}`);
+        }
+
+        // Join with " > " separator
+        return pathParts.length > 0 ? pathParts.join(' > ') : '';
+    }
+
+    /**
      * Show node information in the info panel
      * @param {Object} node - Cytoscape node
      * @param {Object} position - Position for the info panel (optional)
@@ -2137,9 +2198,12 @@ export class CommonModule {
         }
 
         // In hierarchy mode, also show instance paths to the endpoints
+        // In location mode, show physical location paths (Hall > Aisle > Rack > Shelf)
         const isHierarchyMode = this.state.mode === 'hierarchy';
+        const isLocationMode = this.state.mode === 'location';
         let sourcePath = '';
         let targetPath = '';
+
         if (isHierarchyMode) {
             // Get shelf nodes from port nodes (buildTemplatePath works on shelf/graph nodes, not ports)
             let sourceShelfNode = null;
@@ -2176,6 +2240,36 @@ export class CommonModule {
                     }
                 }
             }
+        } else if (isLocationMode) {
+            // Build physical location paths for location mode
+            let sourceShelfNode = null;
+            let targetShelfNode = null;
+
+            if (sourceNode && sourceNode.length) {
+                const sourceType = sourceNode.data('type');
+                if (sourceType === 'port' || sourceType === 'tray') {
+                    sourceShelfNode = this.getParentShelfNode(sourceNode);
+                } else if (sourceType === 'shelf') {
+                    sourceShelfNode = sourceNode;
+                }
+
+                if (sourceShelfNode && sourceShelfNode.length) {
+                    sourcePath = this.buildLocationPath(sourceShelfNode);
+                }
+            }
+
+            if (targetNode && targetNode.length) {
+                const targetType = targetNode.data('type');
+                if (targetType === 'port' || targetType === 'tray') {
+                    targetShelfNode = this.getParentShelfNode(targetNode);
+                } else if (targetType === 'shelf') {
+                    targetShelfNode = targetNode;
+                }
+
+                if (targetShelfNode && targetShelfNode.length) {
+                    targetPath = this.buildLocationPath(targetShelfNode);
+                }
+            }
         }
 
         // Build HTML content
@@ -2183,14 +2277,14 @@ export class CommonModule {
 
         html += `<strong>Source:</strong><br>`;
         html += `${sourceInfo}`;
-        if (isHierarchyMode && sourcePath) {
+        if ((isHierarchyMode || isLocationMode) && sourcePath) {
             html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${sourcePath}</span>`;
         }
         html += `<br><br>`;
 
         html += `<strong>Target:</strong><br>`;
         html += `${targetInfo}`;
-        if (isHierarchyMode && targetPath) {
+        if ((isHierarchyMode || isLocationMode) && targetPath) {
             html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${targetPath}</span>`;
         }
         html += `<br><br>`;

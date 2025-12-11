@@ -251,12 +251,20 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
         """Extract connection information from edges"""
         connections = []
         
+        edges_processed = 0
+        edges_skipped_no_ids = 0
+        edges_skipped_no_info = 0
+        edges_skipped_not_ports = 0
+        edges_skipped_no_hostname = 0
+        
         for edge in self.edges:
+            edges_processed += 1
             edge_data = edge.get("data", {})
             source_id = edge_data.get("source")
             target_id = edge_data.get("target")
 
             if not source_id or not target_id:
+                edges_skipped_no_ids += 1
                 continue
 
             # Extract hierarchy info for both endpoints
@@ -264,57 +272,105 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
             target_info = self.extract_hierarchy_info(target_id)
 
             if not source_info or not target_info:
+                edges_skipped_no_info += 1
+                if edges_processed <= 5:  # Debug first few failures
+                    print(f"[extract_connections] Edge {edges_processed}: source_id={source_id}, target_id={target_id}, source_info={source_info}, target_info={target_info}")
                 continue
 
             # Only process port-to-port connections
-            if source_info.get("type") == "port" and target_info.get("type") == "port":
-                # Get hostname from node hierarchy (port -> tray -> shelf)
-                # This ensures we always use the current hostname from the shelf node,
-                # not stale data that might be stored in edge metadata
-                source_hostname = self._get_hostname_from_port(source_id)
-                target_hostname = self._get_hostname_from_port(target_id)
-                
-                # Fallback to edge data only if we can't traverse the hierarchy
-                # (e.g., for CSV imports where edge might have hostname but nodes don't)
-                if not source_hostname:
-                    source_hostname = edge_data.get("source_hostname")
-                if not target_hostname:
-                    target_hostname = edge_data.get("destination_hostname")
+            source_type = source_info.get("type")
+            target_type = target_info.get("type")
+            if source_type != "port" or target_type != "port":
+                edges_skipped_not_ports += 1
+                if edges_processed <= 5:  # Debug first few failures
+                    print(f"[extract_connections] Edge {edges_processed}: Not port-to-port (source={source_type}, target={target_type})")
+                continue
+            
+            # Get hostname from node hierarchy (port -> tray -> shelf)
+            # This ensures we always use the current hostname from the shelf node,
+            # not stale data that might be stored in edge metadata
+            source_hostname = self._get_hostname_from_port(source_id)
+            target_hostname = self._get_hostname_from_port(target_id)
+            
+            # Fallback to edge data only if we can't traverse the hierarchy
+            # (e.g., for CSV imports where edge might have hostname but nodes don't)
+            if not source_hostname:
+                source_hostname = edge_data.get("source_hostname")
+            if not target_hostname:
+                target_hostname = edge_data.get("destination_hostname")
+            
+            # Skip if we still don't have hostnames
+            if not source_hostname or not target_hostname:
+                edges_skipped_no_hostname += 1
+                if edges_processed <= 5:  # Debug first few failures
+                    print(f"[extract_connections] Edge {edges_processed}: Missing hostname (source={source_hostname}, target={target_hostname})")
+                continue
 
-                # Get node_type and host_id from the shelf nodes
-                source_node_type = self._get_node_type_from_port(source_id)
-                target_node_type = self._get_node_type_from_port(target_id)
+            # Get node_type and host_id from the shelf nodes
+            # host_id is optional (may be None for CSV imports without host_index)
+            source_node_type = self._get_node_type_from_port(source_id)
+            target_node_type = self._get_node_type_from_port(target_id)
+            try:
                 source_host_id = self._get_host_id_from_port(source_id)
+            except ValueError:
+                source_host_id = None  # CSV imports may not have host_index
+            try:
                 target_host_id = self._get_host_id_from_port(target_id)
+            except ValueError:
+                target_host_id = None  # CSV imports may not have host_index
 
-                connection = {
-                    "source": {
-                        "hostname": source_hostname,
-                        "shelf_id": source_info.get("shelf_id"),
-                        "tray_id": source_info.get("tray_id"),
-                        "port_id": source_info.get("port_id"),
-                        "node_type": source_node_type,
-                        "host_id": source_host_id,
-                    },
-                    "target": {
-                        "hostname": target_hostname,
-                        "shelf_id": target_info.get("shelf_id"),
-                        "tray_id": target_info.get("tray_id"),
-                        "port_id": target_info.get("port_id"),
-                        "node_type": target_node_type,
-                        "host_id": target_host_id,
-                    },
-                    # Extract depth and template info for hierarchical export
-                    "depth": edge_data.get("depth"),
-                    "template_name": edge_data.get("template_name"),
-                    "instance_path": edge_data.get("instance_path"),
-                }
-                connections.append(connection)
+            connection = {
+                "source": {
+                    "hostname": source_hostname,
+                    "shelf_id": source_info.get("shelf_id"),
+                    "tray_id": source_info.get("tray_id"),
+                    "port_id": source_info.get("port_id"),
+                    "node_type": source_node_type,
+                    "host_id": source_host_id,
+                },
+                "target": {
+                    "hostname": target_hostname,
+                    "shelf_id": target_info.get("shelf_id"),
+                    "tray_id": target_info.get("tray_id"),
+                    "port_id": target_info.get("port_id"),
+                    "node_type": target_node_type,
+                    "host_id": target_host_id,
+                },
+                # Extract depth and template info for hierarchical export
+                "depth": edge_data.get("depth"),
+                "template_name": edge_data.get("template_name"),
+                "instance_path": edge_data.get("instance_path"),
+            }
+            connections.append(connection)
 
         return connections
 
     def _get_hostname_from_port(self, port_id: str) -> Optional[str]:
-        """Get hostname from a port node's data (for 20-column format)"""
+        """Get hostname from a port node's data
+        
+        Handles multiple formats:
+        1. Port ID format like "0:t1:p2" (descriptor/CSV format) - extract host_id and look up shelf
+        2. Port has hostname directly in its data
+        3. Traverse hierarchy: port -> tray -> shelf
+        """
+        # Check if port_id matches descriptor format (e.g., "0:t1:p2")
+        import re
+        descriptor_match = re.match(r"^(\d+):t\d+:p\d+$", port_id)
+        if descriptor_match:
+            # Extract host_id (numeric shelf ID)
+            host_id_str = descriptor_match.group(1)
+            # Find the shelf node with this ID
+            for element in self.data.get("elements", []):
+                node_data = element.get("data", {})
+                if node_data.get("id") == host_id_str and node_data.get("type") == "shelf":
+                    # Found the shelf - get its hostname
+                    hostname = node_data.get("hostname")
+                    if hostname and hostname.strip():
+                        return hostname.strip()
+                    # If no hostname, the host_id itself might be used as identifier
+                    # This happens in CSV imports where hostname might not be set initially
+                    break
+        
         # Find the port node in the cytoscape data
         for element in self.data.get("elements", []):
             if element.get("data", {}).get("id") == port_id:
@@ -658,6 +714,15 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     # Get connections for building the topology
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
+    
+    print(f"[export_flat_cabling_descriptor] Extracted {len(connections)} connections from cytoscape data")
+    if len(connections) == 0:
+        # Debug: Check what edges exist
+        elements = cytoscape_data.get("elements", [])
+        edges = [el for el in elements if "source" in el.get("data", {})]
+        print(f"[export_flat_cabling_descriptor] Found {len(edges)} edges in cytoscape data")
+        if len(edges) > 0:
+            print(f"[export_flat_cabling_descriptor] Sample edge: {edges[0].get('data', {})}")
 
     # Get the common sorted host list (shared with DeploymentDescriptor)
     sorted_hosts = extract_host_list_from_connections(cytoscape_data)
@@ -682,18 +747,36 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
 
     # Add connections to graph template
     port_connections = graph_template.internal_connections["QSFP_DD"]  # Default port type
+    connections_added = 0
     for connection in connections:
+        # Validate connection has required fields
+        source_hostname = connection["source"].get("hostname")
+        target_hostname = connection["target"].get("hostname")
+        source_tray_id = connection["source"].get("tray_id")
+        target_tray_id = connection["target"].get("tray_id")
+        source_port_id = connection["source"].get("port_id")
+        target_port_id = connection["target"].get("port_id")
+        
+        if not all([source_hostname, target_hostname, source_tray_id is not None, target_tray_id is not None, 
+                   source_port_id is not None, target_port_id is not None]):
+            print(f"[export_flat_cabling_descriptor] Skipping incomplete connection: source={source_hostname}, target={target_hostname}, tray_ids=({source_tray_id}, {target_tray_id}), port_ids=({source_port_id}, {target_port_id})")
+            continue
+        
         conn = port_connections.connections.add()
 
         # Source port - use actual hostname directly
-        conn.port_a.path.append(connection["source"]["hostname"])
-        conn.port_a.tray_id = connection["source"]["tray_id"]
-        conn.port_a.port_id = connection["source"]["port_id"]
+        conn.port_a.path.append(source_hostname)
+        conn.port_a.tray_id = source_tray_id
+        conn.port_a.port_id = source_port_id
 
         # Target port - use actual hostname directly
-        conn.port_b.path.append(connection["target"]["hostname"])
-        conn.port_b.tray_id = connection["target"]["tray_id"]
-        conn.port_b.port_id = connection["target"]["port_id"]
+        conn.port_b.path.append(target_hostname)
+        conn.port_b.tray_id = target_tray_id
+        conn.port_b.port_id = target_port_id
+        
+        connections_added += 1
+    
+    print(f"[export_flat_cabling_descriptor] Added {connections_added} connections to template (from {len(connections)} extracted)")
 
     # Add graph template to cluster descriptor
     cluster_desc.graph_templates[template_name].CopyFrom(graph_template)
@@ -775,6 +858,9 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     structure. This function converts it back to protobuf format, preserving the
     original structure exactly.
     
+    For CSV imports that were switched to hierarchy mode, connections may not be
+    in metadata, so we extract them from cytoscape edges and add them to templates.
+    
     Args:
         cytoscape_data: The cytoscape visualization data
         graph_templates_meta: The graph_templates dict from metadata
@@ -838,6 +924,70 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
         root_template_name = list(graph_templates_meta.keys())[0]
         print(f"Using first template '{root_template_name}' as root (fallback)")
     
+    # Extract connections from cytoscape edges if not already in metadata
+    # This handles CSV imports that were switched to hierarchy mode
+    parser = VisualizerCytoscapeDataParser(cytoscape_data)
+    cytoscape_connections = parser.extract_connections()
+    print(f"[export_from_metadata_templates] Extracted {len(cytoscape_connections)} connections from cytoscape edges")
+    
+    # Check if any template already has connections in metadata
+    has_metadata_connections = any(
+        template_info.get('connections', []) 
+        for template_info in graph_templates_meta.values()
+    )
+    
+    if not has_metadata_connections and cytoscape_connections:
+        # No connections in metadata - match cytoscape connections to templates
+        print(f"[export_from_metadata_templates] No connections in metadata, matching {len(cytoscape_connections)} cytoscape connections to templates")
+        
+        # Build a map of template_name -> list of connections for that template
+        template_connections_map = {}
+        for template_name in graph_templates_meta.keys():
+            template_connections_map[template_name] = []
+        
+        # For each connection, determine which template it belongs to
+        for conn in cytoscape_connections:
+            source_hostname = conn["source"].get("hostname")
+            target_hostname = conn["target"].get("hostname")
+            
+            if not source_hostname or not target_hostname:
+                continue
+            
+            # Find which template contains both hostnames
+            # For extracted_topology, all connections belong to it
+            template_name = conn.get("template_name")
+            if not template_name:
+                # Default to root template (extracted_topology for CSV imports)
+                template_name = root_template_name
+            
+            # Convert connection to metadata format
+            conn_meta = {
+                "port_a": {
+                    "path": [source_hostname],
+                    "tray_id": conn["source"].get("tray_id"),
+                    "port_id": conn["source"].get("port_id")
+                },
+                "port_b": {
+                    "path": [target_hostname],
+                    "tray_id": conn["target"].get("tray_id"),
+                    "port_id": conn["target"].get("port_id")
+                }
+            }
+            
+            if template_name in template_connections_map:
+                template_connections_map[template_name].append(conn_meta)
+            else:
+                # Fallback to root template
+                template_connections_map[root_template_name].append(conn_meta)
+        
+        # Add connections to metadata templates
+        for template_name, conns in template_connections_map.items():
+            if conns and template_name in graph_templates_meta:
+                if 'connections' not in graph_templates_meta[template_name]:
+                    graph_templates_meta[template_name]['connections'] = []
+                graph_templates_meta[template_name]['connections'].extend(conns)
+                print(f"[export_from_metadata_templates] Added {len(conns)} connections to template '{template_name}'")
+    
     # Build all graph templates from metadata (excluding empty ones)
     for template_name, template_info in graph_templates_meta.items():
         graph_template = cluster_config_pb2.GraphTemplate()
@@ -856,10 +1006,12 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
         
         # Add connections (with deduplication)
         connections_list = template_info.get('connections', [])
+        print(f"[export_from_metadata_templates] Template '{template_name}': {len(connections_list)} connections in metadata")
         if connections_list:
             port_connections = graph_template.internal_connections["QSFP_DD"]
             seen_connections = set()  # Track seen connections to prevent duplicates
             duplicate_count = 0
+            connections_added_to_protobuf = 0
             
             for conn_info in connections_list:
                 # Skip connections with invalid paths (e.g., containing "[Circular Reference]")
@@ -916,9 +1068,11 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                     conn.port_b.path.append(path_elem)
                 conn.port_b.tray_id = port_b_tray
                 conn.port_b.port_id = port_b_port
+                connections_added_to_protobuf += 1
             
             if duplicate_count > 0:
                 print(f"    Removed {duplicate_count} duplicate connection(s) from template '{template_name}'")
+            print(f"[export_from_metadata_templates] Template '{template_name}': Added {connections_added_to_protobuf} connections to protobuf (from {len(connections_list)} in metadata)")
         
         # Only add non-empty templates
         if len(graph_template.children) > 0:
@@ -960,7 +1114,7 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
         if is_visible_root:
             # Process children of the visible root directly
             host_id = 0
-            host_id = add_child_mappings_with_reuse(root_node_el, element_map, root_instance, host_id)
+            host_id = add_child_mappings_with_reuse(root_node_el, element_map, root_instance, host_id, cluster_desc)
         else:
             # This is a regular top-level node with a different template, wrap it (if non-empty)
             # Only create instance if template is non-empty
@@ -968,7 +1122,7 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                 nested_instance = cluster_config_pb2.GraphInstance()
                 nested_instance.template_name = root_node_template
                 host_id = 0
-                host_id = add_child_mappings_with_reuse(root_node_el, element_map, nested_instance, host_id)
+                host_id = add_child_mappings_with_reuse(root_node_el, element_map, nested_instance, host_id, cluster_desc)
                 
                 child_mapping = cluster_config_pb2.ChildMapping()
                 child_mapping.sub_instance.CopyFrom(nested_instance)
@@ -1125,7 +1279,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
         # The root_graph_el represents the root cluster, so we add its children to root_instance
         host_id = 0
         host_id = add_child_mappings_with_reuse(
-            root_graph_el, element_map, root_instance, host_id
+            root_graph_el, element_map, root_instance, host_id, cluster_desc
         )
         
         cluster_desc.root_instance.CopyFrom(root_instance)
@@ -1144,7 +1298,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             # Add child mappings from the root's children
             host_id = 0
             host_id = add_child_mappings_with_reuse(
-                root_graph_el, element_map, root_instance, host_id
+                root_graph_el, element_map, root_instance, host_id, cluster_desc
             )
             
             cluster_desc.root_instance.CopyFrom(root_instance)
@@ -1163,7 +1317,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
                 # Add child mappings from the root's children
                 host_id = 0
                 host_id = add_child_mappings_with_reuse(
-                    root_graph_el, element_map, root_instance, host_id
+                    root_graph_el, element_map, root_instance, host_id, cluster_desc
                 )
                 
                 cluster_desc.root_instance.CopyFrom(root_instance)
@@ -1176,7 +1330,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
                 # Add child mappings and nested instances
                 host_id = 0
                 host_id = add_child_mappings_with_reuse(
-                    root_graph_el, element_map, root_instance, host_id
+                    root_graph_el, element_map, root_instance, host_id, cluster_desc
                 )
                 
                 cluster_desc.root_instance.CopyFrom(root_instance)
@@ -1374,7 +1528,7 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
     return graph_template
 
 
-def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id):
+def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id, cluster_desc=None):
     """Add child mappings to a GraphInstance
     
     Args:
@@ -1382,6 +1536,7 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id)
         element_map: Map of node_id -> element
         graph_instance: The GraphInstance to add mappings to
         host_id: Current host_id counter
+        cluster_desc: Optional ClusterDescriptor to get template order
     
     Returns:
         Updated host_id counter
@@ -1392,12 +1547,38 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id)
     node_data = node_el.get("data", {})
     node_id = node_data.get("id")
     node_label = node_data.get("label", "")
-    
+    template_name = node_data.get("template_name")
     
     # Find all direct children of this node
-    children = [el for el in element_map.values() 
-                if el.get("data", {}).get("parent") == node_id]
+    all_children = [el for el in element_map.values() 
+                    if el.get("data", {}).get("parent") == node_id]
     
+    # If we have a template and cluster_desc, process children in template order
+    # This ensures host_id assignment matches the template's child order
+    if template_name and cluster_desc and template_name in cluster_desc.graph_templates:
+        template = cluster_desc.graph_templates[template_name]
+        # Build a map of child_name -> element for lookup
+        children_by_name = {}
+        for child_el in all_children:
+            child_data = child_el.get("data", {})
+            child_name = child_data.get("child_name") or child_data.get("label") or child_data.get("id")
+            children_by_name[child_name] = child_el
+        
+        # Process children in template order
+        children = []
+        for template_child in template.children:
+            child_name = template_child.name
+            if child_name in children_by_name:
+                children.append(children_by_name[child_name])
+    else:
+        # No template order available, use element_map order
+        # Sort by host_index if available to maintain consistent ordering
+        children = sorted(all_children, key=lambda el: (
+            el.get("data", {}).get("host_index", float('inf')),
+            el.get("data", {}).get("child_name", ""),
+            el.get("data", {}).get("label", ""),
+            el.get("data", {}).get("id", "")
+        ))
     
     # Process each child
     for child_el in children:
@@ -1434,8 +1615,8 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id)
             nested_instance = cluster_config_pb2.GraphInstance()
             nested_instance.template_name = child_template_name
             
-            # Recursively add child mappings
-            host_id = add_child_mappings_with_reuse(child_el, element_map, nested_instance, host_id)
+            # Recursively add child mappings (pass cluster_desc to maintain template order)
+            host_id = add_child_mappings_with_reuse(child_el, element_map, nested_instance, host_id, cluster_desc)
             
             # Add the nested instance to this graph's child_mappings
             # Use child_name for the key to match template structure
