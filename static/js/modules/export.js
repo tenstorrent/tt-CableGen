@@ -33,7 +33,7 @@ export class ExportModule {
      * @param {WeakSet} seen - WeakSet of already seen objects (for circular reference detection)
      * @returns {*} Sanitized object
      */
-    sanitizeForJSON(obj, seen = new WeakSet()) {
+    sanitizeForJSON(obj, seen = new WeakSet(), path = 'root', circularRefs = []) {
         // Handle null and undefined
         if (obj === null || obj === undefined) {
             return obj;
@@ -57,6 +57,12 @@ export class ExportModule {
 
         // Check for circular reference
         if (seen.has(obj)) {
+            // Track circular reference for logging
+            circularRefs.push({
+                path: path,
+                type: Array.isArray(obj) ? 'array' : 'object',
+                constructor: obj.constructor?.name || 'Unknown'
+            });
             return undefined; // Remove circular references
         }
 
@@ -67,8 +73,9 @@ export class ExportModule {
             // Handle arrays
             if (Array.isArray(obj)) {
                 const sanitized = [];
-                for (const item of obj) {
-                    const sanitizedItem = this.sanitizeForJSON(item, seen);
+                for (let i = 0; i < obj.length; i++) {
+                    const itemPath = `${path}[${i}]`;
+                    const sanitizedItem = this.sanitizeForJSON(obj[i], seen, itemPath, circularRefs);
                     // Only push non-undefined items (but allow null)
                     if (sanitizedItem !== undefined) {
                         sanitized.push(sanitizedItem);
@@ -80,9 +87,10 @@ export class ExportModule {
             // Handle plain objects
             const sanitized = {};
             for (const key in obj) {
-                if (obj.hasOwnProperty(key)) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
                     try {
-                        const value = this.sanitizeForJSON(obj[key], seen);
+                        const valuePath = path === 'root' ? key : `${path}.${key}`;
+                        const value = this.sanitizeForJSON(obj[key], seen, valuePath, circularRefs);
                         // Only include non-undefined values (but allow null)
                         if (value !== undefined) {
                             sanitized[key] = value;
@@ -234,10 +242,31 @@ export class ExportModule {
             // Sanitize elements to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
+
+            // Sanitize metadata to remove circular references (but preserve structure)
+            // This prevents "[Circular Reference]" strings from ending up in path arrays
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                ? this.state.data.currentData.metadata
+                : {};
+            const metadataCircularRefs = [];
+            const sanitizedMetadata = this.sanitizeForJSON(rawMetadata, new WeakSet(), 'metadata', metadataCircularRefs);
+
+            // Log if any circular references were detected in metadata
+            if (metadataCircularRefs.length > 0) {
+                console.warn(`[exportCablingDescriptor] Detected ${metadataCircularRefs.length} circular/shared reference(s) in metadata that were removed:`, metadataCircularRefs);
+                // Log details about the first few for debugging
+                metadataCircularRefs.slice(0, 5).forEach((ref, idx) => {
+                    console.warn(`  [${idx + 1}] Path: "${ref.path}", Type: ${ref.type}, Constructor: ${ref.constructor}`);
+                });
+                if (metadataCircularRefs.length > 5) {
+                    console.warn(`  ... and ${metadataCircularRefs.length - 5} more`);
+                }
+            }
+
             const fullCytoscapeData = {
                 elements: sanitizedElements,
                 metadata: {
-                    ...(this.state.data.currentData && this.state.data.currentData.metadata ? this.state.data.currentData.metadata : {}),  // Include original metadata (graph_templates, etc.)
+                    ...sanitizedMetadata,  // Include sanitized metadata (graph_templates, etc.)
                     visualization_mode: this.state.mode  // Current mode
                 }
             };
@@ -250,7 +279,7 @@ export class ExportModule {
 
             // Create and download file
             const customFileName = this.getCustomFileName();
-            const filename = customFileName 
+            const filename = customFileName
                 ? `${customFileName}_cabling_descriptor.textproto`
                 : 'cabling_descriptor.textproto';
             const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -365,7 +394,7 @@ export class ExportModule {
 
             // Create and download file
             const customFileName = this.getCustomFileName();
-            const filename = customFileName 
+            const filename = customFileName
                 ? `${customFileName}_deployment_descriptor.textproto`
                 : 'deployment_descriptor.textproto';
             const blob = new Blob([textprotoContent], { type: 'text/plain' });
@@ -382,6 +411,58 @@ export class ExportModule {
                 exportBtn.disabled = false;
             }
         }
+    }
+
+    /**
+     * Enrich cytoscape data with implicit hierarchy fields for shelf nodes
+     * This creates an extracted_topology structure if needed without switching modes
+     * @param {Array} elements - Array of cytoscape element data
+     * @param {Object} metadata - Optional metadata object to enrich
+     * @returns {Object} Object with enriched elements and metadata
+     */
+    enrichWithImplicitHierarchy(elements, metadata = {}) {
+        // Check if we already have graph nodes
+        const hasGraphNodes = elements.some(el => el.data && el.data.type === 'graph');
+
+        // Check if shelf nodes already have logical_path/child_name (from existing hierarchy)
+        const shelfNodes = elements.filter(el => el.data && el.data.type === 'shelf');
+        const hasLogicalTopology = shelfNodes.some(shelf =>
+            shelf.data.logical_path && shelf.data.logical_path.length > 0
+        ) || hasGraphNodes;
+
+        // If we already have hierarchy structure, return as-is
+        if (hasLogicalTopology) {
+            return { elements, metadata };
+        }
+
+        // No hierarchy structure - this is a CSV import
+        // The backend will use flat export which doesn't need complex metadata or graph nodes
+        // Just ensure host_index is set on shelf nodes for proper host_id mapping
+        console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected - CSV import, backend will use flat export');
+
+        // Assign host_index to shelves that don't have one (needed for host_id mapping in flat export)
+        let hostIndexCounter = 0;
+        const enrichedElements = elements.map(el => {
+            if (el.data && el.data.type === 'shelf') {
+                // Ensure host_index is set (required for host_id mapping in export)
+                let hostIndex = el.data.host_index;
+                if (hostIndex === undefined || hostIndex === null) {
+                    hostIndex = hostIndexCounter++;
+                }
+
+                return {
+                    ...el,
+                    data: {
+                        ...el.data,
+                        host_index: hostIndex
+                    }
+                };
+            }
+            return el;
+        });
+
+        console.log(`[export.enrichWithImplicitHierarchy] Ensured host_index is set on ${shelfNodes.length} shelf nodes for flat export`);
+        return { elements: enrichedElements, metadata };
     }
 
     /**
@@ -403,44 +484,22 @@ export class ExportModule {
             }
             this.statusManager.show('Generating cabling guide...', 'info');
 
-            // Check if we have graph nodes (required for cabling descriptor export)
-            // If in location mode without graph nodes, automatically switch to hierarchy mode
-            const hasGraphNodes = this.state.cy.nodes('[type="graph"]').length > 0;
-            const isLocationMode = this.state.mode === 'location';
-            
-            if (!hasGraphNodes) {
-                // No graph nodes found - need to create hierarchy structure
-                if (isLocationMode) {
-                    // In location mode - switch to hierarchy mode to create extracted_topology
-                    this.statusManager.show('Switching to topology mode to create hierarchy structure...', 'info');
-                    
-                    // Switch to hierarchy mode (this creates extracted_topology if needed)
-                    // Use hierarchyModule directly since it's exposed on window
-                    if (window.hierarchyModule && typeof window.hierarchyModule.switchMode === 'function') {
-                        window.hierarchyModule.switchMode();
-                    } else if (typeof window.hierarchy_switchMode === 'function') {
-                        // Fallback to global function if available
-                        window.hierarchy_switchMode();
-                    } else {
-                        throw new Error('Cannot switch to hierarchy mode. Please switch to topology mode manually first.');
-                    }
-                } else {
-                    // Already in hierarchy mode but no graph nodes - this shouldn't happen
-                    throw new Error('No graph nodes found in hierarchy mode. Please switch to location mode and back to topology mode, or re-upload your file.');
-                }
-                
-                // Verify graph nodes were created
-                const graphNodesAfterSwitch = this.state.cy.nodes('[type="graph"]').length;
-                if (graphNodesAfterSwitch === 0) {
-                    throw new Error('Failed to create hierarchy structure. Please switch to topology mode manually and try again.');
-                }
-            }
-
             // Get current cytoscape data and sanitize to remove circular references
             const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
+
+            // Get metadata if available
+            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                ? this.state.data.currentData.metadata
+                : {};
+            const sanitizedMetadata = this.sanitizeForJSON(rawMetadata);
+
+            // Enrich with implicit hierarchy fields if needed (without switching modes)
+            const enriched = this.enrichWithImplicitHierarchy(sanitizedElements, sanitizedMetadata);
+
             const cytoscapeData = {
-                elements: sanitizedElements
+                elements: enriched.elements,
+                metadata: enriched.metadata
             };
 
             // Get input prefix for the generator

@@ -12,6 +12,51 @@ export class HierarchyModule {
     }
 
     /**
+     * Build instance path with indexing from a node up to root
+     * @param {Object} node - Cytoscape node (graph or shelf)
+     * @returns {Array<string>} Array of indexed labels like ["[0] root", "[1] parent", "[2] child"]
+     */
+    buildInstancePathWithIndexing(node) {
+        const pathParts = [];
+        let current = node;
+
+        // Traverse up the hierarchy, collecting graph instance labels
+        while (current && current.length > 0) {
+            const currentData = current.data();
+
+            // For graph nodes, use child_name or label
+            if (currentData.type === 'graph') {
+                const label = currentData.child_name || currentData.label;
+                if (label) {
+                    pathParts.unshift(label);
+                }
+            }
+            // For shelf nodes, use child_name if available
+            else if (currentData.type === 'shelf' && currentData.child_name) {
+                pathParts.unshift(currentData.child_name);
+            }
+
+            // Move to parent
+            const parent = current.parent();
+            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                current = parent;
+            } else {
+                // Reached root level - include root graph if it's a graph
+                if (current.data('type') === 'graph') {
+                    const rootLabel = current.data('child_name') || current.data('label');
+                    if (rootLabel && !pathParts.includes(rootLabel)) {
+                        pathParts.unshift(rootLabel);
+                    }
+                }
+                break;
+            }
+        }
+
+        // Add indexing: [0], [1], [2], etc.
+        return pathParts.map((label, index) => `[${index}]${label}`);
+    }
+
+    /**
      * Get hierarchical path for a node
      * @param {Object} node - Cytoscape node
      * @returns {Array<string>} Array of node IDs representing the path from root to node
@@ -63,6 +108,26 @@ export class HierarchyModule {
         }
 
         return null;  // No common graph ancestor
+    }
+
+    /**
+     * Find the parent shelf or graph node for a given node (e.g., port, tray)
+     * @param {Object} node - Starting node (could be port, tray, etc.)
+     * @returns {Object|null} Parent shelf or graph node, or null if not found
+     */
+    findParentShelfOrGraph(node) {
+        if (!node || node.length === 0) return null;
+
+        let current = node;
+        while (current && current.length > 0) {
+            const nodeType = current.data('type');
+            if (nodeType === 'shelf' || nodeType === 'graph') {
+                return current;
+            }
+            current = current.parent();
+        }
+
+        return null;
     }
 
     /**
@@ -144,7 +209,6 @@ export class HierarchyModule {
         // Descriptor format: {host_id}:t{trayNum}:p{portNum} (e.g., "0:t1:p3")
         const match = portId.match(/:t(\d+):p(\d+)$/);
         if (!match) {
-            console.warn(`[extractPortPattern] Port ID does not match descriptor format: ${portId}`);
             return null;
         }
 
@@ -168,15 +232,19 @@ export class HierarchyModule {
         // Walk up the hierarchy until we reach the placement level
         while (current && current.length > 0 && current.id() !== placementLevel.id()) {
             const nodeName = current.data('child_name') || current.data('label');
+            // Ensure nodeName is a string, not an object reference
+            // This prevents circular references from ending up in path arrays
             if (nodeName) {
-                path.unshift(nodeName); // Add to beginning to maintain top-down order
+                const nodeNameStr = typeof nodeName === 'string' ? nodeName : String(nodeName);
+                if (nodeNameStr && nodeNameStr !== '[Circular Reference]') {
+                    path.unshift(nodeNameStr); // Add to beginning to maintain top-down order
+                }
             }
             current = current.parent();
         }
 
         // If we didn't reach the placement level, the port is not a descendant
         if (!current || current.length === 0 || current.id() !== placementLevel.id()) {
-            console.warn(`[extractPortPattern] Port ${portId} is not a descendant of placement level ${placementLevel.id()}`);
             return null;
         }
 
@@ -185,8 +253,6 @@ export class HierarchyModule {
             trayId: trayId,
             portId: portIdNum
         };
-
-        console.log(`[extractPortPattern] Extracted pattern from ${placementLevel.id()}: path=${JSON.stringify(path)}, tray=${trayId}, port=${portIdNum}`);
 
         return result;
     }
@@ -389,20 +455,14 @@ export class HierarchyModule {
      */
     processDeferredConnections(deferredConnections, edgesToAdd) {
         deferredConnections.forEach(deferred => {
-            const { graphLabel, connections, pathMapping, templateName } = deferred;
-
-            console.log(`[processDeferredConnections] Processing ${connections.length} connections for template "${templateName}" (instance: "${graphLabel}")`);
-            console.log(`[processDeferredConnections] PathMapping keys:`, Object.keys(pathMapping).sort());
+            const { graphLabel: _graphLabel, connections, pathMapping, templateName } = deferred;
 
             // Find ALL instances of this template (not just the one being instantiated)
             const allTemplateInstances = this.state.cy.nodes().filter(node =>
                 node.data('type') === 'graph' && node.data('template_name') === templateName
             );
 
-            console.log(`[processDeferredConnections] Found ${allTemplateInstances.length} instance(s) of template "${templateName}"`);
-
             if (allTemplateInstances.length === 0) {
-                console.warn(`[processDeferredConnections] No instances found for template "${templateName}"`);
                 return;
             }
 
@@ -419,14 +479,6 @@ export class HierarchyModule {
                     const targetNodeId = this.resolvePathInMapping(targetPath, pathMapping);
 
                     if (!sourceNodeId || !targetNodeId) {
-                        console.warn(`[processDeferredConnections] Could not resolve paths for connection ${connIndex}:`);
-                        if (!sourceNodeId) {
-                            console.warn(`  Source path: ${JSON.stringify(sourcePath)} not found in pathMapping`);
-                        }
-                        if (!targetNodeId) {
-                            console.warn(`  Target path: ${JSON.stringify(targetPath)} not found in pathMapping`);
-                        }
-                        console.warn(`  Available pathMapping keys:`, Object.keys(pathMapping).sort());
                         return;
                     }
 
@@ -435,7 +487,6 @@ export class HierarchyModule {
                     const targetShelfNode = this.state.cy.getElementById(targetNodeId);
 
                     if (!sourceShelfNode || sourceShelfNode.length === 0 || !targetShelfNode || targetShelfNode.length === 0) {
-                        console.warn(`[processDeferredConnections] Shelf nodes not found for connection ${connIndex}`);
                         return;
                     }
 
@@ -447,8 +498,8 @@ export class HierarchyModule {
                     const connectionColor = this.common.getTemplateColor(templateName);
 
                     // Apply this connection pattern to ALL instances of the template
-                    let createdCount = 0;
-                    let skippedCount = 0;
+                    let _createdCount = 0;
+                    let _skippedCount = 0;
 
                     allTemplateInstances.forEach(instanceGraph => {
                         // Find ports in this instance using the template-relative paths
@@ -466,12 +517,11 @@ export class HierarchyModule {
                         );
 
                         if (!sourcePortNode || !targetPortNode) {
-                            console.warn(`[processDeferredConnections] Ports not found in instance ${instanceGraph.id()} for connection ${connIndex}`);
-                            skippedCount++;
+                            _skippedCount++;
                             return;
                         }
 
-                        // Check if ports already have connections (skip if they do)
+                        // Check if ports already have connections in Cytoscape (skip if they do)
                         const sourcePortConnections = this.state.cy.edges().filter(e =>
                             (e.data('source') === sourcePortNode.id() || e.data('target') === sourcePortNode.id())
                         );
@@ -480,8 +530,22 @@ export class HierarchyModule {
                         );
 
                         if (sourcePortConnections.length > 0 || targetPortConnections.length > 0) {
-                            console.log(`[processDeferredConnections] Skipping instance ${instanceGraph.id()} - ports already connected`);
-                            skippedCount++;
+                            _skippedCount++;
+                            return;
+                        }
+
+                        // Also check if this connection is already in edgesToAdd to prevent duplicates
+                        const sourcePortId = sourcePortNode.id();
+                        const targetPortId = targetPortNode.id();
+                        const alreadyInBatch = edgesToAdd.some(e => {
+                            const eSource = e.data.source;
+                            const eTarget = e.data.target;
+                            return (eSource === sourcePortId && eTarget === targetPortId) ||
+                                (eSource === targetPortId && eTarget === sourcePortId);
+                        });
+
+                        if (alreadyInBatch) {
+                            _skippedCount++;
                             return;
                         }
 
@@ -501,10 +565,8 @@ export class HierarchyModule {
                             }
                         };
                         edgesToAdd.push(edge);
-                        createdCount++;
+                        _createdCount++;
                     });
-
-                    console.log(`[processDeferredConnections] Connection ${connIndex}: Created in ${createdCount} instance(s), skipped ${skippedCount} instance(s)`);
 
                 } catch (error) {
                     console.error(`[processDeferredConnections] Error creating connection ${connIndex} for template "${templateName}":`, error, conn);
@@ -806,14 +868,12 @@ export class HierarchyModule {
         if (!hasSavedHierarchyState && existingRootGraphs.length > 0) {
             // Root graphs already exist (likely from textproto import) - don't create extracted_topology
             // Just rebuild the visualization using the existing graph structure
-            console.log(`Found ${existingRootGraphs.length} existing root graph(s) - will rebuild using existing hierarchy structure`);
             // We'll handle this in the hasLogicalTopology branch below
         } else if (!hasSavedHierarchyState) {
             // No saved hierarchy state and no existing root graphs - this happens when:
             // 1. CSV import starts in location mode (no previous hierarchy state)
             // 2. User switches to hierarchy mode for the first time
             // In this case, we'll create extracted_topology from current shelf nodes
-            console.log('No saved hierarchy state - will create extracted_topology from current location mode state');
         }
 
         // Extract all relevant data from shelf nodes (preserve ALL fields for round-trip)
@@ -825,10 +885,20 @@ export class HierarchyModule {
             for (const key in data) {
                 shelfData[key] = data[key];
             }
+
+            // CRITICAL: Preserve parent graph ID for proper restoration
+            // Find the parent graph node to preserve its ID
+            let parentGraphId = null;
+            const parent = node.parent();
+            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                parentGraphId = parent.id();
+            }
+
             shelfDataList.push({
                 data: shelfData,
                 classes: node.classes(),
-                position: node.position()
+                position: node.position(),
+                parentGraphId: parentGraphId  // Preserve parent graph ID for restoration
             });
         });
 
@@ -905,7 +975,6 @@ export class HierarchyModule {
                     parentId: graphNode.parent().length > 0 ? graphNode.parent().id() : null
                 });
             });
-            console.log(`Extracted ${existingGraphNodes.length} existing graph nodes to preserve hierarchy structure`);
         }
 
         // Clear the entire graph
@@ -924,23 +993,24 @@ export class HierarchyModule {
         // Track if we're creating extracted_topology template (for connection tagging)
         // Template name: "extracted_topology", Instance name: "extracted_topology_0"
         let rootTemplateName = null;
+        let rootGraphId = null; // Track root graph ID for metadata updates
 
         if (hasLogicalTopology) {
             // Find and recreate the root node from saved hierarchy state OR existing graph nodes
             // The root is not in logical_path arrays since those only store parent paths
             let rootNode = null;
-            
+
             // First, try to use existing graph nodes if they exist (from textproto import)
             if (existingGraphNodes.length > 0) {
                 // Recreate all graph nodes from existing structure
                 const graphNodeIdMap = {}; // Map old IDs to new IDs (in case we need to regenerate)
-                
+
                 // First, recreate root graphs
                 existingGraphNodes.filter(g => g.parentId === null).forEach(graphInfo => {
                     const graphData = graphInfo.data;
                     const rootGraphId = graphData.id;
                     const rootTemplateColor = this.common.getTemplateColor(graphData.template_name);
-                    
+
                     newElements.push({
                         data: {
                             id: rootGraphId,
@@ -954,7 +1024,7 @@ export class HierarchyModule {
                         },
                         classes: graphInfo.classes || 'graph'
                     });
-                    
+
                     graphNodeIdMap[rootGraphId] = rootGraphId;
                     if (graphData.label) {
                         graphNodeMap[graphData.label] = rootGraphId;
@@ -963,14 +1033,14 @@ export class HierarchyModule {
                         rootNode = graphData; // Use first root as the primary root
                     }
                 });
-                
+
                 // Then, recreate non-root graph nodes
                 existingGraphNodes.filter(g => g.parentId !== null).forEach(graphInfo => {
                     const graphData = graphInfo.data;
                     const graphId = graphData.id;
                     const parentId = graphNodeIdMap[graphInfo.parentId] || graphInfo.parentId;
                     const templateColor = this.common.getTemplateColor(graphData.template_name);
-                    
+
                     newElements.push({
                         data: {
                             id: graphId,
@@ -984,14 +1054,12 @@ export class HierarchyModule {
                         },
                         classes: graphInfo.classes || 'graph'
                     });
-                    
+
                     graphNodeIdMap[graphId] = graphId;
                     if (graphData.label) {
                         graphNodeMap[graphData.label] = graphId;
                     }
                 });
-                
-                console.log(`Recreated ${existingGraphNodes.length} graph nodes from existing hierarchy structure`);
             } else if (this.state.data.hierarchyModeState && this.state.data.hierarchyModeState.elements) {
                 // Fall back to saved hierarchy state
                 // Find the root graph node (depth 0, no parent)
@@ -1001,7 +1069,6 @@ export class HierarchyModule {
 
                 if (savedRootNodes.length > 0) {
                     rootNode = savedRootNodes[0].data;
-                    console.log('Found root node from saved state:', rootNode);
 
                     // Get template color for the root
                     const rootTemplateColor = this.common.getTemplateColor(rootNode.template_name);
@@ -1033,7 +1100,6 @@ export class HierarchyModule {
             // Collect all unique paths from shelf logical_path arrays
             shelfDataList.forEach(shelfInfo => {
                 if (shelfInfo.data.logical_path && Array.isArray(shelfInfo.data.logical_path)) {
-                    console.log('Shelf logical_path:', shelfInfo.data.logical_path);
                     // Add all parent paths
                     for (let i = 1; i <= shelfInfo.data.logical_path.length; i++) {
                         allPaths.add(shelfInfo.data.logical_path.slice(0, i).join('/'));
@@ -1047,9 +1113,6 @@ export class HierarchyModule {
                 const bDepth = b.split('/').length;
                 return aDepth - bDepth || a.localeCompare(b);
             });
-
-            console.log('Logical topology paths collected:', sortedPaths);
-            console.log('Total graph nodes to create (excluding root):', sortedPaths.length);
 
             // Create graph nodes for each path
             sortedPaths.forEach((pathStr, _index) => {
@@ -1078,8 +1141,6 @@ export class HierarchyModule {
                 const graphId = `graph_${pathStr.replace(/\//g, '_')}`;
                 graphNodeMap[pathStr] = graphId;
 
-                console.log(`Creating graph node: ${instanceName} (depth ${depth}, parent: ${parentId}, template: ${templateName})`);
-
                 newElements.push({
                     data: {
                         id: graphId,
@@ -1094,20 +1155,94 @@ export class HierarchyModule {
                 });
             });
 
-            console.log('graphNodeMap:', graphNodeMap);
-
             // Add shelves to their logical parents
             shelfDataList.forEach((shelfInfo, index) => {
                 let parentId = null;
 
-                // If we have existing graph nodes, use the preserved parent relationship
-                if (existingGraphNodes.length > 0 && shelfInfo.parentGraphId) {
-                    // Use the preserved parent graph ID
-                    parentId = shelfInfo.parentGraphId;
-                } else if (shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0) {
+                // Priority 1: Use preserved instance path with indexing (most reliable for mode switching)
+                if (shelfInfo.instancePath) {
+                    // Build instance path from graph nodes in newElements
+                    // Match by comparing the path components (without indexing for matching)
+                    const shelfPathParts = shelfInfo.instancePath.split('/').map(p => p.replace(/\[\d+\]/g, ''));
+
+                    // Find matching graph node by comparing instance paths
+                    for (const el of newElements) {
+                        if (el.data && el.data.type === 'graph') {
+                            // Build instance path for this graph node
+                            const graphPathParts = [];
+                            let currentGraph = el;
+
+                            // Traverse up to build path
+                            while (currentGraph && currentGraph.data) {
+                                const label = currentGraph.data.child_name || currentGraph.data.label;
+                                if (label) {
+                                    graphPathParts.unshift(label);
+                                }
+
+                                // Find parent in newElements
+                                if (currentGraph.data.parent) {
+                                    const parentEl = newElements.find(e =>
+                                        e.data && e.data.id === currentGraph.data.parent && e.data.type === 'graph'
+                                    );
+                                    if (parentEl) {
+                                        currentGraph = parentEl;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            // Compare paths (without indexing)
+                            const graphPathPartsClean = graphPathParts.map(p => p.replace(/\[\d+\]/g, ''));
+                            if (graphPathPartsClean.length === shelfPathParts.length &&
+                                graphPathPartsClean.every((part, idx) => part === shelfPathParts[idx])) {
+                                parentId = el.data.id;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Priority 2: Use preserved parent graph ID (fallback if instance path doesn't match)
+                if (!parentId && shelfInfo.parentGraphId) {
+                    // Check if the parent graph exists in the newly created graph nodes
+                    const parentExists = newElements.some(el =>
+                        el.data && el.data.id === shelfInfo.parentGraphId && el.data.type === 'graph'
+                    );
+                    if (parentExists) {
+                        parentId = shelfInfo.parentGraphId;
+                    } else {
+                        // Parent graph ID doesn't match - try to find by building instance path
+                        // Build instance path from the shelf's logical_path to find the correct parent
+                        if (shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0) {
+                            const parentPathStr = shelfInfo.data.logical_path.join('/');
+                            parentId = graphNodeMap[parentPathStr];
+                        }
+                    }
+                }
+
+                // Priority 3: Use logical_path to find parent (for imported data)
+                if (!parentId && shelfInfo.data.logical_path && shelfInfo.data.logical_path.length > 0) {
                     // Find the parent graph node from logical_path
                     const parentPathStr = shelfInfo.data.logical_path.join('/');
                     parentId = graphNodeMap[parentPathStr];
+                }
+
+                // Priority 4: If we have existing graph nodes, try to match by child_name
+                if (!parentId && existingGraphNodes.length > 0 && shelfInfo.data.child_name) {
+                    // Try to find parent by matching child_name in existing graphs
+                    // This is a fallback for cases where logical_path isn't available
+                    const matchingGraph = existingGraphNodes.find(g => {
+                        const graphData = g.data;
+                        return graphData.children && graphData.children.some(child =>
+                            child.name === shelfInfo.data.child_name
+                        );
+                    });
+                    if (matchingGraph) {
+                        parentId = matchingGraph.data.id;
+                    }
                 }
 
                 // Format label for hierarchy mode: "child_name (host_index)"
@@ -1142,13 +1277,13 @@ export class HierarchyModule {
             const templateName = "extracted_topology";
             const instanceName = "extracted_topology_0";
             rootTemplateName = templateName; // Use template name for connection tagging
-            const rootGraphId = "graph_extracted_topology_0";
+            rootGraphId = "graph_extracted_topology_0"; // Set root graph ID (declared at function scope)
 
             // Get template color for the root (use template name, not instance name)
             const rootTemplateColor = this.common.getTemplateColor(templateName);
 
             // Create root graph node
-            newElements.push({
+            const rootGraphNode = {
                 data: {
                     id: rootGraphId,
                     label: instanceName, // Instance name: extracted_topology_0
@@ -1160,7 +1295,8 @@ export class HierarchyModule {
                     templateColor: rootTemplateColor
                 },
                 classes: 'graph'
-            });
+            };
+            newElements.push(rootGraphNode);
 
             // Sort shelves by host_index before adding them as children
             // This ensures consistent ordering in the exported topology
@@ -1204,7 +1340,7 @@ export class HierarchyModule {
                     hierarchyLabel = `host_${hostIndex}`;
                 }
 
-                newElements.push({
+                const shelfNode = {
                     data: {
                         ...shelfInfo.data,
                         parent: rootGraphId,  // Parent is the extracted_topology_0 root
@@ -1215,8 +1351,65 @@ export class HierarchyModule {
                     },
                     classes: shelfInfo.classes,
                     position: { x: 200 + index * 50, y: 200 + index * 50 }
-                });
+                };
+                newElements.push(shelfNode);
             });
+
+            // CRITICAL: Add extracted_topology template to metadata.graph_templates
+            // This ensures the template is recognized during export
+            if (!this.state.data.currentData) {
+                this.state.data.currentData = { metadata: {} };
+            }
+            if (!this.state.data.currentData.metadata) {
+                this.state.data.currentData.metadata = {};
+            }
+
+            // Set initial_root fields to track the extracted_topology root we just created
+            this.state.data.currentData.metadata.initialRootTemplate = templateName;
+            this.state.data.currentData.metadata.initialRootId = rootGraphId;
+            this.state.data.currentData.metadata.hasTopLevelAdditions = false;
+
+            // Create graph_templates metadata structure (same as textproto import)
+            // This allows export to use export_from_metadata_templates for consistency
+            if (!this.state.data.currentData.metadata.graph_templates) {
+                this.state.data.currentData.metadata.graph_templates = {};
+            }
+
+            // Build the extracted_topology template structure from sorted shelves
+            if (!this.state.data.currentData.metadata.graph_templates[templateName]) {
+                const templateStructure = {
+                    name: templateName,
+                    children: sortedShelfDataList.map((shelf, index) => {
+                        // Determine child_name - use existing or derive from hostname/host_index
+                        let childName = shelf.data.child_name;
+                        if (!childName) {
+                            childName = shelf.data.hostname || `host_${shelf.data.host_index ?? index}`;
+                        }
+
+                        // Get node descriptor and normalize (uppercase, strip _DEFAULT suffix)
+                        let nodeDescriptor = shelf.data.shelf_node_type || shelf.data.node_type || 'N300_LB';
+                        nodeDescriptor = nodeDescriptor.toUpperCase();
+                        if (nodeDescriptor.endsWith('_DEFAULT')) {
+                            nodeDescriptor = nodeDescriptor.slice(0, -8); // Remove '_DEFAULT' suffix
+                        }
+
+                        return {
+                            name: childName,
+                            type: 'node',  // Indicates this is a node type child
+                            node_descriptor: nodeDescriptor  // The actual node descriptor name (normalized)
+                        };
+                    })
+                };
+
+                // Add to metadata.graph_templates (for export)
+                this.state.data.currentData.metadata.graph_templates[templateName] = templateStructure;
+
+                // Also add to availableGraphTemplates (for UI recognition - dropdowns, filters, etc.)
+                if (!this.state.data.availableGraphTemplates) {
+                    this.state.data.availableGraphTemplates = {};
+                }
+                this.state.data.availableGraphTemplates[templateName] = templateStructure;
+            }
         }
 
         // Re-create trays and ports for each shelf with updated location info
@@ -1291,6 +1484,23 @@ export class HierarchyModule {
 
         // Add all elements back to cytoscape
         this.state.cy.add(newElements);
+
+        // Update UI dropdowns if we created extracted_topology (already handled inside the else block above)
+        if (!hasLogicalTopology && rootTemplateName === "extracted_topology") {
+            // Update UI dropdowns to show the new template (if UI display module is available)
+            // This ensures the template appears in template selection dropdowns and filters
+            if (this.state.uiDisplayModule && typeof this.state.uiDisplayModule.populateGraphTemplateDropdown === 'function') {
+                this.state.uiDisplayModule.populateGraphTemplateDropdown();
+            }
+            // Also update template filter dropdown
+            this.populateTemplateFilterDropdown();
+
+            // Update connection legend to show extracted_topology template
+            // This ensures the template appears in the legend after mode switch
+            if (this.state.data.currentData && window.updateConnectionLegend) {
+                window.updateConnectionLegend(this.state.data.currentData);
+            }
+        }
 
         // Apply drag restrictions
         this.common.applyDragRestrictions();
@@ -1726,8 +1936,38 @@ export class HierarchyModule {
         const nextIndex = existingInstances.length;
         const graphLabel = `${selectedTemplate}_${nextIndex}`;
 
-        // Generate graph ID now that we have graphLabel
-        const graphId = `graph_${Date.now()}_${graphLabel.replace(/\s+/g, '_')}`;
+        // Build unique path from parent hierarchy (matching import behavior)
+        // Traverse up the parent chain to build a unique path, including root-level graphs
+        const pathParts = [];
+        if (parentNode) {
+            let current = parentNode;
+            while (current && current.length > 0) {
+                const childName = current.data('child_name') || current.data('label');
+                if (childName) {
+                    pathParts.unshift(childName);
+                }
+                const parent = current.parent();
+                if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                    current = parent;
+                } else {
+                    // Reached root level - include the root graph in the path
+                    // This ensures multiple root-level instances are uniquely identified
+                    if (current.data('type') === 'graph') {
+                        const rootLabel = current.data('child_name') || current.data('label');
+                        if (rootLabel) {
+                            pathParts.unshift(rootLabel);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        // Add the new instance's label to the path
+        pathParts.push(graphLabel);
+
+        // Generate graph ID from path (consistent with import behavior)
+        const pathStr = pathParts.join('/');
+        const graphId = `graph_${pathStr.replace(/\//g, '_')}`;
 
         // If no valid parent from selection, add at top level (no parent)
         if (!parentNode) {
@@ -1827,10 +2067,38 @@ export class HierarchyModule {
                 let instancesUpdated = 0;
                 parentTemplateInstances.forEach(parentInstance => {
                     const instanceId = parentInstance.id();
-                    const instanceLabel = parentInstance.data('label');
+                    const _instanceLabel = parentInstance.data('label');
 
-                    // Generate unique ID and label for this instance
-                    const childGraphId = `graph_${Date.now()}_${instanceLabel}_${graphLabel.replace(/\s+/g, '_')}`;
+                    // Build unique path from parent hierarchy (matching import behavior)
+                    // Traverse up including root-level graphs to ensure uniqueness
+                    const pathParts = [];
+                    let current = parentInstance;
+                    while (current && current.length > 0) {
+                        const childName = current.data('child_name') || current.data('label');
+                        if (childName) {
+                            pathParts.unshift(childName);
+                        }
+                        const parent = current.parent();
+                        if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                            current = parent;
+                        } else {
+                            // Reached root level - include the root graph in the path
+                            // This ensures multiple root-level instances are uniquely identified
+                            if (current.data('type') === 'graph') {
+                                const rootLabel = current.data('child_name') || current.data('label');
+                                if (rootLabel) {
+                                    pathParts.unshift(rootLabel);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    // Add the new instance's label to the path
+                    pathParts.push(graphLabel);
+
+                    // Generate graph ID from path (consistent with import behavior)
+                    const pathStr = pathParts.join('/');
+                    const childGraphId = `graph_${pathStr.replace(/\//g, '_')}`;
                     const childGraphLabel = graphLabel; // Use same child name across instances
 
                     // Find position for the child within this parent instance
@@ -2048,16 +2316,20 @@ export class HierarchyModule {
      * Create a new empty graph template
      */
     createNewTemplate() {
-        const templateNameInput = document.getElementById('newTemplateNameInput');
-        const newTemplateName = templateNameInput.value.trim();
-
-        // Check if cytoscape is initialized
+        // CRITICAL: Capture selection FIRST, before any DOM operations that might clear it
+        // But first check if cytoscape exists
         if (!this.state.cy) {
             if (window.showNotificationBanner && typeof window.showNotificationBanner === 'function') {
                 window.showNotificationBanner('Please upload a file and generate a visualization first before creating templates.', 'error');
             }
             return;
         }
+
+        const allSelectedNodes = this.state.cy.nodes(':selected');
+        console.log(`[createNewTemplate] START - Captured ${allSelectedNodes.length} selected nodes before any operations`);
+
+        const templateNameInput = document.getElementById('newTemplateNameInput');
+        const newTemplateName = templateNameInput.value.trim();
 
         // Validate template name
         if (!newTemplateName) {
@@ -2100,11 +2372,166 @@ export class HierarchyModule {
                 this.state.data.currentData.metadata.graph_templates = {};
             }
 
-            // Create an empty template structure
-            const emptyTemplate = {
-                children: [],
-                connections: []
+            // Use the selection captured at the start of the function
+            const templateChildren = [];
+            const templateConnections = [];
+
+            console.log(`[createNewTemplate] Processing captured selection. Total selected: ${allSelectedNodes.length}`);
+
+            // If nodes are selected, extract them and their connections
+            if (allSelectedNodes.length > 0) {
+                console.log(`[createNewTemplate] Selected nodes:`, allSelectedNodes.map(n => ({
+                    id: n.id(),
+                    type: n.data('type'),
+                    label: n.data('label'),
+                    child_name: n.data('child_name')
+                })));
+
+                // First, get all shelf and graph nodes that are directly selected
+                const selectedShelfAndGraphNodes = allSelectedNodes.filter(node => {
+                    const nodeType = node.data('type');
+                    return nodeType === 'shelf' || nodeType === 'graph';
+                });
+
+                // Also check if ports/trays are selected - find their parent shelf/graph nodes
+                const selectedPortsAndTrays = allSelectedNodes.filter(node => {
+                    const nodeType = node.data('type');
+                    return nodeType === 'port' || nodeType === 'tray';
+                });
+
+                if (selectedPortsAndTrays.length > 0) {
+                    console.log(`[createNewTemplate] Found ${selectedPortsAndTrays.length} selected ports/trays, finding parent shelf/graph nodes`);
+                    selectedPortsAndTrays.forEach(node => {
+                        const parentShelfOrGraph = this.findParentShelfOrGraph(node);
+                        if (parentShelfOrGraph && !selectedShelfAndGraphNodes.some(n => n.id() === parentShelfOrGraph.id())) {
+                            selectedShelfAndGraphNodes.push(parentShelfOrGraph);
+                            console.log(`[createNewTemplate] Added parent ${parentShelfOrGraph.data('type')} node: ${parentShelfOrGraph.data('child_name') || parentShelfOrGraph.data('label')}`);
+                        }
+                    });
+                }
+
+                console.log(`[createNewTemplate] Filtered shelf/graph nodes: ${selectedShelfAndGraphNodes.length}`);
+
+                if (selectedShelfAndGraphNodes.length > 0) {
+                    // Find the common parent of all selected nodes (for connection path extraction)
+                    let commonParent = null;
+                    if (selectedShelfAndGraphNodes.length > 0) {
+                        // Get all parents of selected nodes
+                        const parents = selectedShelfAndGraphNodes.map(node => {
+                            let current = node.parent();
+                            while (current && current.length > 0) {
+                                if (current.data('type') === 'graph') {
+                                    return current;
+                                }
+                                current = current.parent();
+                            }
+                            return null;
+                        }).filter(p => p !== null);
+
+                        if (parents.length > 0) {
+                            // Find the deepest common parent
+                            commonParent = parents[0];
+                            for (let i = 1; i < parents.length; i++) {
+                                commonParent = this.findCommonAncestor(commonParent, parents[i]);
+                                if (!commonParent) break;
+                            }
+                        }
+                    }
+
+                    // Convert selected nodes to template children format
+                    selectedShelfAndGraphNodes.forEach(node => {
+                        const nodeType = node.data('type');
+                        const childName = node.data('child_name') || node.data('label');
+
+                        if (nodeType === 'shelf') {
+                            // Shelf node - convert to template child
+                            const shelfNodeType = node.data('shelf_node_type') || 'WH_GALAXY';
+                            templateChildren.push({
+                                name: childName,
+                                type: 'node',
+                                node_descriptor: shelfNodeType
+                            });
+                        } else if (nodeType === 'graph') {
+                            // Graph node - convert to template child
+                            const graphTemplateName = node.data('template_name');
+                            if (graphTemplateName) {
+                                templateChildren.push({
+                                    name: childName,
+                                    type: 'graph',
+                                    graph_template: graphTemplateName
+                                });
+                            }
+                        }
+                    });
+
+                    // Extract connections between selected nodes
+                    // Get all edges/connections
+                    const allEdges = this.state.cy.edges();
+                    const selectedNodeIds = new Set(selectedShelfAndGraphNodes.map(n => n.id()));
+
+                    // Find connections where both endpoints are within selected nodes
+                    allEdges.forEach(edge => {
+                        const sourceNode = edge.source();
+                        const targetNode = edge.target();
+
+                        // Check if both source and target are ports within selected shelf/graph nodes
+                        // We need to check if the ports belong to selected shelves/graphs
+                        const sourceParent = this.findParentShelfOrGraph(sourceNode);
+                        const targetParent = this.findParentShelfOrGraph(targetNode);
+
+                        if (sourceParent && targetParent &&
+                            selectedNodeIds.has(sourceParent.id()) &&
+                            selectedNodeIds.has(targetParent.id())) {
+
+                            // Extract port pattern relative to common parent (or template root)
+                            const placementLevel = commonParent || null;
+                            let sourcePortPattern = this.extractPortPattern(sourceNode, placementLevel);
+                            let targetPortPattern = this.extractPortPattern(targetNode, placementLevel);
+
+                            // If no common parent, extractPortPattern returns shelfName instead of path
+                            // Convert to path format for template connections
+                            if (sourcePortPattern && !sourcePortPattern.path && sourcePortPattern.shelfName) {
+                                sourcePortPattern = {
+                                    path: [sourcePortPattern.shelfName],
+                                    trayId: sourcePortPattern.trayId,
+                                    portId: sourcePortPattern.portId
+                                };
+                            }
+                            if (targetPortPattern && !targetPortPattern.path && targetPortPattern.shelfName) {
+                                targetPortPattern = {
+                                    path: [targetPortPattern.shelfName],
+                                    trayId: targetPortPattern.trayId,
+                                    portId: targetPortPattern.portId
+                                };
+                            }
+
+                            if (sourcePortPattern && targetPortPattern && sourcePortPattern.path && targetPortPattern.path) {
+                                // Create template connection format
+                                templateConnections.push({
+                                    port_a: {
+                                        path: sourcePortPattern.path,
+                                        tray_id: sourcePortPattern.trayId,
+                                        port_id: sourcePortPattern.portId
+                                    },
+                                    port_b: {
+                                        path: targetPortPattern.path,
+                                        tray_id: targetPortPattern.trayId,
+                                        port_id: targetPortPattern.portId
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Create template structure with extracted children and connections
+            const newTemplate = {
+                children: templateChildren,
+                connections: templateConnections
             };
+
+            console.log(`[createNewTemplate] Created template "${newTemplateName}" with ${templateChildren.length} children and ${templateConnections.length} connections`);
 
             // Initialize state.data.availableGraphTemplates if it doesn't exist
             if (!this.state.data.availableGraphTemplates) {
@@ -2112,10 +2539,10 @@ export class HierarchyModule {
             }
 
             // Add the new template to state.data.availableGraphTemplates
-            this.state.data.availableGraphTemplates[newTemplateName] = emptyTemplate;
+            this.state.data.availableGraphTemplates[newTemplateName] = newTemplate;
 
             // Also add to state.data.currentData.metadata.graph_templates for export
-            this.state.data.currentData.metadata.graph_templates[newTemplateName] = emptyTemplate;
+            this.state.data.currentData.metadata.graph_templates[newTemplateName] = newTemplate;
 
             // Update the template dropdown
             const graphTemplateSelect = document.getElementById('graphTemplateSelect');
@@ -2182,7 +2609,39 @@ export class HierarchyModule {
 
             // Create instance name following the pattern: template_name_index
             const graphLabel = `${newTemplateName}_${instanceIndex}`;
-            const graphId = `graph_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // Build unique path from parent hierarchy (matching import behavior)
+            // Traverse up including root-level graphs to ensure uniqueness
+            const pathParts = [];
+            if (parentNode) {
+                let current = parentNode;
+                while (current && current.length > 0) {
+                    const childName = current.data('child_name') || current.data('label');
+                    if (childName) {
+                        pathParts.unshift(childName);
+                    }
+                    const parent = current.parent();
+                    if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                        current = parent;
+                    } else {
+                        // Reached root level - include the root graph in the path
+                        // This ensures multiple root-level instances are uniquely identified
+                        if (current.data('type') === 'graph') {
+                            const rootLabel = current.data('child_name') || current.data('label');
+                            if (rootLabel) {
+                                pathParts.unshift(rootLabel);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            // Add the new instance's label to the path
+            pathParts.push(graphLabel);
+
+            // Generate graph ID from path (consistent with import behavior)
+            const pathStr = pathParts.join('/');
+            const graphId = `graph_${pathStr.replace(/\//g, '_')}`;
 
             // Calculate position
             let baseX = 0;
@@ -2214,10 +2673,38 @@ export class HierarchyModule {
                     // Add the new empty graph instance to each parent instance
                     parentTemplateInstances.forEach(parentInstance => {
                         const parentInstanceId = parentInstance.id();
-                        const parentInstanceLabel = parentInstance.data('label');
+                        const _parentInstanceLabel = parentInstance.data('label');
 
-                        // Generate unique ID for this instance
-                        const childGraphId = `graph_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${parentInstanceLabel}_${graphLabel}`;
+                        // Build unique path from parent hierarchy (matching import behavior)
+                        // Traverse up including root-level graphs to ensure uniqueness
+                        const pathParts = [];
+                        let current = parentInstance;
+                        while (current && current.length > 0) {
+                            const childName = current.data('child_name') || current.data('label');
+                            if (childName) {
+                                pathParts.unshift(childName);
+                            }
+                            const parent = current.parent();
+                            if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                                current = parent;
+                            } else {
+                                // Reached root level - include the root graph in the path
+                                // This ensures multiple root-level instances are uniquely identified
+                                if (current.data('type') === 'graph') {
+                                    const rootLabel = current.data('child_name') || current.data('label');
+                                    if (rootLabel) {
+                                        pathParts.unshift(rootLabel);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        // Add the new instance's label to the path
+                        pathParts.push(graphLabel);
+
+                        // Generate graph ID from path (consistent with import behavior)
+                        const pathStr = pathParts.join('/');
+                        const childGraphId = `graph_${pathStr.replace(/\//g, '_')}`;
 
                         // Calculate position relative to parent
                         const siblings = parentInstance.children().filter(node =>
@@ -2323,6 +2810,12 @@ export class HierarchyModule {
             }
 
             // Show success message
+            const childCount = templateChildren.length;
+            const connectionCount = templateConnections.length;
+            const contentInfo = childCount > 0 || connectionCount > 0
+                ? ` with ${childCount} node(s) and ${connectionCount} connection(s)`
+                : '';
+
             if (parentId && parentNode) {
                 const parentTemplateName = parentNode.data('template_name');
                 if (parentTemplateName) {
@@ -2331,16 +2824,16 @@ export class HierarchyModule {
                         node.data('template_name') === parentTemplateName
                     );
                     if (window.showExportStatus && typeof window.showExportStatus === 'function') {
-                        window.showExportStatus(`Successfully created empty template "${newTemplateName}" and added to ${parentTemplateInstances.length} instance(s) of "${parentTemplateName}"`, 'success');
+                        window.showExportStatus(`Successfully created template "${newTemplateName}"${contentInfo} and added to ${parentTemplateInstances.length} instance(s) of "${parentTemplateName}"`, 'success');
                     }
                 } else {
                     if (window.showExportStatus && typeof window.showExportStatus === 'function') {
-                        window.showExportStatus(`Successfully created empty template "${newTemplateName}" and added instance "${graphLabel}"`, 'success');
+                        window.showExportStatus(`Successfully created template "${newTemplateName}"${contentInfo} and added instance "${graphLabel}"`, 'success');
                     }
                 }
             } else {
                 if (window.showExportStatus && typeof window.showExportStatus === 'function') {
-                    window.showExportStatus(`Successfully created empty template "${newTemplateName}" and added instance "${graphLabel}"`, 'success');
+                    window.showExportStatus(`Successfully created template "${newTemplateName}"${contentInfo} and added instance "${graphLabel}"`, 'success');
                 }
             }
 
@@ -2476,6 +2969,9 @@ export class HierarchyModule {
         // Track the global host_index counter
         let nextHostIndex = 0;
 
+        // Track processed nodes to avoid processing the same node twice
+        const processedNodes = new Set();
+
         /**
          * DFS traversal function to process a graph node and its children
          * @param {Object} graphNode - The graph node to process
@@ -2511,14 +3007,23 @@ export class HierarchyModule {
 
             if (template && template.children && Array.isArray(template.children)) {
                 // Follow template's children order (matches cabling descriptor DFS order)
+                // Track which children we've already added to prevent duplicates
+                const addedChildIds = new Set();
                 template.children.forEach(templateChild => {
                     const cytoscapeChild = childrenByName.get(templateChild.name);
                     if (cytoscapeChild) {
-                        orderedChildren.push({
-                            node: cytoscapeChild,
-                            type: templateChild.type || (cytoscapeChild.data('type')),
-                            childName: templateChild.name
-                        });
+                        const childId = cytoscapeChild.id();
+                        // Only add if we haven't already added this node
+                        if (!addedChildIds.has(childId)) {
+                            addedChildIds.add(childId);
+                            orderedChildren.push({
+                                node: cytoscapeChild,
+                                type: templateChild.type || (cytoscapeChild.data('type')),
+                                childName: templateChild.name
+                            });
+                        } else {
+                            console.warn(`${indent}  Skipping duplicate child "${templateChild.name}" (id: ${childId}) in graph "${graphLabel}"`);
+                        }
                     }
                 });
 
@@ -2547,7 +3052,16 @@ export class HierarchyModule {
 
             // Process children in template order (mixed nodes and graphs, just like Python import)
             orderedChildren.forEach(({ node, type, childName }) => {
+                const nodeId = node.id();
+
                 if (type === 'shelf' || type === 'node') {
+                    // Skip if already processed
+                    if (processedNodes.has(nodeId)) {
+                        console.log(`${indent}  Skipping already processed shelf: ${childName}`);
+                        return;
+                    }
+                    processedNodes.add(nodeId);
+
                     // Process shelf node (assign host index)
                     const oldHostIndex = node.data('host_index');
                     const newHostIndex = nextHostIndex;
@@ -2640,6 +3154,9 @@ export class HierarchyModule {
         // Update state.data.globalHostCounter to the next available index
         this.state.data.globalHostCounter = nextHostIndex;
         console.log(`DFS traversal complete. Assigned ${nextHostIndex} host indices. Next available: ${this.state.data.globalHostCounter}`);
+
+        // Clear the flag
+        this._recalculatingHostIndices = false;
     }
 
     /**
@@ -3595,6 +4112,12 @@ export class HierarchyModule {
             throw new Error(`Template "${graphTemplateName}" not found`);
         }
 
+        // Collect all nodes and deferred connections first, then process connections once
+        // This prevents duplicate connections when multiple target instances exist
+        const allNodesToAdd = [];
+        const allEdgesToAdd = [];
+        const allDeferredConnections = [];
+
         targetInstances.forEach(targetInstance => {
             const nodesToAdd = [];
             const edgesToAdd = [];
@@ -3622,44 +4145,49 @@ export class HierarchyModule {
                 parentDepth
             );
 
-            // Add nodes
-            this.state.cy.add(nodesToAdd);
-
-            // Update logical_path for shelf nodes now that parent graphs are in Cytoscape
-            nodesToAdd.forEach(nodeData => {
-                if (nodeData.data && nodeData.data.type === 'shelf') {
-                    const shelfNode = this.state.cy.getElementById(nodeData.data.id);
-                    if (shelfNode && shelfNode.length > 0) {
-                        const parent = shelfNode.parent();
-                        if (parent && parent.length > 0 && parent.data('type') === 'graph') {
-                            // Build logical_path from parent graph hierarchy
-                            const pathParts = [];
-                            let current = parent;
-                            while (current && current.length > 0) {
-                                const childName = current.data('child_name') || current.data('label');
-                                if (childName) {
-                                    pathParts.unshift(childName);
-                                }
-                                const grandParent = current.parent();
-                                if (grandParent && grandParent.length > 0 && grandParent.data('type') === 'graph') {
-                                    current = grandParent;
-                                } else {
-                                    break;
-                                }
-                            }
-                            shelfNode.data('logical_path', pathParts);
-                        }
-                        this.common.arrangeTraysAndPorts(shelfNode);
-                    }
-                }
-            });
-
-            // Process deferred connections
-            this.processDeferredConnections(deferredConnections, edgesToAdd);
-            this.state.cy.add(edgesToAdd);
-
-            console.log(`[moveGraphInstanceToTemplate] Added ${nodesToAdd.length} nodes and ${edgesToAdd.length} edges to target instance "${targetInstance.data('label')}"`);
+            // Collect nodes and deferred connections for batch processing
+            allNodesToAdd.push(...nodesToAdd);
+            allDeferredConnections.push(...deferredConnections);
         });
+
+        // Add all nodes first
+        this.state.cy.add(allNodesToAdd);
+
+        // Update logical_path for shelf nodes now that parent graphs are in Cytoscape
+        allNodesToAdd.forEach(nodeData => {
+            if (nodeData.data && nodeData.data.type === 'shelf') {
+                const shelfNode = this.state.cy.getElementById(nodeData.data.id);
+                if (shelfNode && shelfNode.length > 0) {
+                    const parent = shelfNode.parent();
+                    if (parent && parent.length > 0 && parent.data('type') === 'graph') {
+                        // Build logical_path from parent graph hierarchy
+                        const pathParts = [];
+                        let current = parent;
+                        while (current && current.length > 0) {
+                            const childName = current.data('child_name') || current.data('label');
+                            if (childName) {
+                                pathParts.unshift(childName);
+                            }
+                            const grandParent = current.parent();
+                            if (grandParent && grandParent.length > 0 && grandParent.data('type') === 'graph') {
+                                current = grandParent;
+                            } else {
+                                break;
+                            }
+                        }
+                        shelfNode.data('logical_path', pathParts);
+                    }
+                    this.common.arrangeTraysAndPorts(shelfNode);
+                }
+            }
+        });
+
+        // Process all deferred connections once after all nodes are added
+        // This ensures we check against the final state and avoid duplicates
+        this.processDeferredConnections(allDeferredConnections, allEdgesToAdd);
+        this.state.cy.add(allEdgesToAdd);
+
+        console.log(`[moveGraphInstanceToTemplate] Added ${allNodesToAdd.length} nodes and ${allEdgesToAdd.length} edges across ${targetInstances.length} target instance(s)`);
 
         // Recalculate host indices
         this.recalculateHostIndicesForTemplates();
@@ -4133,6 +4661,28 @@ export class HierarchyModule {
     }
 
     /**
+     * Helper function to compare two arrays for equality
+     * @param {Array} arr1 - First array
+     * @param {Array} arr2 - Second array
+     * @returns {boolean} True if arrays are equal
+     * @private
+     */
+    _arraysEqual(arr1, arr2) {
+        if (!Array.isArray(arr1) || !Array.isArray(arr2)) {
+            return false;
+        }
+        if (arr1.length !== arr2.length) {
+            return false;
+        }
+        for (let i = 0; i < arr1.length; i++) {
+            if (arr1[i] !== arr2[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Create a connection pattern in all instances of a template
      * Skips instances where either port is already connected
      * @param {Object} sourceNode - Source port node
@@ -4171,10 +4721,6 @@ export class HierarchyModule {
         const sourcePattern = this.extractPortPattern(sourceNode, sourceInstance);
         const targetPattern = this.extractPortPattern(targetNode, sourceInstance);
 
-        console.log(`[createConnectionInAllTemplateInstances] Pattern from ${sourceInstance.id()}:`);
-        console.log(`[createConnectionInAllTemplateInstances]   sourcePattern:`, sourcePattern);
-        console.log(`[createConnectionInAllTemplateInstances]   targetPattern:`, targetPattern);
-
         if (!sourcePattern || !targetPattern) {
             console.warn('Could not extract port patterns');
             this.common.createSingleConnection(sourceNode, targetNode, template_name, depth);
@@ -4192,7 +4738,6 @@ export class HierarchyModule {
 
             if (!sourcePortNode || !targetPortNode) {
                 // Ports don't exist in this instance - skip
-                console.log(`[createConnectionInAllTemplateInstances] Ports not found in instance ${graph.id()}, skipping`);
                 return;
             }
 
@@ -4206,12 +4751,10 @@ export class HierarchyModule {
 
             if (sourcePortConnections.length > 0 || targetPortConnections.length > 0) {
                 skippedCount++;
-                console.log(`[createConnectionInAllTemplateInstances] Skipped instance ${graph.id()} - ports already connected (src: ${sourcePortConnections.length}, tgt: ${targetPortConnections.length})`);
                 return; // Skip this instance - ports already in use
             }
 
             // Create the connection in this instance
-            console.log(`[createConnectionInAllTemplateInstances] Creating connection in instance ${graph.id()}: ${sourcePortNode.id()} -> ${targetPortNode.id()}`);
             this.common.createSingleConnection(sourcePortNode, targetPortNode, template_name, depth);
             createdCount++;
         });
@@ -4227,22 +4770,56 @@ export class HierarchyModule {
                     template.connections = [];
                 }
 
-                // Add the connection pattern to the template
-                template.connections.push({
-                    port_a: {
-                        path: sourcePattern.path,
-                        tray_id: sourcePattern.trayId,
-                        port_id: sourcePattern.portId
-                    },
-                    port_b: {
-                        path: targetPattern.path,
-                        tray_id: targetPattern.trayId,
-                        port_id: targetPattern.portId
-                    },
-                    cable_type: 'QSFP_DD'  // Default cable type
+                // Ensure path arrays contain only strings (no object references or circular references)
+                const sourcePath = Array.isArray(sourcePattern.path)
+                    ? sourcePattern.path.filter(p => typeof p === 'string' && p !== '[Circular Reference]')
+                    : [];
+                const targetPath = Array.isArray(targetPattern.path)
+                    ? targetPattern.path.filter(p => typeof p === 'string' && p !== '[Circular Reference]')
+                    : [];
+
+                // Skip if paths are invalid
+                if (sourcePath.length === 0 || targetPath.length === 0) {
+                    return;
+                }
+
+                // Check if this connection already exists to prevent duplicates
+                const connectionExists = template.connections.some(conn => {
+                    const portA = conn.port_a;
+                    const portB = conn.port_b;
+
+                    // Check if paths match (order-independent: A->B or B->A are the same connection)
+                    const pathsMatch = (
+                        (this._arraysEqual(portA.path, sourcePath) && portA.tray_id === sourcePattern.trayId && portA.port_id === sourcePattern.portId &&
+                            this._arraysEqual(portB.path, targetPath) && portB.tray_id === targetPattern.trayId && portB.port_id === targetPattern.portId) ||
+                        (this._arraysEqual(portA.path, targetPath) && portA.tray_id === targetPattern.trayId && portA.port_id === targetPattern.portId &&
+                            this._arraysEqual(portB.path, sourcePath) && portB.tray_id === sourcePattern.trayId && portB.port_id === sourcePattern.portId)
+                    );
+
+                    return pathsMatch;
                 });
 
-                console.log(`Updated template "${template_name}" with new connection pattern`);
+                if (!connectionExists) {
+                    // Add the connection pattern to the template
+                    // Clone arrays to avoid shared references that safeStringify would treat as circular
+                    template.connections.push({
+                        port_a: {
+                            path: [...sourcePath], // Clone array to avoid shared reference
+                            tray_id: sourcePattern.trayId,
+                            port_id: sourcePattern.portId
+                        },
+                        port_b: {
+                            path: [...targetPath], // Clone array to avoid shared reference
+                            tray_id: targetPattern.trayId,
+                            port_id: targetPattern.portId
+                        },
+                        cable_type: 'QSFP_DD'  // Default cable type
+                    });
+
+                    console.log(`Updated template "${template_name}" with new connection pattern`);
+                } else {
+                    console.log(`Skipped duplicate connection in template "${template_name}"`);
+                }
             }
 
             // Update state.data.currentData.metadata.graph_templates if it exists (for export)
@@ -4253,20 +4830,52 @@ export class HierarchyModule {
                         template.connections = [];
                     }
 
-                    // Add the connection pattern to the template
-                    template.connections.push({
-                        port_a: {
-                            path: sourcePattern.path,
-                            tray_id: sourcePattern.trayId,
-                            port_id: sourcePattern.portId
-                        },
-                        port_b: {
-                            path: targetPattern.path,
-                            tray_id: targetPattern.trayId,
-                            port_id: targetPattern.portId
-                        },
-                        cable_type: 'QSFP_DD'
+                    // Ensure path arrays contain only strings (no object references or circular references)
+                    const sourcePathMeta = Array.isArray(sourcePattern.path)
+                        ? sourcePattern.path.filter(p => typeof p === 'string' && p !== '[Circular Reference]')
+                        : [];
+                    const targetPathMeta = Array.isArray(targetPattern.path)
+                        ? targetPattern.path.filter(p => typeof p === 'string' && p !== '[Circular Reference]')
+                        : [];
+
+                    // Skip if paths are invalid
+                    if (sourcePathMeta.length === 0 || targetPathMeta.length === 0) {
+                        return;
+                    }
+
+                    // Check if this connection already exists to prevent duplicates
+                    const connectionExistsMeta = template.connections.some(conn => {
+                        const portA = conn.port_a;
+                        const portB = conn.port_b;
+
+                        // Check if paths match (order-independent: A->B or B->A are the same connection)
+                        const pathsMatch = (
+                            (this._arraysEqual(portA.path, sourcePathMeta) && portA.tray_id === sourcePattern.trayId && portA.port_id === sourcePattern.portId &&
+                                this._arraysEqual(portB.path, targetPathMeta) && portB.tray_id === targetPattern.trayId && portB.port_id === targetPattern.portId) ||
+                            (this._arraysEqual(portA.path, targetPathMeta) && portA.tray_id === targetPattern.trayId && portA.port_id === targetPattern.portId &&
+                                this._arraysEqual(portB.path, sourcePathMeta) && portB.tray_id === sourcePattern.trayId && portB.port_id === sourcePattern.portId)
+                        );
+
+                        return pathsMatch;
                     });
+
+                    if (!connectionExistsMeta) {
+                        // Add the connection pattern to the template
+                        // Clone arrays to avoid shared references that safeStringify would treat as circular
+                        template.connections.push({
+                            port_a: {
+                                path: [...sourcePathMeta], // Clone array to avoid shared reference
+                                tray_id: sourcePattern.trayId,
+                                port_id: sourcePattern.portId
+                            },
+                            port_b: {
+                                path: [...targetPathMeta], // Clone array to avoid shared reference
+                                tray_id: targetPattern.trayId,
+                                port_id: targetPattern.portId
+                            },
+                            cable_type: 'QSFP_DD'
+                        });
+                    }
                 }
             }
         }
@@ -4379,13 +4988,9 @@ export class HierarchyModule {
      * @param {Object} targetShelf - Target shelf node
      * @returns {boolean} True if the level is available
      */
-    isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, sourceShelf, targetShelf) {
+    isPlacementLevelAvailable(sourcePort, targetPort, placementGraphNode, placementTemplateName, _sourceShelf, _targetShelf) {
         // If placementTemplateName is defined, it's a template-level connection
         const isTemplateLevel = placementTemplateName !== null && placementTemplateName !== 'unknown';
-
-        console.log(`[isPlacementLevelAvailable] Checking ${placementTemplateName}, isTemplateLevel: ${isTemplateLevel}`);
-        console.log(`[isPlacementLevelAvailable] state.editing.selectedFirstPort: ${this.state.editing.selectedFirstPort.id()}, targetPort: ${targetPort.id()}`);
-        console.log(`[isPlacementLevelAvailable] sourceShelf: ${sourceShelf.id()}, targetShelf: ${targetShelf.id()}`);
 
         if (isTemplateLevel) {
             // Template-level: Available ONLY if ALL instances of the placement template have both ports free
@@ -4395,13 +5000,8 @@ export class HierarchyModule {
             const sourcePattern = this.extractPortPattern(this.state.editing.selectedFirstPort, placementGraphNode);
             const targetPattern = this.extractPortPattern(targetPort, placementGraphNode);
 
-            console.log(`[isPlacementLevelAvailable] Template pattern from ${placementGraphNode.id()}:`);
-            console.log(`[isPlacementLevelAvailable]   sourcePattern:`, sourcePattern);
-            console.log(`[isPlacementLevelAvailable]   targetPattern:`, targetPattern);
-
             if (!sourcePattern || !targetPattern) {
                 // Ports are not descendants of the placement level
-                console.warn(`[isPlacementLevelAvailable] Ports not descendants of placement level ${placementGraphNode.id()}`);
                 return false;
             }
 
@@ -4414,8 +5014,6 @@ export class HierarchyModule {
                 return false; // No instances exist
             }
 
-            console.log(`[isPlacementLevelAvailable] Found ${templateGraphs.length} instances of ${placementTemplateName}`);
-
             // Check ALL instances - if ANY has a conflict, block this level
             for (let i = 0; i < templateGraphs.length; i++) {
                 const graph = templateGraphs[i];
@@ -4427,7 +5025,6 @@ export class HierarchyModule {
                 if (!srcPort || !tgtPort) {
                     // Ports don't exist in this instance - this means the template structure is inconsistent
                     // Block this level as we can't apply the pattern to all instances
-                    console.log(`[isPlacementLevelAvailable] Template-level: Ports not found in instance ${graph.id()} - blocking level`);
                     return false;
                 }
 
@@ -4441,17 +5038,11 @@ export class HierarchyModule {
 
                 if (srcPortConnections.length > 0 || tgtPortConnections.length > 0) {
                     // Found a conflict in this instance - block this entire level
-                    console.log(`[isPlacementLevelAvailable] Template-level: Conflict found in instance ${graph.id()}`);
-                    console.log(`[isPlacementLevelAvailable]   srcPort ${srcPort.id()} has ${srcPortConnections.length} connections`);
-                    console.log(`[isPlacementLevelAvailable]   tgtPort ${tgtPort.id()} has ${tgtPortConnections.length} connections`);
                     return false;
                 }
-
-                console.log(`[isPlacementLevelAvailable] Instance ${graph.id()}: ports free`);
             }
 
             // All instances have free ports - level is available
-            console.log(`[isPlacementLevelAvailable] Template-level: All ${templateGraphs.length} instances have free ports`);
             return true;
 
         } else {
@@ -4466,8 +5057,6 @@ export class HierarchyModule {
                 e.data('source') === targetId || e.data('target') === targetId
             );
 
-            console.log(`[isPlacementLevelAvailable] Instance-specific check: source ${sourceId} has ${sourceConnections.length} connections, target ${targetId} has ${targetConnections.length} connections`);
-
             // Available only if BOTH ports are free
             return sourceConnections.length === 0 && targetConnections.length === 0;
         }
@@ -4481,7 +5070,7 @@ export class HierarchyModule {
      * @param {Object} targetShelf - Target shelf node
      * @returns {number} Number of template instances
      */
-    calculateDuplicationCount(graphNode, sourceShelf, targetShelf) {
+    calculateDuplicationCount(graphNode, _sourceShelf, _targetShelf) {
         // Get the template name of this placement level
         const placementTemplateName = graphNode.data('template_name');
 
@@ -4506,7 +5095,7 @@ export class HierarchyModule {
         container.innerHTML = '';
 
         // Generate placement options
-        placementLevels.forEach((level, index) => {
+        placementLevels.forEach((level, _index) => {
             const optionDiv = document.createElement('div');
             optionDiv.className = 'placement-option';
 

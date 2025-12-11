@@ -621,6 +621,16 @@ export class UIDisplayModule {
             return;
         }
 
+        // Ensure manual tab is active and visible before accessing form elements
+        const manualContent = document.getElementById('manualLayoutContent');
+        if (manualContent) {
+            manualContent.style.display = 'block';
+        }
+        // Switch to manual tab to ensure form is visible
+        if (typeof window.switchLayoutTab === 'function') {
+            window.switchLayoutTab('manual');
+        }
+
         // Get all input elements with null checks
         const hallNamesInput = document.getElementById('hallNames');
         const aisleNamesInput = document.getElementById('aisleNames');
@@ -641,9 +651,9 @@ export class UIDisplayModule {
             return;
         }
 
-        // Reset to default values
-        hallNamesInput.value = 'Building-A';
-        aisleNamesInput.value = 'A';
+        // Reset to default values (set before showing modal to avoid empty flash)
+        hallNamesInput.value = '';
+        aisleNamesInput.value = '';
         rackNumbersInput.value = '1-10';
         shelfUnitNumbersInput.value = '1-42';
 
@@ -661,7 +671,7 @@ export class UIDisplayModule {
         modal.removeEventListener('click', (e) => this.handlePhysicalLayoutModalClick(e));
         modal.addEventListener('click', (e) => this.handlePhysicalLayoutModalClick(e));
 
-        // Show modal
+        // Show modal after values are set
         console.log('Adding active class to modal');
         modal.classList.add('active');
         console.log('Modal should now be visible, classes:', modal.classList.toString());
@@ -845,7 +855,6 @@ export class UIDisplayModule {
                 total_nodes: 0
             }
         };
-        this.state.data.currentData = this.state.data.currentData;
 
         // Initialize Cytoscape with empty data
         this.initVisualization(this.state.data.currentData);
@@ -931,17 +940,23 @@ export class UIDisplayModule {
                 return elType === 'graph' && !hasParent;
             });
 
+            // Always initialize these fields to prevent undefined errors
             if (topLevelGraphs.length === 1) {
                 const rootNode = topLevelGraphs[0].data;
                 this.state.data.currentData.metadata.initialRootTemplate = rootNode.template_name || 'unknown_template';
                 this.state.data.currentData.metadata.initialRootId = rootNode.id;
                 this.state.data.currentData.metadata.hasTopLevelAdditions = false;
             } else {
-                // Multiple roots on import - already modified, set flag
+                // Zero or multiple roots on import - set to null (explicitly, not undefined)
+                // This prevents "Cannot read property" errors when these fields are accessed
                 this.state.data.currentData.metadata.initialRootTemplate = null;
                 this.state.data.currentData.metadata.initialRootId = null;
-                this.state.data.currentData.metadata.hasTopLevelAdditions = true;
-                console.log(`Multiple top-level nodes on import (${topLevelGraphs.length}) - flagging as modified`);
+                this.state.data.currentData.metadata.hasTopLevelAdditions = (topLevelGraphs.length > 1);
+                if (topLevelGraphs.length === 0) {
+                    console.log(`No top-level graph nodes on import (CSV/location mode) - initialRoot fields set to null`);
+                } else {
+                    console.log(`Multiple top-level nodes on import (${topLevelGraphs.length}) - flagging as modified`);
+                }
             }
         }
 

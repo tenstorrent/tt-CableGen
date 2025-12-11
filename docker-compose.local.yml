@@ -10,6 +10,17 @@ services:
       - FLASK_APP=server.py
     ports:
       - "5000:5000"
+    volumes:
+      # Mount development files to override Dockerfile COPY operations
+      # Changes to these files on the host will be immediately reflected in the container
+      # - ./server.py:/app/server.py
+      # - ./import_cabling.py:/app/import_cabling.py
+      # - ./export_descriptors.py:/app/export_descriptors.py
+      # - ./templates:/app/templates
+      # - ./static:/app/static
+      # - ./tests:/app/tests
+      # - ./package.json:/app/package.json
+      # - ./package-lock.json:/app/package-lock.json
     networks:
       - cablegen-local-network
     healthcheck:
@@ -48,4 +59,3 @@ networks:
   cablegen-local-network:
     driver: bridge
     name: cablegen-local-network
-
