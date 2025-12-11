@@ -13,14 +13,14 @@ services:
     volumes:
       # Mount development files to override Dockerfile COPY operations
       # Changes to these files on the host will be immediately reflected in the container
-      - ./server.py:/app/server.py
-      - ./import_cabling.py:/app/import_cabling.py
-      - ./export_descriptors.py:/app/export_descriptors.py
-      - ./templates:/app/templates
-      - ./static:/app/static
-      - ./tests:/app/tests
-      - ./package.json:/app/package.json
-      - ./package-lock.json:/app/package-lock.json
+      # - ./server.py:/app/server.py
+      # - ./import_cabling.py:/app/import_cabling.py
+      # - ./export_descriptors.py:/app/export_descriptors.py
+      # - ./templates:/app/templates
+      # - ./static:/app/static
+      # - ./tests:/app/tests
+      # - ./package.json:/app/package.json
+      # - ./package-lock.json:/app/package-lock.json
     networks:
       - cablegen-local-network
     healthcheck:
