@@ -100,6 +100,11 @@ export class UIDisplayModule {
 
         // Update Add Node button state after mode indicator update
         this.updateAddNodeButtonState();
+        
+        // Update variation options based on current mode and selected node type
+        if (window.updateNodeVariationOptions && typeof window.updateNodeVariationOptions === 'function') {
+            window.updateNodeVariationOptions();
+        }
     }
 
     /**
@@ -138,8 +143,18 @@ export class UIDisplayModule {
             }
 
             // Also add templates from edges in case some aren't in state.data.availableGraphTemplates
-            const edges = data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target));
-            edges.forEach(e => {
+            // Check both initial data and current Cytoscape edges for dynamic updates
+            const dataEdges = data.elements ? data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target)) : [];
+            const cytoscapeEdges = this.state.cy ? this.state.cy.edges() : [];
+            
+            // Combine both sources for comprehensive coverage
+            const allEdges = [...dataEdges];
+            cytoscapeEdges.forEach(edge => {
+                const edgeData = edge.data();
+                allEdges.push({ data: edgeData });
+            });
+
+            allEdges.forEach(e => {
                 if (e.data && e.data.template_name) {
                     templateNames.add(e.data.template_name);
                 }
@@ -147,24 +162,52 @@ export class UIDisplayModule {
 
             console.log(`Total templates for legend: ${templateNames.size}`);
 
-            // Generate legend items for each template
-            const sortedTemplates = Array.from(templateNames).sort();
+            // Generate legend HTML
             let legendHTML = '';
 
-            if (sortedTemplates.length === 0) {
-                legendHTML = '<div style="font-size: 13px; color: #666;">No templates defined</div>';
-            } else {
+            // Check if there are any internal connections (Node Connections)
+            const hasInternalConnections = allEdges.some(e => e.data && e.data.is_internal === true);
+            
+            // Section 1: Templates (if any exist)
+            if (templateNames.size > 0 || hasInternalConnections) {
+                legendHTML += '<div style="margin-bottom: 12px;">';
+                legendHTML += '<div style="font-size: 12px; font-weight: bold; color: #555; margin-bottom: 6px;">Templates:</div>';
+                
+                // Add "Node Connections" entry for internal connections
+                if (hasInternalConnections) {
+                    const nodeConnectionsColor = "#00AA00"; // Green color for internal connections
+                    legendHTML += `
+                        <div class="legend-row" data-template="__NODE_CONNECTIONS__" data-color="${nodeConnectionsColor}" 
+                             style="display: flex; align-items: center; margin: 4px 0; padding: 4px; border-radius: 4px;">
+                            <div style="width: 20px; height: 3px; background-color: ${nodeConnectionsColor}; margin-right: 10px; border-radius: 2px;"></div>
+                            <span style="font-size: 13px; color: #333;">Node Connections</span>
+                        </div>
+                    `;
+                }
+                
+                const sortedTemplates = Array.from(templateNames).sort();
                 sortedTemplates.forEach(templateName => {
                     // Get the color for this template using the same function used for connections
                     const color = this.getTemplateColor(templateName);
                     legendHTML += `
                         <div class="legend-row" data-template="${templateName}" data-color="${color}" 
-                             style="display: flex; align-items: center; margin: 6px 0; padding: 4px; border-radius: 4px;">
+                             style="display: flex; align-items: center; margin: 4px 0; padding: 4px; border-radius: 4px;">
                             <div style="width: 20px; height: 3px; background-color: ${color}; margin-right: 10px; border-radius: 2px;"></div>
                             <span style="font-size: 13px; color: #333;">${templateName}</span>
                         </div>
                     `;
                 });
+                legendHTML += '</div>';
+
+                // Add note about template filter
+                const templateFilterSelect = document.getElementById('templateFilterSelect');
+                if (templateFilterSelect && templateFilterSelect.options.length > 1) {
+                    legendHTML += '<div style="font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 12px; font-style: italic;">';
+                    legendHTML += '💡 Use "Filter by Template" dropdown to show connections for a specific template';
+                    legendHTML += '</div>';
+                }
+            } else {
+                legendHTML += '<div style="font-size: 13px; color: #666; margin-bottom: 12px;">No templates defined</div>';
             }
 
             descriptorLegend.innerHTML = legendHTML;

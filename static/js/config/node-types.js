@@ -98,20 +98,32 @@ export function initializeNodeConfigs(serverConfigs = null) {
 
 /**
  * Get node type configuration
- * Automatically handles _DEFAULT suffix normalization
+ * Automatically handles _DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS suffix normalization
  * 
- * @param {string} nodeType - Node type identifier (e.g., 'N300_LB' or 'N300_LB_DEFAULT')
+ * @param {string} nodeType - Node type identifier (e.g., 'N300_LB', 'N300_LB_DEFAULT', 'WH_GALAXY_X_TORUS')
  * @returns {Object|null} Node configuration or null if not found
  * 
  * @example
  * const config = getNodeConfig('N300_LB_DEFAULT');
  * // Returns: { tray_count: 4, ports_per_tray: 2, tray_layout: 'horizontal', ... }
+ * const config2 = getNodeConfig('WH_GALAXY_X_TORUS');
+ * // Returns: { tray_count: 4, ports_per_tray: 6, tray_layout: 'vertical', ... }
  */
 export function getNodeConfig(nodeType) {
     if (!nodeType) return null;
     
-    // Normalize: strip _DEFAULT suffix
-    const normalized = nodeType.replace(/_DEFAULT$/, '');
+    // Normalize: strip variation suffixes (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
+    // Order matters: check longer suffixes first (_XY_TORUS before _X_TORUS/_Y_TORUS)
+    let normalized = nodeType;
+    if (normalized.endsWith('_XY_TORUS')) {
+        normalized = normalized.slice(0, -9); // Remove '_XY_TORUS' (9 chars)
+    } else if (normalized.endsWith('_X_TORUS')) {
+        normalized = normalized.slice(0, -8); // Remove '_X_TORUS' (8 chars)
+    } else if (normalized.endsWith('_Y_TORUS')) {
+        normalized = normalized.slice(0, -8); // Remove '_Y_TORUS' (8 chars)
+    } else if (normalized.endsWith('_DEFAULT')) {
+        normalized = normalized.slice(0, -8); // Remove '_DEFAULT' (8 chars)
+    }
     
     return configCache[normalized] || null;
 }

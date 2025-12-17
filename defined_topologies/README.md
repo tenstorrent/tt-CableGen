@@ -1,5 +1,6 @@
 # Defined Topologies Documentation
 
+
 ## Table of Contents
 
 1. [WH (Wormhole) Topologies](#wh-wormhole-topologies)
@@ -9,7 +10,7 @@
 
 ## WH (Wormhole) Topologies
 
-This section contains all defined WH topology configurations.
+This section contains all defined WH topology configurations, inculding systems made out of N300 LoudBoxes and Wormhole Galaxies.
 
 | Number of Systems | Grid Size | Topology | Cabling Guide File | Cabling Descriptor File |
 |-------------------|-----------|----------|-------------------|------------------------|
@@ -37,7 +38,7 @@ This section contains all defined WH topology configurations.
 
 ## BH (Blackhole) Topologies
 
-This section contains all defined BH topology configurations.
+This section contains all defined BH topology configurations, including systems made out of P150 LoudBoxes and Blackhole Galaxies.
 
 | Number of Systems | Grid Size | Topology | Cabling Guide File | Cabling Descriptor File |
 |-------------------|-----------|----------|-------------------|------------------------|
@@ -57,11 +58,11 @@ This section contains all defined BH topology configurations.
 | 4 Galaxies | 8x16 | X-Torus | [cabling_guide_BH_8x16_torus-x.csv](CablingGuides/cabling_guide_BH_8x16_torus-x.csv) | [BH_GALAXY_big_mesh_8x16_torus-x.textproto](CablingDescriptors/BH_GALAXY_big_mesh_8x16_torus-x.textproto) |
 | 4 Galaxies | 8x16 | 2D-Torus | [cabling_guide_BH_8x16_torus-2d.csv](CablingGuides/cabling_guide_BH_8x16_torus-2d.csv) | [BH_GALAXY_big_mesh_8x16_torus-2d.textproto](CablingDescriptors/BH_GALAXY_big_mesh_8x16_torus-2d.textproto) |
 | 4 Galaxies | 8x16 | Y-Torus | [cabling_guide_BH_8x16_torus-y.csv](CablingGuides/cabling_guide_BH_8x16_torus-y.csv) | [BH_GALAXY_big_mesh_8x16_torus-y.textproto](CablingDescriptors/BH_GALAXY_big_mesh_8x16_torus-y.textproto) |
-| 4 Galaxies | 16x8 | Mesh | [cabling_guide_BH_16x8_mesh.csv](CablingGuides/cabling_guide_BH_16x8_mesh.csv) | - |
-| 4 Galaxies | 16x8 | X-Torus | [cabling_guide_BH_16x8_torus-x.csv](CablingGuides/cabling_guide_BH_16x8_torus-x.csv) | - |
-| 4 Galaxies | 16x8 | 2D-Torus | [cabling_guide_BH_16x8_torus-2d.csv](CablingGuides/cabling_guide_BH_16x8_torus-2d.csv) | - |
-| 4 Galaxies | 16x8 | Y-Torus | [cabling_guide_BH_16x8_torus-y.csv](CablingGuides/cabling_guide_BH_16x8_torus-y.csv) | - |
-| 1xP150_LB | 4x2 | Mesh | - | - |
+| 4 Galaxies | 16x8 | Mesh | [cabling_guide_BH_16x8_mesh.csv](CablingGuides/cabling_guide_BH_16x8_mesh.csv) | [BH_GALAXY_big_mesh_16x8_mesh.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_mesh.textproto) |
+| 4 Galaxies | 16x8 | X-Torus | [cabling_guide_BH_16x8_torus-x.csv](CablingGuides/cabling_guide_BH_16x8_torus-x.csv) | [BH_GALAXY_big_mesh_16x8_torus-x.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-x.textproto) |
+| 4 Galaxies | 16x8 | 2D-Torus | [cabling_guide_BH_16x8_torus-2d.csv](CablingGuides/cabling_guide_BH_16x8_torus-2d.csv) | [BH_GALAXY_big_mesh_16x8_torus-2d.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-2d.textproto) |
+| 4 Galaxies | 16x8 | Y-Torus | [cabling_guide_BH_16x8_torus-y.csv](CablingGuides/cabling_guide_BH_16x8_torus-y.csv) | [BH_GALAXY_big_mesh_16x8_torus-y.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-y.textproto) |
+| 1 P150_LB | 4x2 | Mesh | - | - |
 
 
 ---

@@ -136,7 +136,9 @@ class NetworkCablingCytoscapeVisualizer:
         Also maps alternative names to standard names:
         - "blackhole" -> "BH_GALAXY"
         
-        Strips _DEFAULT suffix only (_GLOBAL and _AMERICA are kept as distinct types)
+        Strips variation suffixes:
+        - _DEFAULT suffix (keep _GLOBAL and _AMERICA as distinct types)
+        - _X_TORUS, _Y_TORUS, _XY_TORUS suffixes (torus topology variations)
         
         Returns uppercase format for JavaScript NODE_CONFIGS compatibility
         """
@@ -145,8 +147,15 @@ class NetworkCablingCytoscapeVisualizer:
         
         normalized = node_type.strip().lower()
         
-        # Strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
-        if normalized.endswith('_default'):
+        # Strip variation suffixes (order matters: check longer suffixes first)
+        # _XY_TORUS must be checked before _X_TORUS and _Y_TORUS
+        if normalized.endswith('_xy_torus'):
+            normalized = normalized[:-9]  # len('_xy_torus') = 9
+        elif normalized.endswith('_x_torus'):
+            normalized = normalized[:-8]  # len('_x_torus') = 8
+        elif normalized.endswith('_y_torus'):
+            normalized = normalized[:-8]  # len('_y_torus') = 8
+        elif normalized.endswith('_default'):
             normalized = normalized[:-8]  # len('_default') = 8
         
         # Map alternative names to standard names (lowercase input -> uppercase output)
@@ -157,8 +166,10 @@ class NetworkCablingCytoscapeVisualizer:
             "n300_lb": "N300_LB",
             "n300_qb": "N300_QB",
             "p150_lb": "P150_LB",
+            "p150_qb_ae": "P150_QB_AE",  # Add P150_QB_AE mapping
             "p150_qb_global": "P150_QB_GLOBAL",
             "p150_qb_america": "P150_QB_AMERICA",
+            "p300_qb_ge": "P300_QB_GE",  # Add P300_QB_GE mapping
         }
         
         # Return mapped value or convert to uppercase
@@ -1324,20 +1335,30 @@ class NetworkCablingCytoscapeVisualizer:
         node_type_lower = node_descriptor_name.lower()
         
         # Map descriptor names to existing configs
+        # This maps all NodeDescriptor variations to their base shelf unit type
         descriptor_to_config_map = {
+            # WH Galaxy variations
             'wh_galaxy': 'wh_galaxy',
             'wh_galaxy_x_torus': 'wh_galaxy',
             'wh_galaxy_y_torus': 'wh_galaxy',
             'wh_galaxy_xy_torus': 'wh_galaxy',
+            # N300 LB variations
             'n300_lb': 'n300_lb',
             'n300_lb_default': 'n300_lb',
+            # N300 QB variations
             'n300_qb': 'n300_qb',
             'n300_qb_default': 'n300_qb',
+            # P150 LB
+            'p150_lb': 'p150_lb',
+            # P150 QB AE variations
             'p150_qb_ae': 'p150_qb',
             'p150_qb_ae_default': 'p150_qb',
+            # P150 QB other variations (kept as distinct types)
             'p150_qb_global': 'p150_qb_global',
             'p150_qb_america': 'p150_qb_america',
-            'p300_qb_ge': 'p150_qb',  # Similar to P150
+            # P300 QB GE (similar to P150)
+            'p300_qb_ge': 'p150_qb',
+            # BH Galaxy variations
             'bh_galaxy': 'bh_galaxy',
             'bh_galaxy_x_torus': 'bh_galaxy',
             'bh_galaxy_y_torus': 'bh_galaxy',
@@ -2493,6 +2514,10 @@ class NetworkCablingCytoscapeVisualizer:
             host_id,  # host_id
             child_name  # node_name
         )
+        
+        # Extract and create edges for internal connections from NodeDescriptor
+        # This handles variations like DEFAULT (QSFP connections), X_TORUS, Y_TORUS, XY_TORUS
+        self._create_node_descriptor_internal_connections(shelf_id, node_type, host_id)
     
     def _create_rack_hierarchy(self):
         """Create conditional hierarchy nodes (halls -> aisles -> racks -> shelves -> trays -> ports)
@@ -2879,7 +2904,10 @@ class NetworkCablingCytoscapeVisualizer:
         # This avoids O(n*m) nested loop lookups
         host_id_to_node_info = {node['host_id']: node for node in self.graph_hierarchy}
         
-        for i, conn in enumerate(self.descriptor_connections, 1):
+        # Start connection counter after any existing edges (e.g., internal connections)
+        connection_counter = len(self.edges) + 1
+        
+        for conn in self.descriptor_connections:
             # Generate port IDs
             src_host_id = conn['port_a']['host_id']
             src_tray = conn['port_a']['tray_id']
@@ -2911,11 +2939,11 @@ class NetworkCablingCytoscapeVisualizer:
             # Create edge data
             edge_data = {
                 "data": {
-                    "id": f"connection_{i}",
+                    "id": f"connection_{connection_counter}",
                     "source": src_port_id,
                     "target": dst_port_id,
                     "cable_type": conn['cable_type'],
-                    "connection_number": i,
+                    "connection_number": connection_counter,
                     "color": color,
                     "depth": depth,
                     "template_name": template_name,  # Template where connection is defined
@@ -2930,6 +2958,271 @@ class NetworkCablingCytoscapeVisualizer:
             }
             
             self.edges.append(edge_data)
+            connection_counter += 1
+
+    def _create_node_descriptor_internal_connections(self, shelf_id, node_type, host_id):
+        """Create edges for internal connections defined in a NodeDescriptor
+        
+        This handles variations like:
+        - DEFAULT: Adds QSFP connections (e.g., N300_LB_DEFAULT, P150_QB_AE_DEFAULT)
+        - X_TORUS, Y_TORUS, XY_TORUS: Adds torus QSFP connections (e.g., WH_GALAXY_X_TORUS)
+        
+        Args:
+            shelf_id: The shelf node ID (e.g., "0", "1", "2")
+            node_type: The node descriptor type (e.g., "N300_LB_DEFAULT", "WH_GALAXY_X_TORUS")
+            host_id: The host ID (numeric)
+        """
+        # Get the NodeDescriptor from cluster_descriptor
+        # NodeDescriptors should be defined in the cluster_descriptor when importing
+        if not self.cluster_descriptor:
+            return
+        
+        # Try exact match first (case-sensitive)
+        node_descriptor = None
+        if node_type in self.cluster_descriptor.node_descriptors:
+            node_descriptor = self.cluster_descriptor.node_descriptors[node_type]
+        else:
+            # Try uppercase version (node_type might be stored in different case)
+            node_type_upper = node_type.upper()
+            if node_type_upper in self.cluster_descriptor.node_descriptors:
+                node_descriptor = self.cluster_descriptor.node_descriptors[node_type_upper]
+            else:
+                # Try lowercase version
+                node_type_lower = node_type.lower()
+                if node_type_lower in self.cluster_descriptor.node_descriptors:
+                    node_descriptor = self.cluster_descriptor.node_descriptors[node_type_lower]
+        
+        if not node_descriptor:
+            # NodeDescriptor not found in cluster_descriptor.node_descriptors map
+            # This can happen if the NodeDescriptor is referenced by name but not explicitly defined
+            # In C++, find_node_descriptor() creates it using the factory function, but we can't do that in Python
+            # However, we can still create internal connections based on known patterns from node.cpp
+            node_type_upper = node_type.upper()
+            internal_connections = self._get_internal_connections_from_node_type(node_type_upper)
+            if internal_connections:
+                # Create edges for the known internal connections
+                self._create_internal_connection_edges(shelf_id, host_id, internal_connections)
+            else:
+                # Log a warning if we can't determine the connections
+                if hasattr(self, '_log_warning'):
+                    self._log_warning(
+                        f"NodeDescriptor '{node_type}' not found in cluster_descriptor.node_descriptors "
+                        f"and no known pattern for internal connections. Available NodeDescriptors: {list(self.cluster_descriptor.node_descriptors.keys())}",
+                        {"node_type": node_type, "shelf_id": shelf_id, "host_id": host_id}
+                    )
+            return
+        
+        # Extract internal connections from port_type_connections
+        # These are connections within the same shelf (same host_id for both ports)
+        # Connections are defined as Tray,Port pairs in node.cpp:
+        #   - Example: add_connection(qsfp_connections, 1, 1, 4, 1) 
+        #     means Tray 1 Port 1 connects to Tray 4 Port 1
+        #   - Example: add_connection(qsfp_connections, 1, 3, 2, 3)
+        #     means Tray 1 Port 3 connects to Tray 2 Port 3 (X-torus)
+        connection_counter = len(self.edges) + 1
+        
+        # Color for internal connections (different from inter-node connections)
+        internal_connection_color = "#00AA00"  # Green for internal connections
+        
+        # Iterate through all port types (QSFP_DD, WARP100, WARP400, LINKING_BOARD_1, etc.)
+        for port_type, port_connections in node_descriptor.port_type_connections.items():
+            for conn in port_connections.connections:
+                # Extract Tray,Port pairs from the connection
+                # Both ports are on the same shelf (same host_id)
+                tray_a = conn.port_a.tray_id  # Tray ID for port A (e.g., 1, 2, 3, 4)
+                port_a = conn.port_a.port_id  # Port ID for port A (e.g., 1, 2, 3, 4, 5, 6)
+                tray_b = conn.port_b.tray_id  # Tray ID for port B (e.g., 1, 2, 3, 4)
+                port_b = conn.port_b.port_id  # Port ID for port B (e.g., 1, 2, 3, 4, 5, 6)
+                
+                # Generate port IDs within the same shelf using format: "{host_id}:t{tray}:p{port}"
+                # Example: "0:t1:p1" for host 0, tray 1, port 1
+                port_a_id = self.generate_node_id("port", shelf_id, tray_a, port_a)
+                port_b_id = self.generate_node_id("port", shelf_id, tray_b, port_b)
+                
+                # Create edge data for internal connection
+                edge_data = {
+                    "data": {
+                        "id": f"connection_{connection_counter}",
+                        "source": port_a_id,
+                        "target": port_b_id,
+                        "cable_type": port_type,  # Use the port type as cable type (QSFP_DD, WARP100, etc.)
+                        "connection_number": connection_counter,
+                        "color": internal_connection_color,
+                        "depth": -1,  # Internal connections have depth -1 (within same shelf)
+                        "template_name": None,  # Internal connections are not from templates
+                        "source_info": f"Host {host_id} T{tray_a}P{port_a}",
+                        "destination_info": f"Host {host_id} T{tray_b}P{port_b}",
+                        "source_hostname": f"host_{host_id}",
+                        "destination_hostname": f"host_{host_id}",
+                        "is_internal": True,  # Flag to indicate this is an internal connection
+                    },
+                    "classes": "connection internal-connection",
+                }
+                
+                self.edges.append(edge_data)
+                connection_counter += 1
+
+    def _get_internal_connections_from_node_type(self, node_type):
+        """Get internal connections based on known node type patterns from node.cpp
+        
+        This is a fallback when NodeDescriptor is not in cluster_descriptor.node_descriptors.
+        Returns a list of connection dicts with port_type, tray_a, port_a, tray_b, port_b.
+        """
+        node_type_upper = node_type.upper()
+        connections = []
+        
+        # N300_LB_DEFAULT and N300_QB_DEFAULT: QSFP connections
+        if node_type_upper in ['N300_LB_DEFAULT', 'N300_QB_DEFAULT']:
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+            ])
+        
+        # P150_QB_AE_DEFAULT: QSFP connections
+        elif node_type_upper == 'P150_QB_AE_DEFAULT':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # WH_GALAXY_X_TORUS: X-torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_X_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+        
+        # WH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_Y_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # WH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_XY_TORUS':
+            # X-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+            # Y-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # BH_GALAXY_X_TORUS: X-torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_X_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 3, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 3, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+        
+        # BH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_Y_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_XY_TORUS':
+            # X-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 3, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 3, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+            # Y-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        return connections
+
+    def _create_internal_connection_edges(self, shelf_id, host_id, internal_connections):
+        """Create edge data for internal connections from a list of connection definitions
+        
+        Args:
+            shelf_id: The shelf node ID (e.g., "0", "1", "2")
+            host_id: The host ID (numeric)
+            internal_connections: List of connection dicts with port_type, tray_a, port_a, tray_b, port_b
+        """
+        connection_counter = len(self.edges) + 1
+        internal_connection_color = "#00AA00"  # Green for internal connections
+        
+        for conn_def in internal_connections:
+            port_type = conn_def['port_type']
+            tray_a = conn_def['tray_a']
+            port_a = conn_def['port_a']
+            tray_b = conn_def['tray_b']
+            port_b = conn_def['port_b']
+            
+            # Generate port IDs within the same shelf
+            port_a_id = self.generate_node_id("port", shelf_id, tray_a, port_a)
+            port_b_id = self.generate_node_id("port", shelf_id, tray_b, port_b)
+            
+            # Create edge data for internal connection
+            edge_data = {
+                "data": {
+                    "id": f"connection_{connection_counter}",
+                    "source": port_a_id,
+                    "target": port_b_id,
+                    "cable_type": port_type,
+                    "connection_number": connection_counter,
+                    "color": internal_connection_color,
+                    "depth": -1,  # Internal connections have depth -1 (within same shelf)
+                    "template_name": None,
+                    "source_info": f"Host {host_id} T{tray_a}P{port_a}",
+                    "destination_info": f"Host {host_id} T{tray_b}P{port_b}",
+                    "source_hostname": f"host_{host_id}",
+                    "destination_hostname": f"host_{host_id}",
+                    "is_internal": True,
+                },
+                "classes": "connection internal-connection",
+            }
+            
+            self.edges.append(edge_data)
+            connection_counter += 1
 
     def _generate_port_ids(self, connection):
         """Generate source and destination port IDs based on CSV format

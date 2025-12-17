@@ -442,10 +442,9 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                         node_type = parent_element.get("data", {}).get("shelf_node_type")
                         if not node_type:
                             raise ValueError(f"Shelf '{parent_id}' is missing shelf_node_type")
-                        # Strip _DEFAULT suffix only
+                        # Preserve full node type including variations (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
+                        # Only normalize to uppercase for consistency
                         node_type = node_type.upper()
-                        if node_type.endswith('_DEFAULT'):
-                            node_type = node_type[:-8]  # len('_DEFAULT') = 8
                         return node_type
         
         raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
@@ -545,11 +544,17 @@ class DeploymentDataParser:
         shelf_u = node_data.get("shelf_u")
         node_type = node_data.get("shelf_node_type")
 
-        # Convert node_type to uppercase and strip _DEFAULT suffix only
+        # Convert node_type to uppercase and strip variation suffixes (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
         if node_type:
             node_type = node_type.upper()
-            # Strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
-            if node_type.endswith('_DEFAULT'):
+            # Order matters: check longer suffixes first (_XY_TORUS before _X_TORUS/_Y_TORUS)
+            if node_type.endswith('_XY_TORUS'):
+                node_type = node_type[:-9]  # len('_XY_TORUS') = 9
+            elif node_type.endswith('_X_TORUS'):
+                node_type = node_type[:-8]  # len('_X_TORUS') = 8
+            elif node_type.endswith('_Y_TORUS'):
+                node_type = node_type[:-8]  # len('_Y_TORUS') = 8
+            elif node_type.endswith('_DEFAULT'):
                 node_type = node_type[:-8]  # len('_DEFAULT') = 8
 
         # Normalize shelf_u to integer (strip 'U' prefix if present)
@@ -740,10 +745,9 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     for i, (hostname, node_type) in enumerate(sorted_hosts):
         child = graph_template.children.add()
         child.name = hostname  # Use actual hostname instead of generic "host_i"
-        # Normalize node_type: uppercase and strip _DEFAULT suffix
+        # Preserve full node type including variations (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
+        # Only normalize to uppercase for consistency
         normalized_node_type = node_type.upper()
-        if normalized_node_type.endswith('_DEFAULT'):
-            normalized_node_type = normalized_node_type[:-8]  # Remove '_DEFAULT' suffix
         child.node_ref.node_descriptor = normalized_node_type
 
     # Add connections to graph template
@@ -1424,10 +1428,9 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
                 # Note: hostname is optional here (it's a deployment property, not logical)
                 hostname_display = child_data.get('hostname') or '(not set - deployment property)'
                 raise ValueError(f"Shelf '{child_label}' (hostname: {hostname_display}) is missing shelf_node_type")
-            # Normalize: uppercase and strip _DEFAULT suffix only
+            # Preserve full node type including variations (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
+            # Only normalize to uppercase for consistency
             node_descriptor = node_descriptor.upper()
-            if node_descriptor.endswith('_DEFAULT'):
-                node_descriptor = node_descriptor[:-8]  # len('_DEFAULT') = 8
             child.node_ref.node_descriptor = node_descriptor
             
         elif not is_physical_container:
@@ -1684,10 +1687,9 @@ def build_graph_template_recursive(node_el, element_map, connections, cluster_de
             node_descriptor = child_data.get("shelf_node_type") or child_data.get("node_descriptor_type") or child_data.get("node_type", "UNKNOWN")
             if not node_descriptor or node_descriptor == "UNKNOWN":
                 raise ValueError(f"Shelf '{child_label}' (hostname: {child_data.get('hostname')}) is missing shelf_node_type")
-            # Normalize: uppercase and strip _DEFAULT suffix only
+            # Preserve full node type including variations (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
+            # Only normalize to uppercase for consistency
             node_descriptor = node_descriptor.upper()
-            if node_descriptor.endswith('_DEFAULT'):
-                node_descriptor = node_descriptor[:-8]  # len('_DEFAULT') = 8
             child.node_ref.node_descriptor = node_descriptor
             
         elif not is_physical_container:

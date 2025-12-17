@@ -64,7 +64,10 @@ export class ApiClient {
         
         const requestOptions = {
             method,
-            headers: requestHeaders
+            headers: requestHeaders,
+            // Use 'manual' redirect mode to handle OAuth2 redirects properly
+            // This prevents CORS errors when redirecting to external OAuth2 providers
+            redirect: 'manual'
         };
         
         if (formData) {
@@ -86,6 +89,57 @@ export class ApiClient {
         
         try {
             const response = await fetch(url, requestOptions);
+            
+            // Handle redirects (OAuth2 authentication flow)
+            // Redirect status codes: 301, 302, 303, 307, 308
+            if (response.status >= 300 && response.status < 400) {
+                const redirectUrl = response.headers.get('Location');
+                if (redirectUrl) {
+                    // Resolve relative URLs to absolute URLs
+                    const absoluteRedirectUrl = redirectUrl.startsWith('http') 
+                        ? redirectUrl 
+                        : new URL(redirectUrl, this.baseUrl).href;
+                    
+                    // If redirecting to OAuth2 provider, redirect the entire browser window
+                    // This is necessary because OAuth2 providers don't allow CORS requests
+                    if (absoluteRedirectUrl.includes('login.microsoftonline.com') || 
+                        absoluteRedirectUrl.includes('/oauth2/') ||
+                        absoluteRedirectUrl.includes('/authorize')) {
+                        window.location.href = absoluteRedirectUrl;
+                        // Return a promise that never resolves to prevent further execution
+                        return new Promise(() => {});
+                    }
+                    // For same-origin redirects, follow them manually
+                    // For cross-origin redirects, redirect the browser window
+                    if (new URL(absoluteRedirectUrl).origin === this.baseUrl) {
+                        return this.request(absoluteRedirectUrl, options);
+                    } else {
+                        window.location.href = absoluteRedirectUrl;
+                        return new Promise(() => {});
+                    }
+                }
+            }
+            
+            // Handle authentication errors (401, 403) - might be redirected to OAuth2
+            if (response.status === 401 || response.status === 403) {
+                // Check if response includes a redirect URL (OAuth2 Proxy might include this)
+                const redirectUrl = response.headers.get('Location');
+                if (redirectUrl) {
+                    const absoluteRedirectUrl = redirectUrl.startsWith('http') 
+                        ? redirectUrl 
+                        : new URL(redirectUrl, this.baseUrl).href;
+                    
+                    if (absoluteRedirectUrl.includes('login.microsoftonline.com') || 
+                        absoluteRedirectUrl.includes('/oauth2/')) {
+                        window.location.href = absoluteRedirectUrl;
+                        return new Promise(() => {});
+                    }
+                }
+                // If no redirect URL but we got auth error, redirect to the original endpoint
+                // OAuth2 Proxy will handle the OAuth2 flow
+                window.location.href = url;
+                return new Promise(() => {});
+            }
             
             // Handle non-JSON responses (e.g., textproto exports)
             const contentType = response.headers.get('content-type');
@@ -111,6 +165,17 @@ export class ApiClient {
                 status: response.status
             };
         } catch (error) {
+            // Handle network errors that might be CORS-related
+            if (error.message && (error.message.includes('CORS') || 
+                                  error.message.includes('Failed to fetch') ||
+                                  error.message.includes('NetworkError'))) {
+                // This might be an OAuth2 redirect that failed due to CORS
+                // Try to redirect to the original endpoint - OAuth2 Proxy will handle it
+                console.warn('CORS error detected, redirecting to endpoint for OAuth2 flow');
+                window.location.href = url;
+                return new Promise(() => {});
+            }
+            
             // Re-throw with more context
             if (error instanceof Error) {
                 throw error;

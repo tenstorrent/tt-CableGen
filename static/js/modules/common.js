@@ -39,11 +39,8 @@ export class CommonModule {
         if (!shelfNode || !this.state.cy) return;
 
         const shelfPos = shelfNode.position();
-        let nodeType = shelfNode.data('shelf_node_type') || 'WH_GALAXY';
-
-        // Normalize node type: strip _DEFAULT suffix only
-        nodeType = nodeType.replace(/_DEFAULT$/, '');
-
+        // Preserve the full node type (including variations) - getNodeConfig normalizes internally
+        const nodeType = shelfNode.data('shelf_node_type') || 'WH_GALAXY';
         const config = getNodeConfig(nodeType);
 
         if (!config) {
@@ -225,6 +222,30 @@ export class CommonModule {
             let gridRows;
             let gridCols;
 
+            // Helper function to find the most square grid dimensions
+            const findSquareGrid = (numItems, preferRowsFirst) => {
+                // Start with square root as base
+                const sqrt = Math.sqrt(numItems);
+                let bestRows, bestCols;
+                let bestDiff = Infinity;
+                
+                // Try both ceil and floor of sqrt, and nearby values
+                for (let rows = Math.max(1, Math.floor(sqrt)); rows <= Math.ceil(sqrt) + 1; rows++) {
+                    const cols = Math.ceil(numItems / rows);
+                    const diff = Math.abs(rows - cols);
+                    
+                    // Prefer grids where rows and cols are as close as possible
+                    // Also prefer grids that don't waste too much space
+                    if (diff < bestDiff || (diff === bestDiff && rows * cols < bestRows * bestCols)) {
+                        bestDiff = diff;
+                        bestRows = rows;
+                        bestCols = cols;
+                    }
+                }
+                
+                return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
+            };
+
             if (isHierarchyMode) {
                 // Column-major ordering for hierarchy mode: calculate rows first, then columns
                 if (numShelves <= 3) {
@@ -232,10 +253,10 @@ export class CommonModule {
                     gridRows = numShelves;
                     gridCols = 1;
                 } else {
-                    // For 4+ shelves, calculate optimal grid (column-major)
-                    // Calculate rows first for column-major ordering
-                    gridRows = Math.ceil(Math.sqrt(numShelves * 1.2)); // 1.2 factor prefers taller grids
-                    gridCols = Math.ceil(numShelves / gridRows);
+                    // For 4+ shelves, calculate optimal square grid (column-major)
+                    const grid = findSquareGrid(numShelves, true);
+                    gridRows = grid.rows;
+                    gridCols = grid.cols;
                 }
             } else {
                 // Row-major ordering for location mode: calculate columns first, then rows
@@ -244,10 +265,10 @@ export class CommonModule {
                     gridCols = numShelves;
                     gridRows = 1;
                 } else {
-                    // For 4+ shelves, calculate optimal grid (row-major)
-                    // Calculate columns first for row-major ordering
-                    gridCols = Math.ceil(Math.sqrt(numShelves * 1.2)); // 1.2 factor prefers wider grids
-                    gridRows = Math.ceil(numShelves / gridCols);
+                    // For 4+ shelves, calculate optimal square grid (row-major)
+                    const grid = findSquareGrid(numShelves, false);
+                    gridRows = grid.rows;
+                    gridCols = grid.cols;
                 }
             }
 
@@ -304,14 +325,40 @@ export class CommonModule {
             const isHierarchyMode = this.state.mode === 'hierarchy';
             let gridRows, gridCols;
 
+            // Helper function to find the most square grid dimensions
+            const findSquareGrid = (numItems, preferRowsFirst) => {
+                // Start with square root as base
+                const sqrt = Math.sqrt(numItems);
+                let bestRows, bestCols;
+                let bestDiff = Infinity;
+                
+                // Try both ceil and floor of sqrt, and nearby values
+                for (let rows = Math.max(1, Math.floor(sqrt)); rows <= Math.ceil(sqrt) + 1; rows++) {
+                    const cols = Math.ceil(numItems / rows);
+                    const diff = Math.abs(rows - cols);
+                    
+                    // Prefer grids where rows and cols are as close as possible
+                    // Also prefer grids that don't waste too much space
+                    if (diff < bestDiff || (diff === bestDiff && rows * cols < bestRows * bestCols)) {
+                        bestDiff = diff;
+                        bestRows = rows;
+                        bestCols = cols;
+                    }
+                }
+                
+                return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
+            };
+
             if (isHierarchyMode) {
-                // Column-major: calculate rows first
-                gridRows = Math.ceil(Math.sqrt(nestedGraphs.length));
-                gridCols = Math.ceil(nestedGraphs.length / gridRows);
+                // Column-major: prefer more rows (taller grid)
+                const grid = findSquareGrid(nestedGraphs.length, true);
+                gridRows = grid.rows;
+                gridCols = grid.cols;
             } else {
-                // Row-major: calculate columns first
-                gridCols = Math.ceil(Math.sqrt(nestedGraphs.length));
-                gridRows = Math.ceil(nestedGraphs.length / gridCols);
+                // Row-major: prefer more columns (wider grid)
+                const grid = findSquareGrid(nestedGraphs.length, false);
+                gridRows = grid.rows;
+                gridCols = grid.cols;
             }
 
             // Starting position
@@ -1422,7 +1469,19 @@ export class CommonModule {
                 const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
                 const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
                 const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
-                if (sourceShelfId !== selectedShelfId && targetShelfId !== selectedShelfId) {
+                
+                // Check if this is an internal connection (node definition connection)
+                // Internal connections have is_internal flag and both ports are on the same shelf
+                const isInternalConnection = edge.data('is_internal') === true || 
+                                           (sourceShelfId && targetShelfId && sourceShelfId === targetShelfId);
+                
+                // Show connection if:
+                // 1. Source or target shelf matches selected shelf, OR
+                // 2. It's an internal connection and the shelf matches (both source and target are the same shelf)
+                const isConnectedToSelectedNode = sourceShelfId === selectedShelfId || targetShelfId === selectedShelfId;
+                const isInternalForSelectedNode = isInternalConnection && sourceShelfId === selectedShelfId;
+                
+                if (!isConnectedToSelectedNode && !isInternalForSelectedNode) {
                     edge.hide();
                     hiddenCount++;
                     return;
@@ -1545,7 +1604,19 @@ export class CommonModule {
                 const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
                 const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
                 const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
-                if (sourceShelfId !== selectedShelfId && targetShelfId !== selectedShelfId) {
+                
+                // Check if this is an internal connection (node definition connection)
+                // Internal connections have is_internal flag and both ports are on the same shelf
+                const isInternalConnection = edge.data('is_internal') === true || 
+                                           (sourceShelfId && targetShelfId && sourceShelfId === targetShelfId);
+                
+                // Show connection if:
+                // 1. Source or target shelf matches selected shelf, OR
+                // 2. It's an internal connection and the shelf matches (both source and target are the same shelf)
+                const isConnectedToSelectedNode = sourceShelfId === selectedShelfId || targetShelfId === selectedShelfId;
+                const isInternalForSelectedNode = isInternalConnection && sourceShelfId === selectedShelfId;
+                
+                if (!isConnectedToSelectedNode && !isInternalForSelectedNode) {
                     edge.hide();
                     hiddenCount++;
                     return;
@@ -3215,6 +3286,203 @@ export class CommonModule {
                 window.updateConnectionLegend(this.state.data.currentData);
             }
         }
+    }
+
+    /**
+     * Get internal connections for a node type variation
+     * Returns connection definitions based on node type patterns from node.cpp
+     * @param {string} nodeType - Full node type including variations (e.g., 'WH_GALAXY_XY_TORUS')
+     * @returns {Array} Array of connection objects with {port_type, tray_a, port_a, tray_b, port_b}
+     */
+    getInternalConnectionsFromNodeType(nodeType) {
+        const nodeTypeUpper = nodeType.toUpperCase();
+        const connections = [];
+        
+        // N300_LB_DEFAULT and N300_QB_DEFAULT: QSFP connections
+        if (nodeTypeUpper === 'N300_LB_DEFAULT' || nodeTypeUpper === 'N300_QB_DEFAULT') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 3, port_b: 2 }
+            );
+        }
+        
+        // P150_QB_AE_DEFAULT: QSFP connections
+        else if (nodeTypeUpper === 'P150_QB_AE_DEFAULT') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 2, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 2, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 4, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 3, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 4, tray_b: 3, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        
+        // WH_GALAXY_X_TORUS: X-torus QSFP connections
+        else if (nodeTypeUpper === 'WH_GALAXY_X_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 2, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 2, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 2, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 2, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+        }
+        
+        // WH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        else if (nodeTypeUpper === 'WH_GALAXY_Y_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 3, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 3, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        
+        // WH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        else if (nodeTypeUpper === 'WH_GALAXY_XY_TORUS') {
+            // X-torus connections
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 2, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 2, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 2, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 2, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+            // Y-torus connections
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 3, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 3, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        
+        // BH_GALAXY_X_TORUS: X-torus QSFP connections
+        else if (nodeTypeUpper === 'BH_GALAXY_X_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 3, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 3, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 3, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 3, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+        }
+        
+        // BH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        else if (nodeTypeUpper === 'BH_GALAXY_Y_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 2, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 2, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        
+        // BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        else if (nodeTypeUpper === 'BH_GALAXY_XY_TORUS') {
+            // X-torus connections
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 3, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 3, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 3, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 3, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+            // Y-torus connections
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 2, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 2, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        
+        return connections;
+    }
+
+    /**
+     * Create internal connections for a node based on its node type variation
+     * @param {string} shelfId - The shelf node ID
+     * @param {string} nodeType - Full node type including variations
+     * @param {number} hostIndex - Host index
+     */
+    createInternalConnectionsForNode(shelfId, nodeType, hostIndex) {
+        const internalConnections = this.getInternalConnectionsFromNodeType(nodeType);
+        if (internalConnections.length === 0) {
+            return; // No internal connections for this node type
+        }
+        
+        const internalConnectionColor = "#00AA00"; // Green for internal connections
+        
+        internalConnections.forEach(connDef => {
+            const { port_type, tray_a, port_a, tray_b, port_b } = connDef;
+            
+            // Generate port IDs using the same format as node factory
+            const portAId = `${shelfId}:t${tray_a}:p${port_a}`;
+            const portBId = `${shelfId}:t${tray_b}:p${port_b}`;
+            
+            // Check if ports exist
+            const portANode = this.state.cy.getElementById(portAId);
+            const portBNode = this.state.cy.getElementById(portBId);
+            
+            if (!portANode.length || !portBNode.length) {
+                console.warn(`[createInternalConnectionsForNode] Ports not found for internal connection: ${portAId} -> ${portBId}`);
+                return;
+            }
+            
+            // Check if connection already exists
+            const existingConnections = this.state.cy.edges(`[source="${portAId}"][target="${portBId}"], [source="${portBId}"][target="${portAId}"]`);
+            if (existingConnections.length > 0) {
+                return; // Connection already exists
+            }
+            
+            // Create the internal connection edge
+            const connectionNumber = this.getNextConnectionNumber();
+            const edgeId = `connection_${connectionNumber}`;
+            
+            const newEdge = {
+                data: {
+                    id: edgeId,
+                    source: portAId,
+                    target: portBId,
+                    cable_type: port_type,
+                    cable_length: 'Unknown',
+                    connection_number: connectionNumber,
+                    color: internalConnectionColor,
+                    depth: -1, // Internal connections have depth -1
+                    template_name: null,
+                    source_info: `Host ${hostIndex} T${tray_a}P${port_a}`,
+                    destination_info: `Host ${hostIndex} T${tray_b}P${port_b}`,
+                    source_hostname: `host_${hostIndex}`,
+                    destination_hostname: `host_${hostIndex}`,
+                    is_internal: true
+                },
+                classes: 'connection internal-connection'
+            };
+            
+            this.state.cy.add(newEdge);
+        });
+        
+        // Update visuals after creating connections
+        this.updatePortConnectionStatus();
+        setTimeout(() => {
+            this.forceApplyCurveStyles();
+        }, 50);
     }
 
     /**
