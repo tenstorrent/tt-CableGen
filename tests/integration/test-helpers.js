@@ -62,41 +62,62 @@ export function callPythonImport(filePath) {
 
     const pythonScript = `import sys
 import json
+import warnings
+import io
 sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
 
-from import_cabling import NetworkCablingCytoscapeVisualizer
+# Suppress warnings to prevent them from interfering with JSON output
+warnings.filterwarnings('ignore')
 
-visualizer = NetworkCablingCytoscapeVisualizer()
-file_path = r'${absPath.replace(/\\/g, '/')}'
+# Redirect both stdout and stderr to capture all output, then only output JSON
+stdout_backup = sys.stdout
+stderr_backup = sys.stderr
+stdout_capture = io.StringIO()
+stderr_capture = io.StringIO()
 
-if file_path.endswith('.textproto'):
-    visualizer.file_format = 'descriptor'
-    if not visualizer.parse_cabling_descriptor(file_path):
-        sys.exit(1)
+try:
+    sys.stdout = stdout_capture
+    sys.stderr = stderr_capture
     
-    if visualizer.graph_hierarchy:
-        node_types = set(node.get('node_type') for node in visualizer.graph_hierarchy if node.get('node_type'))
-        if node_types:
-            first_node_type = list(node_types)[0]
-            visualizer.shelf_unit_type = visualizer._node_descriptor_to_shelf_type(first_node_type)
-            visualizer.current_config = visualizer._node_descriptor_to_config(first_node_type)
-        else:
-            visualizer.shelf_unit_type = 'wh_galaxy'
-            visualizer.current_config = visualizer.shelf_unit_configs['wh_galaxy']
+    from import_cabling import NetworkCablingCytoscapeVisualizer
+
+    visualizer = NetworkCablingCytoscapeVisualizer()
+    file_path = r'${absPath.replace(/\\/g, '/')}'
+
+    if file_path.endswith('.textproto'):
+        visualizer.file_format = 'descriptor'
+        if not visualizer.parse_cabling_descriptor(file_path):
+            sys.exit(1)
         
-        visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
-        connection_count = len(visualizer.descriptor_connections) if visualizer.descriptor_connections else 0
+        if visualizer.graph_hierarchy:
+            node_types = set(node.get('node_type') for node in visualizer.graph_hierarchy if node.get('node_type'))
+            if node_types:
+                first_node_type = list(node_types)[0]
+                visualizer.shelf_unit_type = visualizer._node_descriptor_to_shelf_type(first_node_type)
+                visualizer.current_config = visualizer._node_descriptor_to_config(first_node_type)
+            else:
+                visualizer.shelf_unit_type = 'wh_galaxy'
+                visualizer.current_config = visualizer.shelf_unit_configs['wh_galaxy']
+            
+            visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
+            connection_count = len(visualizer.descriptor_connections) if visualizer.descriptor_connections else 0
+        else:
+            connection_count = 0
     else:
-        connection_count = 0
-else:
-    connections = visualizer.parse_csv(file_path)
-    if not connections:
-        sys.exit(1)
-    connection_count = len(connections)
+        connections = visualizer.parse_csv(file_path)
+        if not connections:
+            sys.exit(1)
+        connection_count = len(connections)
 
-visualization_data = visualizer.generate_visualization_data()
-visualization_data['metadata']['connection_count'] = connection_count
+    visualization_data = visualizer.generate_visualization_data()
+    visualization_data['metadata']['connection_count'] = connection_count
 
+finally:
+    # Restore stdout and stderr
+    sys.stdout = stdout_backup
+    sys.stderr = stderr_backup
+
+# Only output JSON to stdout (all warnings/prints were captured)
 print(json.dumps(visualization_data))`;
 
     try {
@@ -110,9 +131,82 @@ print(json.dumps(visualization_data))`;
             maxBuffer: 10 * 1024 * 1024
         });
 
-        return JSON.parse(result.trim());
+        // Extract JSON from output (in case there's any leading text)
+        const trimmed = result.trim();
+        
+        // Find the first { or [ which indicates start of JSON
+        const braceIndex = trimmed.indexOf('{');
+        const bracketIndex = trimmed.indexOf('[');
+        const jsonStart = Math.min(
+            braceIndex !== -1 ? braceIndex : Infinity,
+            bracketIndex !== -1 ? bracketIndex : Infinity
+        );
+        
+        if (jsonStart === Infinity) {
+            // Show more context in error message
+            const preview = trimmed.length > 500 ? trimmed.substring(0, 500) + '...' : trimmed;
+            throw new Error(`No JSON found in Python output. First 500 chars: ${preview}`);
+        }
+        
+        // Log what we're skipping for debugging
+        if (jsonStart > 0) {
+            const skipped = trimmed.substring(0, jsonStart);
+            console.warn(`Skipping ${jsonStart} characters before JSON: "${skipped}"`);
+        }
+        
+        const jsonStr = trimmed.substring(jsonStart);
+        
+        // Try to find the end of JSON (last } or ])
+        let jsonEnd = jsonStr.length;
+        let braceCount = 0;
+        let bracketCount = 0;
+        let inString = false;
+        let escapeNext = false;
+        
+        for (let i = 0; i < jsonStr.length; i++) {
+            const char = jsonStr[i];
+            
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (char === '"') {
+                inString = !inString;
+                continue;
+            }
+            
+            if (!inString) {
+                if (char === '{') braceCount++;
+                if (char === '}') braceCount--;
+                if (char === '[') bracketCount++;
+                if (char === ']') bracketCount--;
+                
+                if (braceCount === 0 && bracketCount === 0 && (char === '}' || char === ']')) {
+                    jsonEnd = i + 1;
+                    break;
+                }
+            }
+        }
+        
+        const finalJsonStr = jsonStr.substring(0, jsonEnd);
+        
+        try {
+            return JSON.parse(finalJsonStr);
+        } catch (parseError) {
+            // Show what we tried to parse
+            const preview = finalJsonStr.length > 200 ? finalJsonStr.substring(0, 200) + '...' : finalJsonStr;
+            throw new Error(`JSON parse failed: ${parseError.message}\nAttempted to parse (first 200 chars): ${preview}\nFull output length: ${trimmed.length}, JSON start: ${jsonStart}, JSON end: ${jsonEnd}`);
+        }
     } catch (error) {
-        throw new Error(`Python import failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
+        // Include the actual output in the error
+        const outputPreview = result.length > 500 ? result.substring(0, 500) + '...' : result;
+        throw new Error(`Python import failed: ${error.message}\nOutput preview (first 500 chars): ${outputPreview}\n${error.stdout || ''}\n${error.stderr || ''}`);
     } finally {
         // Clean up temp script
         if (fs.existsSync(tempScript)) {

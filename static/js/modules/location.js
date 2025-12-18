@@ -1385,7 +1385,7 @@ export class LocationModule {
         const hasLocation = hall.length > 0 && aisle.length > 0 && rack > 0 && shelfU > 0;
 
         if (!hasHostname && !hasLocation) {
-            alert('Please enter either a hostname OR all location fields (Hall, Aisle, Rack, Shelf U).');
+            console.warn('Please enter either a hostname OR all location fields (Hall, Aisle, Rack, Shelf U).');
             if (!hostname) hostnameInput.focus();
             return;
         }
@@ -1396,7 +1396,7 @@ export class LocationModule {
         if (hasHostname) {
             const existingNode = this.state.cy.nodes(`[hostname="${hostname}"]`);
             if (existingNode.length > 0) {
-                alert(`A node with hostname "${hostname}" already exists. Please choose a different hostname.`);
+                console.warn(`A node with hostname "${hostname}" already exists. Please choose a different hostname.`);
                 hostnameInput.focus();
                 return;
             }
@@ -1404,15 +1404,16 @@ export class LocationModule {
             // Check for existing node with same location
             const existingNode = this.state.cy.nodes(`[hall="${hall}"][aisle="${aisle}"][rack_num="${rack}"][shelf_u="${shelfU}"]`);
             if (existingNode.length > 0) {
-                alert(`A node already exists at Hall: ${hall}, Aisle: ${aisle}, Rack: ${rack}, Shelf U: ${shelfU}. Please choose a different location.`);
+                console.warn(`A node already exists at Hall: ${hall}, Aisle: ${aisle}, Rack: ${rack}, Shelf U: ${shelfU}. Please choose a different location.`);
                 return;
             }
         }
 
-        // nodeType already normalized earlier
+        // getNodeConfig normalizes internally for config lookup, but we preserve the full nodeType
+        // (including variations like _DEFAULT, _X_TORUS, etc.) for storage in shelf_node_type
         const config = getNodeConfig(nodeType);
         if (!config) {
-            alert(`Unknown node type: ${nodeType}`);
+            console.error(`Unknown node type: ${nodeType}`);
             return;
         }
 
@@ -1544,6 +1545,10 @@ export class LocationModule {
         const addedShelf = this.state.cy.getElementById(shelfId);
         if (addedShelf && addedShelf.length > 0) {
             this.common.arrangeTraysAndPorts(addedShelf);
+            
+            // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
+            // This handles connections like QSFP connections in DEFAULT variants and torus connections
+            this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
         }
 
         // Apply drag restrictions
@@ -1563,10 +1568,10 @@ export class LocationModule {
         rackInput.value = '';
         shelfUInput.value = '';
 
-        // Show success message
+        // Log success message
         const nodeDescription = hasHostname ? `"${hostname}"` : `"${this.buildLabel(hall, aisle, rack, shelfU)}"`;
         const locationInfo = hasHostname && hasLocation ? ` (with location: ${this.buildLabel(hall, aisle, rack, shelfU)})` : '';
-        alert(`Successfully added ${nodeType} node ${nodeDescription}${locationInfo} with ${config.tray_count} trays (host_index=${hostIndex}).`);
+        console.log(`Successfully added ${nodeType} node ${nodeDescription}${locationInfo} with ${config.tray_count} trays (host_index=${hostIndex}).`);
 
         // Update node filter dropdown to include the new node
         window.populateNodeFilterDropdown?.();

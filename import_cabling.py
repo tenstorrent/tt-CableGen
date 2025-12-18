@@ -15,7 +15,7 @@ import argparse
 import sys
 import json
 import random
-from collections import defaultdict
+from collections import defaultdict, Counter
 import os
 
 # Protobuf imports for cabling descriptor support
@@ -136,7 +136,9 @@ class NetworkCablingCytoscapeVisualizer:
         Also maps alternative names to standard names:
         - "blackhole" -> "BH_GALAXY"
         
-        Strips _DEFAULT suffix only (_GLOBAL and _AMERICA are kept as distinct types)
+        Strips variation suffixes:
+        - _DEFAULT suffix (keep _GLOBAL and _AMERICA as distinct types)
+        - _X_TORUS, _Y_TORUS, _XY_TORUS suffixes (torus topology variations)
         
         Returns uppercase format for JavaScript NODE_CONFIGS compatibility
         """
@@ -144,9 +146,17 @@ class NetworkCablingCytoscapeVisualizer:
             return default.upper()
         
         normalized = node_type.strip().lower()
+        original_normalized = normalized
         
-        # Strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
-        if normalized.endswith('_default'):
+        # Strip variation suffixes (order matters: check longer suffixes first)
+        # _XY_TORUS must be checked before _X_TORUS and _Y_TORUS
+        if normalized.endswith('_xy_torus'):
+            normalized = normalized[:-9]  # len('_xy_torus') = 9
+        elif normalized.endswith('_x_torus'):
+            normalized = normalized[:-8]  # len('_x_torus') = 8
+        elif normalized.endswith('_y_torus'):
+            normalized = normalized[:-8]  # len('_y_torus') = 8
+        elif normalized.endswith('_default'):
             normalized = normalized[:-8]  # len('_default') = 8
         
         # Map alternative names to standard names (lowercase input -> uppercase output)
@@ -157,12 +167,21 @@ class NetworkCablingCytoscapeVisualizer:
             "n300_lb": "N300_LB",
             "n300_qb": "N300_QB",
             "p150_lb": "P150_LB",
+            "p150_qb_ae": "P150_QB_AE",  # Add P150_QB_AE mapping
             "p150_qb_global": "P150_QB_GLOBAL",
             "p150_qb_america": "P150_QB_AMERICA",
+            "p300_qb_ge": "P300_QB_GE",  # Add P300_QB_GE mapping
         }
         
         # Return mapped value or convert to uppercase
-        return type_mappings.get(normalized, normalized.upper())
+        result = type_mappings.get(normalized, normalized.upper())
+        # #region agent log
+        if "p150" in original_normalized.lower() or "p150" in str(node_type).lower():
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"import_cabling.py:176","message":"normalize_node_type P150_LB processing","data":{"input":node_type,"normalized_lower":normalized,"in_mapping":normalized in type_mappings,"result":result},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
+        return result
 
     @staticmethod
     def create_connection_object(source_data, dest_data, cable_length="Unknown", cable_type="400G_AEC"):
@@ -904,7 +923,136 @@ class NetworkCablingCytoscapeVisualizer:
             Returns:
                 host_id if found, None otherwise
             """
-            return self._path_to_host_id_map.get(tuple(path))
+            # Try exact match first
+            host_id = self._path_to_host_id_map.get(tuple(path))
+            if host_id is not None:
+                return host_id
+            
+            # If exact match fails and path has instance-specific names (e.g., "2x_1"),
+            # try to find a matching path by template name
+            # This handles cases where template definitions use instance-specific names
+            # but instances might use different names or be incomplete
+            if len(path) > 0:
+                # Try to resolve by matching template names instead of instance names
+                host_id = self._resolve_path_by_template(path)
+                if host_id is not None:
+                    return host_id
+            
+            return None
+        
+        def _resolve_path_by_template(self, path):
+            """Try to resolve a path by matching template names instead of exact child names
+            
+            This is a fallback for when paths use instance-specific names (e.g., "2x_1")
+            but the instance mappings use different names (e.g., "2x_0") or template-relative names.
+            
+            Args:
+                path: List of strings representing path from root
+                
+            Returns:
+                host_id if found, None otherwise
+            """
+            if not path or not self.parent.cluster_descriptor:
+                return None
+            
+            # Start from root instance
+            instance = self.parent.cluster_descriptor.root_instance
+            current_path = []
+            
+            for i, path_element in enumerate(path):
+                # Check if this is the last element (leaf node)
+                is_last = (i == len(path) - 1)
+                
+                # Get template for current instance
+                template_name = instance.template_name
+                if template_name not in self.parent.cluster_descriptor.graph_templates:
+                    return None
+                
+                template = self.parent.cluster_descriptor.graph_templates[template_name]
+                
+                # Try to find a child in template that matches this path element
+                # First try exact match
+                child_found = None
+                for child_def in template.children:
+                    if child_def.name == path_element:
+                        child_found = child_def
+                        break
+                
+                # If exact match not found, try to find by template name
+                # (for graph children, extract template name from instance-specific name)
+                if not child_found and not is_last:
+                    # Try to extract base template name (e.g., "2x_1" -> "2x")
+                    import re
+                    base_match = re.match(r'^(.+?)_\d+$', path_element)
+                    base_name = base_match.group(1) if base_match else path_element
+                    
+                    # Find child that references this template
+                    for child_def in template.children:
+                        if child_def.HasField('graph_ref'):
+                            if child_def.graph_ref.graph_template == base_name:
+                                child_found = child_def
+                                break
+                
+                if not child_found:
+                    return None
+                
+                # Get child_mapping - try exact match first, then try any matching template
+                child_mapping = None
+                if path_element in instance.child_mappings:
+                    child_mapping = instance.child_mappings[path_element]
+                else:
+                    # Try to find child_mapping by matching template
+                    # For graph children, match by template name
+                    # For node children, match by child name (exact match only)
+                    if is_last:
+                        # Last element is a leaf node - try to find by child name match
+                        # Extract base name if it's instance-specific (e.g., "node_0" -> "node_0")
+                        for child_name, mapping in instance.child_mappings.items():
+                            if mapping.HasField('host_id'):
+                                # Check if child_name matches (exact or base name)
+                                if child_name == path_element:
+                                    child_mapping = mapping
+                                    break
+                                # Try base name match (remove _<number> suffix)
+                                import re
+                                base_match = re.match(r'^(.+?)_\d+$', path_element)
+                                if base_match:
+                                    base_name = base_match.group(1)
+                                    child_base_match = re.match(r'^(.+?)_\d+$', child_name)
+                                    if child_base_match and child_base_match.group(1) == base_name:
+                                        child_mapping = mapping
+                                        break
+                    else:
+                        # Not last element - should be a graph instance
+                        # Find by matching template name
+                        expected_template = None
+                        if child_found.HasField('graph_ref'):
+                            expected_template = child_found.graph_ref.graph_template
+                        
+                        if expected_template:
+                            for child_name, mapping in instance.child_mappings.items():
+                                if mapping.HasField('sub_instance'):
+                                    if mapping.sub_instance.template_name == expected_template:
+                                        child_mapping = mapping
+                                        break
+                
+                if not child_mapping:
+                    return None
+                
+                if is_last:
+                    # Last element should be a leaf node (host_id)
+                    if child_mapping.HasField('host_id'):
+                        return child_mapping.host_id
+                    return None
+                else:
+                    # Not last element - should be a graph instance
+                    if child_mapping.HasField('sub_instance'):
+                        instance = child_mapping.sub_instance
+                        current_path.append(path_element)
+                    else:
+                        return None
+            
+            return None
         
         def _resolve_recursive(self, instance, template_name, path, hierarchy, depth):
             """Recursively resolve a Graph Instance"""
@@ -1324,20 +1472,30 @@ class NetworkCablingCytoscapeVisualizer:
         node_type_lower = node_descriptor_name.lower()
         
         # Map descriptor names to existing configs
+        # This maps all NodeDescriptor variations to their base shelf unit type
         descriptor_to_config_map = {
+            # WH Galaxy variations
             'wh_galaxy': 'wh_galaxy',
             'wh_galaxy_x_torus': 'wh_galaxy',
             'wh_galaxy_y_torus': 'wh_galaxy',
             'wh_galaxy_xy_torus': 'wh_galaxy',
+            # N300 LB variations
             'n300_lb': 'n300_lb',
             'n300_lb_default': 'n300_lb',
+            # N300 QB variations
             'n300_qb': 'n300_qb',
             'n300_qb_default': 'n300_qb',
+            # P150 LB
+            'p150_lb': 'p150_lb',
+            # P150 QB AE variations
             'p150_qb_ae': 'p150_qb',
             'p150_qb_ae_default': 'p150_qb',
+            # P150 QB other variations (kept as distinct types)
             'p150_qb_global': 'p150_qb_global',
             'p150_qb_america': 'p150_qb_america',
-            'p300_qb_ge': 'p150_qb',  # Similar to P150
+            # P300 QB GE (similar to P150)
+            'p300_qb_ge': 'p150_qb',
+            # BH Galaxy variations
             'bh_galaxy': 'bh_galaxy',
             'bh_galaxy_x_torus': 'bh_galaxy',
             'bh_galaxy_y_torus': 'bh_galaxy',
@@ -1547,6 +1705,12 @@ class NetworkCablingCytoscapeVisualizer:
                         field_positions["node_type"] = []
                     field_positions["node_type"].append(i)
             
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"import_cabling.py:1570","message":"CSV header detection - field_positions for node_type","data":{"node_type_positions":field_positions.get("node_type",[]),"all_field_positions":{k:len(v) for k,v in field_positions.items()},"headers":headers},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            
             # Determine if we have source/destination pairs or single connection
             # Check if we have duplicate field names (indicating source/destination structure)
             has_source_dest = any(len(positions) > 1 for positions in field_positions.values())
@@ -1587,10 +1751,33 @@ class NetworkCablingCytoscapeVisualizer:
                 
                 for field_name, positions in field_positions.items():
                     # Special handling for node_type fields
-                    if field_name == "node_type" and len(positions) == 2:
-                        # For node_type, use the first position for source and second for destination
-                        source_fields[field_name] = positions[0]
-                        dest_fields[field_name] = positions[1]
+                    if field_name == "node_type":
+                        if len(positions) == 2:
+                            # For node_type, use the first position for source and second for destination
+                            source_fields[field_name] = positions[0]
+                            dest_fields[field_name] = positions[1]
+                        elif len(positions) == 1:
+                            # Single node_type column - use it for both source and destination
+                            # This handles cases like "Source Device" or "Dest Device" where
+                            # the node type applies to both ends of the connection
+                            source_fields[field_name] = positions[0]
+                            dest_fields[field_name] = positions[0]
+                        else:
+                            # Find source position (first occurrence before dest_start_pos)
+                            source_pos = None
+                            dest_pos = None
+                            for pos in positions:
+                                if pos < dest_start_pos and source_pos is None:
+                                    source_pos = pos
+                                elif pos >= dest_start_pos and dest_pos is None:
+                                    dest_pos = pos
+                            
+                            # Always assign source position if it exists
+                            if source_pos is not None:
+                                source_fields[field_name] = source_pos
+                            # Always assign destination position if it exists
+                            if dest_pos is not None:
+                                dest_fields[field_name] = dest_pos
                     else:
                         # Find source position (first occurrence before dest_start_pos)
                         source_pos = None
@@ -1686,9 +1873,13 @@ class NetworkCablingCytoscapeVisualizer:
                 
                 self.connections.append(connection)
                 
-                # Track node types
-                node_types_seen.add(source_data.get("node_type", ""))
-                node_types_seen.add(dest_data.get("node_type", ""))
+                # Track node types (only add non-empty values)
+                source_node_type = source_data.get("node_type")
+                dest_node_type = dest_data.get("node_type")
+                if source_node_type:
+                    node_types_seen.add(source_node_type)
+                if dest_node_type:
+                    node_types_seen.add(dest_node_type)
                 
                 # Track location information based on format
                 if self.file_format == "hierarchical":
@@ -1705,10 +1896,18 @@ class NetworkCablingCytoscapeVisualizer:
                         self.analyze_and_create_dynamic_config(normalized_type, self.connections)
             
             # Set default shelf unit type
-            if not self.shelf_unit_type and node_types_seen:
-                self.shelf_unit_type = list(node_types_seen)[0]
-            elif not self.shelf_unit_type:
-                self.shelf_unit_type = "WH_GALAXY"
+            # Prefer the most common node type from shelf_units if available (for hostname-based format)
+            if not self.shelf_unit_type:
+                if self.shelf_units:
+                    # Use the most common node type from shelf_units
+                    node_type_counts = Counter(self.shelf_units.values())
+                    if node_type_counts:
+                        self.shelf_unit_type = node_type_counts.most_common(1)[0][0]
+                elif node_types_seen:
+                    # Fall back to first node type seen
+                    self.shelf_unit_type = list(node_types_seen)[0]
+                else:
+                    self.shelf_unit_type = "WH_GALAXY"
             
             # Initialize templates
             self.set_shelf_unit_type(self.shelf_unit_type)
@@ -1749,7 +1948,19 @@ class NetworkCablingCytoscapeVisualizer:
             data["label"] = row_values[field_positions["label"]] if field_positions["label"] < len(row_values) else ""
         
         if "node_type" in field_positions:
-            data["node_type"] = self.normalize_node_type(row_values[field_positions["node_type"]]) if field_positions["node_type"] < len(row_values) else "WH_GALAXY"
+            if field_positions["node_type"] < len(row_values):
+                node_type_value = row_values[field_positions["node_type"]].strip() if row_values[field_positions["node_type"]] else ""
+                # Only normalize if the value is non-empty, otherwise leave it unset (will default later if needed)
+                if node_type_value:
+                    normalized = self.normalize_node_type(node_type_value)
+                    data["node_type"] = normalized
+                    # #region agent log
+                    with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                        import json
+                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,C","location":"import_cabling.py:1818","message":"node_type extracted and normalized","data":{"end_type":end_type,"raw_value":node_type_value,"normalized":normalized,"field_pos":field_positions["node_type"]},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                    # #endregion
+                # If empty, don't set node_type - let it default to shelf_unit_type when creating nodes
+            # If field position is out of bounds, don't set node_type
         
         # Generate label if not provided
         if not data.get("label"):
@@ -1808,11 +2019,41 @@ class NetworkCablingCytoscapeVisualizer:
     def _track_hostname_location(self, source_data, dest_data):
         """Track location information for hostname-based format"""
         if "hostname" in source_data and source_data.get("hostname"):
-            node_type = source_data.get("node_type", "WH_GALAXY")
-            self.shelf_units[source_data["hostname"]] = self.normalize_node_type(node_type)
+            # Only set node_type if it's actually present in the CSV data
+            # If not present, it will use shelf_unit_type when creating the shelf
+            node_type = source_data.get("node_type")
+            hostname = source_data["hostname"]
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1875","message":"_track_hostname_location source","data":{"hostname":hostname,"node_type":node_type,"has_node_type":node_type is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            if node_type:
+                normalized = self.normalize_node_type(node_type)
+                self.shelf_units[hostname] = normalized
+                # #region agent log
+                with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1880","message":"_track_hostname_location source stored","data":{"hostname":hostname,"normalized":normalized,"shelf_units_keys":list(self.shelf_units.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                # #endregion
         if "hostname" in dest_data and dest_data.get("hostname"):
-            node_type = dest_data.get("node_type", "WH_GALAXY")
-            self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
+            # Only set node_type if it's actually present in the CSV data
+            # If not present, it will use shelf_unit_type when creating the shelf
+            node_type = dest_data.get("node_type")
+            hostname = dest_data["hostname"]
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1887","message":"_track_hostname_location dest","data":{"hostname":hostname,"node_type":node_type,"has_node_type":node_type is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            if node_type:
+                normalized = self.normalize_node_type(node_type)
+                self.shelf_units[hostname] = normalized
+                # #region agent log
+                with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1892","message":"_track_hostname_location dest stored","data":{"hostname":hostname,"normalized":normalized,"shelf_units_keys":list(self.shelf_units.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
+                # #endregion
 
     def generate_node_id(self, node_type, *args):
         """Generate consistent node IDs for cytoscape elements
@@ -2493,6 +2734,10 @@ class NetworkCablingCytoscapeVisualizer:
             host_id,  # host_id
             child_name  # node_name
         )
+        
+        # Extract and create edges for internal connections from NodeDescriptor
+        # This handles variations like DEFAULT (QSFP connections), X_TORUS, Y_TORUS, XY_TORUS
+        self._create_node_descriptor_internal_connections(shelf_id, node_type, host_id)
     
     def _create_rack_hierarchy(self):
         """Create conditional hierarchy nodes (halls -> aisles -> racks -> shelves -> trays -> ports)
@@ -2702,10 +2947,22 @@ class NetworkCablingCytoscapeVisualizer:
             self.hostname_to_host_index[hostname] = shelf_idx
 
         # Create all nodes using template-based approach (no racks)
+        # #region agent log
+        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+            import json
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D,E","location":"import_cabling.py:2777","message":"_create_shelf_hierarchy start","data":{"shelf_units":dict(self.shelf_units),"shelf_unit_type":self.shelf_unit_type,"hostnames":hostnames,"available_configs":list(self.shelf_unit_configs.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
         for shelf_idx, (hostname, shelf_x, shelf_y) in enumerate(shelf_positions):
             # Get the node type for this specific shelf
             shelf_node_type = self.shelf_units.get(hostname, self.shelf_unit_type)
+            # Ensure node type is normalized before config lookup
+            shelf_node_type = self.normalize_node_type(shelf_node_type)
             shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D,E","location":"import_cabling.py:2783","message":"_create_shelf_hierarchy shelf creation","data":{"hostname":hostname,"shelf_node_type":shelf_node_type,"in_shelf_units":hostname in self.shelf_units,"config_found":shelf_node_type in self.shelf_unit_configs,"config_tray_count":shelf_config.get("tray_count") if shelf_config else None},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
 
             # Create shelf node (no parent)
             shelf_id = self.generate_node_id("shelf", hostname)
@@ -2723,9 +2980,20 @@ class NetworkCablingCytoscapeVisualizer:
                 logical_path=[],  # Empty - no logical topology from CSV
                 is_synthetic_root_child=True  # CSV imports have no logical topology
             )
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                shelf_data = shelf_node.get("data", {})
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2854","message":"shelf node created","data":{"shelf_id":shelf_id,"shelf_node_type_in_data":shelf_data.get("shelf_node_type"),"all_data_keys":list(shelf_data.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
             self.nodes.append(shelf_node)
 
             # Create trays and ports
+            # #region agent log
+            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2857","message":"_create_trays_and_ports call","data":{"shelf_id":shelf_id,"shelf_config_tray_count":shelf_config.get("tray_count"),"shelf_config_port_count":shelf_config.get("port_count"),"shelf_node_type":shelf_node_type},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
             self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname, host_id=shelf_idx)
 
     def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, 
@@ -2743,9 +3011,19 @@ class NetworkCablingCytoscapeVisualizer:
             host_id: Optional host ID (for descriptor format)
             node_name: Optional node name (for descriptor format)
         """
+        # #region agent log
+        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+            import json
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2879","message":"_create_trays_and_ports entry","data":{"shelf_id":shelf_id,"shelf_node_type":shelf_node_type,"shelf_config":shelf_config,"tray_count":shelf_config.get("tray_count"),"port_count":shelf_config.get("port_count")},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
         # Create trays based on this shelf's specific configuration
         tray_count = shelf_config["tray_count"]
         tray_ids = list(range(1, tray_count + 1))  # T1, T2, T3, T4 (or however many)
+        # #region agent log
+        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
+            import json
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2887","message":"_create_trays_and_ports tray creation","data":{"tray_count":tray_count,"tray_ids":tray_ids,"port_count":shelf_config.get("port_count"),"num_trays_created":len(tray_ids)},"timestamp":int(__import__('time').time()*1000)})+'\n')
+        # #endregion
         tray_positions = self.get_child_positions_for_parent("shelf", tray_ids, shelf_x, shelf_y)
 
         for tray_id, tray_x, tray_y in tray_positions:
@@ -2879,7 +3157,10 @@ class NetworkCablingCytoscapeVisualizer:
         # This avoids O(n*m) nested loop lookups
         host_id_to_node_info = {node['host_id']: node for node in self.graph_hierarchy}
         
-        for i, conn in enumerate(self.descriptor_connections, 1):
+        # Start connection counter after any existing edges (e.g., internal connections)
+        connection_counter = len(self.edges) + 1
+        
+        for conn in self.descriptor_connections:
             # Generate port IDs
             src_host_id = conn['port_a']['host_id']
             src_tray = conn['port_a']['tray_id']
@@ -2911,11 +3192,11 @@ class NetworkCablingCytoscapeVisualizer:
             # Create edge data
             edge_data = {
                 "data": {
-                    "id": f"connection_{i}",
+                    "id": f"connection_{connection_counter}",
                     "source": src_port_id,
                     "target": dst_port_id,
                     "cable_type": conn['cable_type'],
-                    "connection_number": i,
+                    "connection_number": connection_counter,
                     "color": color,
                     "depth": depth,
                     "template_name": template_name,  # Template where connection is defined
@@ -2930,6 +3211,265 @@ class NetworkCablingCytoscapeVisualizer:
             }
             
             self.edges.append(edge_data)
+            connection_counter += 1
+
+    def _create_node_descriptor_internal_connections(self, shelf_id, node_type, host_id):
+        """Create edges for internal connections defined in a NodeDescriptor
+        
+        This handles variations like:
+        - DEFAULT: Adds QSFP connections (e.g., N300_LB_DEFAULT, P150_QB_AE_DEFAULT)
+        - X_TORUS, Y_TORUS, XY_TORUS: Adds torus QSFP connections (e.g., WH_GALAXY_X_TORUS)
+        
+        Args:
+            shelf_id: The shelf node ID (e.g., "0", "1", "2")
+            node_type: The node descriptor type (e.g., "N300_LB_DEFAULT", "WH_GALAXY_X_TORUS")
+            host_id: The host ID (numeric)
+        """
+        # Get the NodeDescriptor from cluster_descriptor
+        # NodeDescriptors should be defined in the cluster_descriptor when importing
+        if not self.cluster_descriptor:
+            return
+        
+        # Try exact match first (case-sensitive)
+        node_descriptor = None
+        if node_type in self.cluster_descriptor.node_descriptors:
+            node_descriptor = self.cluster_descriptor.node_descriptors[node_type]
+        else:
+            # Try uppercase version (node_type might be stored in different case)
+            node_type_upper = node_type.upper()
+            if node_type_upper in self.cluster_descriptor.node_descriptors:
+                node_descriptor = self.cluster_descriptor.node_descriptors[node_type_upper]
+            else:
+                # Try lowercase version
+                node_type_lower = node_type.lower()
+                if node_type_lower in self.cluster_descriptor.node_descriptors:
+                    node_descriptor = self.cluster_descriptor.node_descriptors[node_type_lower]
+        
+        if not node_descriptor:
+            # NodeDescriptor not found in cluster_descriptor.node_descriptors map
+            # This can happen if the NodeDescriptor is referenced by name but not explicitly defined
+            # In C++, find_node_descriptor() creates it using the factory function, but we can't do that in Python
+            # However, we can still create internal connections based on known patterns from node.cpp
+            node_type_upper = node_type.upper()
+            internal_connections = self._get_internal_connections_from_node_type(node_type_upper)
+            if internal_connections:
+                # Create edges for the known internal connections
+                self._create_internal_connection_edges(shelf_id, host_id, internal_connections)
+            # Note: If no internal connections found, this is normal - it just means there are no variations
+            # in the backend for this node type. No warning needed.
+            return
+        
+        # Extract internal connections from port_type_connections
+        # These are connections within the same shelf (same host_id for both ports)
+        # Connections are defined as Tray,Port pairs in node.cpp:
+        #   - Example: add_connection(qsfp_connections, 1, 1, 4, 1) 
+        #     means Tray 1 Port 1 connects to Tray 4 Port 1
+        #   - Example: add_connection(qsfp_connections, 1, 3, 2, 3)
+        #     means Tray 1 Port 3 connects to Tray 2 Port 3 (X-torus)
+        connection_counter = len(self.edges) + 1
+        
+        # Color for internal connections (different from inter-node connections)
+        internal_connection_color = "#00AA00"  # Green for internal connections
+        
+        # Iterate through all port types (QSFP_DD, WARP100, WARP400, LINKING_BOARD_1, etc.)
+        for port_type, port_connections in node_descriptor.port_type_connections.items():
+            for conn in port_connections.connections:
+                # Extract Tray,Port pairs from the connection
+                # Both ports are on the same shelf (same host_id)
+                tray_a = conn.port_a.tray_id  # Tray ID for port A (e.g., 1, 2, 3, 4)
+                port_a = conn.port_a.port_id  # Port ID for port A (e.g., 1, 2, 3, 4, 5, 6)
+                tray_b = conn.port_b.tray_id  # Tray ID for port B (e.g., 1, 2, 3, 4)
+                port_b = conn.port_b.port_id  # Port ID for port B (e.g., 1, 2, 3, 4, 5, 6)
+                
+                # Generate port IDs within the same shelf using format: "{host_id}:t{tray}:p{port}"
+                # Example: "0:t1:p1" for host 0, tray 1, port 1
+                port_a_id = self.generate_node_id("port", shelf_id, tray_a, port_a)
+                port_b_id = self.generate_node_id("port", shelf_id, tray_b, port_b)
+                
+                # Create edge data for internal connection
+                edge_data = {
+                    "data": {
+                        "id": f"connection_{connection_counter}",
+                        "source": port_a_id,
+                        "target": port_b_id,
+                        "cable_type": port_type,  # Use the port type as cable type (QSFP_DD, WARP100, etc.)
+                        "connection_number": connection_counter,
+                        "color": internal_connection_color,
+                        "depth": -1,  # Internal connections have depth -1 (within same shelf)
+                        "template_name": None,  # Internal connections are not from templates
+                        "source_info": f"Host {host_id} T{tray_a}P{port_a}",
+                        "destination_info": f"Host {host_id} T{tray_b}P{port_b}",
+                        "source_hostname": f"host_{host_id}",
+                        "destination_hostname": f"host_{host_id}",
+                        "is_internal": True,  # Flag to indicate this is an internal connection
+                    },
+                    "classes": "connection internal-connection",
+                }
+                
+                self.edges.append(edge_data)
+                connection_counter += 1
+
+    def _get_internal_connections_from_node_type(self, node_type):
+        """Get internal connections based on known node type patterns from node.cpp
+        
+        This is a fallback when NodeDescriptor is not in cluster_descriptor.node_descriptors.
+        Returns a list of connection dicts with port_type, tray_a, port_a, tray_b, port_b.
+        """
+        node_type_upper = node_type.upper()
+        connections = []
+        
+        # N300_LB_DEFAULT and N300_QB_DEFAULT: QSFP connections
+        if node_type_upper in ['N300_LB_DEFAULT', 'N300_QB_DEFAULT']:
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+            ])
+        
+        # P150_QB_AE_DEFAULT: QSFP connections
+        elif node_type_upper == 'P150_QB_AE_DEFAULT':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # WH_GALAXY_X_TORUS: X-torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_X_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+        
+        # WH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_Y_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # WH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        elif node_type_upper == 'WH_GALAXY_XY_TORUS':
+            # X-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+            # Y-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # BH_GALAXY_X_TORUS: X-torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_X_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 3, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 3, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+        
+        # BH_GALAXY_Y_TORUS: Y-torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_Y_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        # BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
+        elif node_type_upper == 'BH_GALAXY_XY_TORUS':
+            # X-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 3, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 3, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+            # Y-torus connections
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        
+        return connections
+
+    def _create_internal_connection_edges(self, shelf_id, host_id, internal_connections):
+        """Create edge data for internal connections from a list of connection definitions
+        
+        Args:
+            shelf_id: The shelf node ID (e.g., "0", "1", "2")
+            host_id: The host ID (numeric)
+            internal_connections: List of connection dicts with port_type, tray_a, port_a, tray_b, port_b
+        """
+        connection_counter = len(self.edges) + 1
+        internal_connection_color = "#00AA00"  # Green for internal connections
+        
+        for conn_def in internal_connections:
+            port_type = conn_def['port_type']
+            tray_a = conn_def['tray_a']
+            port_a = conn_def['port_a']
+            tray_b = conn_def['tray_b']
+            port_b = conn_def['port_b']
+            
+            # Generate port IDs within the same shelf
+            port_a_id = self.generate_node_id("port", shelf_id, tray_a, port_a)
+            port_b_id = self.generate_node_id("port", shelf_id, tray_b, port_b)
+            
+            # Create edge data for internal connection
+            edge_data = {
+                "data": {
+                    "id": f"connection_{connection_counter}",
+                    "source": port_a_id,
+                    "target": port_b_id,
+                    "cable_type": port_type,
+                    "connection_number": connection_counter,
+                    "color": internal_connection_color,
+                    "depth": -1,  # Internal connections have depth -1 (within same shelf)
+                    "template_name": None,
+                    "source_info": f"Host {host_id} T{tray_a}P{port_a}",
+                    "destination_info": f"Host {host_id} T{tray_b}P{port_b}",
+                    "source_hostname": f"host_{host_id}",
+                    "destination_hostname": f"host_{host_id}",
+                    "is_internal": True,
+                },
+                "classes": "connection internal-connection",
+            }
+            
+            self.edges.append(edge_data)
+            connection_counter += 1
 
     def _generate_port_ids(self, connection):
         """Generate source and destination port IDs based on CSV format

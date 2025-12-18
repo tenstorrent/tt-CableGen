@@ -119,6 +119,11 @@ export class ExpandCollapseModule {
 
         // Only recalculate edges affected by this collapse (not all edges)
         this.recalculateAffectedEdgeRouting(connectedEdges, collapsedNodeIds);
+
+        // Reapply filters to maintain filter state in hierarchy mode
+        if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
+            window.applyNodeFilter();
+        }
     }
 
     /**
@@ -179,6 +184,11 @@ export class ExpandCollapseModule {
         } else {
             // Fallback: recalculate all if we don't have the affected edges cached
             this.recalculateAllEdgeRouting();
+        }
+
+        // Reapply filters to maintain filter state in hierarchy mode
+        if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
+            window.applyNodeFilter();
         }
     }
 
@@ -801,6 +811,11 @@ export class ExpandCollapseModule {
         // Recalculate all affected edges with the complete collapsed set
         // Convert Set to Array for the recalculation function
         this.recalculateAffectedEdgeRouting(Array.from(allAffectedEdges), collapsedNodeIds);
+
+        // Reapply filters to maintain filter state in hierarchy mode
+        if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
+            window.applyNodeFilter();
+        }
     }
 
     /**
@@ -883,6 +898,11 @@ export class ExpandCollapseModule {
         } else {
             // Fallback: full recalculation if we couldn't determine affected edges
             this.recalculateAllEdgeRouting();
+        }
+
+        // Reapply filters to maintain filter state in hierarchy mode
+        if (window.applyNodeFilter && typeof window.applyNodeFilter === 'function') {
+            window.applyNodeFilter();
         }
     }
 }

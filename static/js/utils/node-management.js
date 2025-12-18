@@ -28,7 +28,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             selectedEdges = state.editing.selectedConnection;
         }
         else {
-            alert('Please select one or more nodes or connections first.\nUse Shift+Click or Ctrl+Click to select multiple items.');
+            console.warn('Please select one or more nodes or connections first.\nUse Shift+Click or Ctrl+Click to select multiple items.');
             return;
         }
     }
@@ -49,7 +49,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         
         // Check if edge still exists and is valid
         if (!edge || !edge.cy() || edge.removed()) {
-            alert('Selected connection is no longer valid.');
+            console.warn('Selected connection is no longer valid.');
             if (state.editing.selectedConnection) {
                 state.editing.selectedConnection = null;
             }
@@ -104,7 +104,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
 
         // Check if node type is deletable
         if (!['shelf', 'rack', 'graph'].includes(nodeType)) {
-            alert('Only shelf, rack, and graph nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
+            console.warn('Only shelf, rack, and graph nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
             return;
         }
 
@@ -192,9 +192,8 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         message += '\nThis action cannot be undone.';
     }
 
-    if (!confirm(message)) {
-        return;
-    }
+    // Log deletion action instead of showing confirmation dialog
+    console.log('Deleting:', message);
 
     const visualizationMode = state.mode;
 

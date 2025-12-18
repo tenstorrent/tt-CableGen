@@ -100,6 +100,11 @@ export class UIDisplayModule {
 
         // Update Add Node button state after mode indicator update
         this.updateAddNodeButtonState();
+        
+        // Update variation options based on current mode and selected node type
+        if (window.updateNodeVariationOptions && typeof window.updateNodeVariationOptions === 'function') {
+            window.updateNodeVariationOptions();
+        }
     }
 
     /**
@@ -138,8 +143,18 @@ export class UIDisplayModule {
             }
 
             // Also add templates from edges in case some aren't in state.data.availableGraphTemplates
-            const edges = data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target));
-            edges.forEach(e => {
+            // Check both initial data and current Cytoscape edges for dynamic updates
+            const dataEdges = data.elements ? data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target)) : [];
+            const cytoscapeEdges = this.state.cy ? this.state.cy.edges() : [];
+            
+            // Combine both sources for comprehensive coverage
+            const allEdges = [...dataEdges];
+            cytoscapeEdges.forEach(edge => {
+                const edgeData = edge.data();
+                allEdges.push({ data: edgeData });
+            });
+
+            allEdges.forEach(e => {
                 if (e.data && e.data.template_name) {
                     templateNames.add(e.data.template_name);
                 }
@@ -147,24 +162,52 @@ export class UIDisplayModule {
 
             console.log(`Total templates for legend: ${templateNames.size}`);
 
-            // Generate legend items for each template
-            const sortedTemplates = Array.from(templateNames).sort();
+            // Generate legend HTML
             let legendHTML = '';
 
-            if (sortedTemplates.length === 0) {
-                legendHTML = '<div style="font-size: 13px; color: #666;">No templates defined</div>';
-            } else {
+            // Check if there are any internal connections (Node Connections)
+            const hasInternalConnections = allEdges.some(e => e.data && e.data.is_internal === true);
+            
+            // Section 1: Templates (if any exist)
+            if (templateNames.size > 0 || hasInternalConnections) {
+                legendHTML += '<div style="margin-bottom: 12px;">';
+                legendHTML += '<div style="font-size: 12px; font-weight: bold; color: #555; margin-bottom: 6px;">Templates:</div>';
+                
+                // Add "Node Connections" entry for internal connections
+                if (hasInternalConnections) {
+                    const nodeConnectionsColor = "#00AA00"; // Green color for internal connections
+                    legendHTML += `
+                        <div class="legend-row" data-template="__NODE_CONNECTIONS__" data-color="${nodeConnectionsColor}" 
+                             style="display: flex; align-items: center; margin: 4px 0; padding: 4px; border-radius: 4px;">
+                            <div style="width: 20px; height: 3px; background-color: ${nodeConnectionsColor}; margin-right: 10px; border-radius: 2px;"></div>
+                            <span style="font-size: 13px; color: #333;">Node Connections</span>
+                        </div>
+                    `;
+                }
+                
+                const sortedTemplates = Array.from(templateNames).sort();
                 sortedTemplates.forEach(templateName => {
                     // Get the color for this template using the same function used for connections
                     const color = this.getTemplateColor(templateName);
                     legendHTML += `
                         <div class="legend-row" data-template="${templateName}" data-color="${color}" 
-                             style="display: flex; align-items: center; margin: 6px 0; padding: 4px; border-radius: 4px;">
+                             style="display: flex; align-items: center; margin: 4px 0; padding: 4px; border-radius: 4px;">
                             <div style="width: 20px; height: 3px; background-color: ${color}; margin-right: 10px; border-radius: 2px;"></div>
                             <span style="font-size: 13px; color: #333;">${templateName}</span>
                         </div>
                     `;
                 });
+                legendHTML += '</div>';
+
+                // Add note about template filter
+                const templateFilterSelect = document.getElementById('templateFilterSelect');
+                if (templateFilterSelect && templateFilterSelect.options.length > 1) {
+                    legendHTML += '<div style="font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 12px; font-style: italic;">';
+                    legendHTML += '💡 Use "Filter by Template" dropdown to show connections for a specific template';
+                    legendHTML += '</div>';
+                }
+            } else {
+                legendHTML += '<div style="font-size: 13px; color: #666; margin-bottom: 12px;">No templates defined</div>';
             }
 
             descriptorLegend.innerHTML = legendHTML;
@@ -1002,6 +1045,16 @@ export class UIDisplayModule {
                 console.log('Clearing existing elements and adding new ones');
                 this.state.cy.elements().remove();
                 this.state.cy.add(data.elements);
+                
+                // #region agent log
+                const shelves = this.state.cy.nodes('[type="shelf"]');
+                shelves.forEach(shelf => {
+                    const nodeType = shelf.data('shelf_node_type');
+                    if (nodeType && nodeType.includes('P150')) {
+                        fetch('http://localhost:7242/ingest/2a8b0834-f05b-4e6c-a5f2-95d9e5fa046b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui-display.js:1048',message:'initVisualization imported shelf P150_LB',data:{shelfId:shelf.id(),shelfNodeType:nodeType,numTrays:shelf.children('[type="tray"]').length,numPorts:shelf.children('[type="port"]').length},timestamp:Date.now(),sessionId:'debug-session'})}).catch(()=>{});
+                    }
+                });
+                // #endregion
 
                 // Apply drag restrictions
                 this.commonModule.applyDragRestrictions();
@@ -1235,7 +1288,14 @@ export class UIDisplayModule {
                 // Empty canvas - this is expected, no error needed
                 return;
             }
-            // No racks but nodes exist - this might be 8-column format with standalone shelves
+            // No racks but nodes exist - check if this is expected (8-column/hostname-based format)
+            const fileFormat = this.state.data.currentData?.metadata?.file_format;
+            if (fileFormat === 'hostname_based') {
+                // This is expected for 8-column format - no racks, just standalone shelves
+                // Silently return without showing alert
+                return;
+            }
+            // For other formats, racks are expected - show warning
             alert('No rack hierarchy found.');
             return;
         }

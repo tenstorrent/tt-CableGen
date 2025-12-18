@@ -1102,14 +1102,57 @@
                                 Type:</label>
                             <select id="nodeTypeSelect"
                                 style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
-                                <option value="N300_LB">N300_LB (4 trays, 2 ports each)</option>
-                                <option value="N300_QB">N300_QB (4 trays, 2 ports each)</option>
-                                <option value="WH_GALAXY">WH_GALAXY (4 trays, 6 ports each)</option>
-                                <option value="BH_GALAXY">BH_GALAXY (4 trays, 14 ports each)</option>
-                                <option value="P150_QB_GLOBAL">P150_QB_GLOBAL (4 trays, 4 ports each)</option>
-                                <option value="P150_QB_AMERICA">P150_QB_AMERICA (4 trays, 4 ports each)</option>
-                                <option value="P150_LB">P150_LB (8 trays, 4 ports each)</option>
+                                <optgroup label="N300 LB">
+                                    <option value="N300_LB">N300_LB (4 trays, 2 ports each)</option>
+                                </optgroup>
+                                <optgroup label="N300 QB">
+                                    <option value="N300_QB">N300_QB (4 trays, 2 ports each)</option>
+                                </optgroup>
+                                <optgroup label="Wormhole Galaxy">
+                                    <option value="WH_GALAXY">WH_GALAXY (4 trays, 6 ports each)</option>
+                                </optgroup>
+                                <optgroup label="Blackhole Galaxy">
+                                    <option value="BH_GALAXY">BH_GALAXY (4 trays, 14 ports each)</option>
+                                </optgroup>
+                                <optgroup label="P150 QB">
+                                    <option value="P150_QB_GLOBAL">P150_QB_GLOBAL (4 trays, 4 ports each)</option>
+                                    <option value="P150_QB_AMERICA">P150_QB_AMERICA (4 trays, 4 ports each)</option>
+                                    <option value="P150_QB_AE">P150_QB_AE (4 trays, 4 ports each)</option>
+                                </optgroup>
+                                <optgroup label="P150 LB">
+                                    <option value="P150_LB">P150_LB (8 trays, 4 ports each)</option>
+                                </optgroup>
+                                <optgroup label="P300 QB">
+                                    <option value="P300_QB_GE">P300_QB_GE (2 trays, WARP400)</option>
+                                </optgroup>
                             </select>
+                        </div>
+
+                        <!-- Variation radio buttons (shown only for node types that support variations) -->
+                        <div id="nodeVariationSection" style="margin-bottom: 10px; display: none;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Variation:</label>
+                            <div id="nodeVariationRadioGroup" style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="" checked style="margin-right: 6px;">
+                                    <span>None (Base)</span>
+                                </label>
+                                <label id="variationDefault" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_DEFAULT" style="margin-right: 6px;">
+                                    <span>DEFAULT (with QSFP connections)</span>
+                                </label>
+                                <label id="variationXTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_X_TORUS" style="margin-right: 6px;">
+                                    <span>X_TORUS</span>
+                                </label>
+                                <label id="variationYTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_Y_TORUS" style="margin-right: 6px;">
+                                    <span>Y_TORUS</span>
+                                </label>
+                                <label id="variationXYTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_XY_TORUS" style="margin-right: 6px;">
+                                    <span>XY_TORUS</span>
+                                </label>
+                            </div>
                         </div>
 
                         <!-- Physical location fields (only shown in physical view) -->

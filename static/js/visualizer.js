@@ -329,10 +329,21 @@ function addNewNode() {
     const rackInput = document.getElementById('nodeRackInput');
     const shelfUInput = document.getElementById('nodeShelfUInput');
 
+    // Get base node type
     let nodeType = nodeTypeSelect.value;
-
-    // Normalize node type: strip _DEFAULT suffix only (keep _GLOBAL and _AMERICA as distinct types)
-    nodeType = nodeType.replace(/_DEFAULT$/, '');
+    
+    // Get selected variation from radio buttons
+    const variationRadio = document.querySelector('input[name="nodeVariation"]:checked');
+    const variation = variationRadio ? variationRadio.value : '';
+    
+    // Combine base type with variation
+    if (variation) {
+        nodeType = nodeType + variation;
+    }
+    
+    // Keep the full node type including variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
+    // The node creation functions will handle normalization for config lookup but preserve
+    // the original variation name for storage and internal connection creation
 
     // Check if cytoscape is initialized
     if (!state.cy) {
@@ -356,6 +367,71 @@ function addNewNode() {
             shelfUInput
         });
         return;
+    }
+}
+
+/**
+ * Update the variation radio buttons visibility based on selected node type and current mode
+ */
+function updateNodeVariationOptions() {
+    const nodeTypeSelect = document.getElementById('nodeTypeSelect');
+    const variationSection = document.getElementById('nodeVariationSection');
+    const variationDefault = document.getElementById('variationDefault');
+    const variationXTorus = document.getElementById('variationXTorus');
+    const variationYTorus = document.getElementById('variationYTorus');
+    const variationXYTorus = document.getElementById('variationXYTorus');
+    
+    if (!nodeTypeSelect || !variationSection) {
+        return;
+    }
+    
+    // Only show variations in hierarchy mode
+    const isHierarchyMode = state && state.mode === 'hierarchy';
+    if (!isHierarchyMode) {
+        variationSection.style.display = 'none';
+        return;
+    }
+    
+    const selectedType = nodeTypeSelect.value;
+    
+    // Node types that support DEFAULT variation
+    const supportsDefault = ['N300_LB', 'N300_QB', 'P150_QB_AE'];
+    // Node types that support torus variations
+    const supportsTorus = ['WH_GALAXY', 'BH_GALAXY'];
+    
+    // Check if selected type supports any variations
+    const hasVariations = supportsDefault.includes(selectedType) || supportsTorus.includes(selectedType);
+    
+    // Show/hide variation section based on whether type supports variations
+    variationSection.style.display = hasVariations ? 'block' : 'none';
+    
+    // Reset to "None" when section is hidden or type doesn't support variations
+    if (!hasVariations) {
+        const noneRadio = document.querySelector('input[name="nodeVariation"][value=""]');
+        if (noneRadio) {
+            noneRadio.checked = true;
+        }
+        return;
+    }
+    
+    // Show/hide specific variation options based on selected node type
+    if (variationDefault) {
+        variationDefault.style.display = supportsDefault.includes(selectedType) ? 'flex' : 'none';
+    }
+    if (variationXTorus) {
+        variationXTorus.style.display = supportsTorus.includes(selectedType) ? 'flex' : 'none';
+    }
+    if (variationYTorus) {
+        variationYTorus.style.display = supportsTorus.includes(selectedType) ? 'flex' : 'none';
+    }
+    if (variationXYTorus) {
+        variationXYTorus.style.display = supportsTorus.includes(selectedType) ? 'flex' : 'none';
+    }
+    
+    // Reset to "None" when type changes (to avoid invalid combinations)
+    const noneRadio = document.querySelector('input[name="nodeVariation"][value=""]');
+    if (noneRadio) {
+        noneRadio.checked = true;
     }
 }
 function templateContainsTemplate(parentTemplateName, childTemplateName) {
@@ -610,6 +686,14 @@ function setupEventListeners() {
     attachEventListener('addNodeBtn', 'click', () => addNewNode());
     attachEventListener('addGraphBtn', 'click', () => addNewGraph());
     attachEventListener('createTemplateBtn', 'click', () => createNewTemplate());
+    
+    // Update variation options when node type changes
+    const nodeTypeSelect = document.getElementById('nodeTypeSelect');
+    if (nodeTypeSelect) {
+        nodeTypeSelect.addEventListener('change', updateNodeVariationOptions);
+        // Initialize on load
+        updateNodeVariationOptions();
+    }
 
     // Connection filter reset button
     const resetFiltersBtn = document.getElementById('resetFiltersBtn');
@@ -1081,6 +1165,7 @@ const otherFunctions = {
     switchTab,
     switchLayoutTab,
     hideInitializationShowControls,
+    updateNodeVariationOptions,
 };
 
 // Combine and expose all functions
