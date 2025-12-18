@@ -42,6 +42,12 @@ export class CommonModule {
         // Preserve the full node type (including variations) - getNodeConfig normalizes internally
         const nodeType = shelfNode.data('shelf_node_type') || 'WH_GALAXY';
         const config = getNodeConfig(nodeType);
+        
+        // #region agent log
+        if (nodeType && nodeType.includes('P150')) {
+            fetch('http://localhost:7242/ingest/2a8b0834-f05b-4e6c-a5f2-95d9e5fa046b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'common.js:44',message:'arrangeTraysAndPorts P150_LB',data:{shelfId:shelfNode.id(),nodeType:nodeType,configFound:!!config,configTrayCount:config?.tray_count,configPortCount:config?.ports_per_tray,trayLayout:config?.tray_layout,numTrays:shelfNode.children('[type="tray"]').length},timestamp:Date.now(),sessionId:'debug-session'})}).catch(()=>{});
+        }
+        // #endregion
 
         if (!config) {
             console.warn(`No config found for node type: ${nodeType} (after normalization)`);
@@ -2534,7 +2540,7 @@ export class CommonModule {
                 // control-point-distance controls how far control points are from the straight line
                 // control-point-weight controls the relative position along the edge
                 // Reduced distance for subtler curves on same-shelf connections
-                const controlPointDistance = Math.max(20, controlPointStepSize * 0.8); // Reduced magnitude for subtler curves
+                const controlPointDistance = Math.max(10, controlPointStepSize * 0.4); // Reduced magnitude for subtler curves
                 styleProps = {
                     'curve-style': curveStyle,
                     'control-point-distance': controlPointDistance,  // Distance from straight line (reduced)
@@ -3081,12 +3087,12 @@ export class CommonModule {
         const targetConnections = this.state.cy.edges(`[source="${targetId}"], [target="${targetId}"]`);
 
         if (sourceConnections.length > 0) {
-            alert(`Cannot create connection: Source port "${sourceNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            console.warn(`Cannot create connection: Source port "${sourceNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
             return;
         }
 
         if (targetConnections.length > 0) {
-            alert(`Cannot create connection: Target port "${targetNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            console.warn(`Cannot create connection: Target port "${targetNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
             return;
         }
 
@@ -3123,7 +3129,7 @@ export class CommonModule {
 
             if (placementLevels.length === 0) {
                 // No valid placement levels available
-                alert('Cannot create connection: No valid placement levels available.\n\nAll potential placement levels have conflicts with existing connections.');
+                console.warn('Cannot create connection: No valid placement levels available.\n\nAll potential placement levels have conflicts with existing connections.');
                 return;
             }
 

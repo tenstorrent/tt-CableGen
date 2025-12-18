@@ -1400,11 +1400,41 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
     graph_template = cluster_config_pb2.GraphTemplate()
     
     # Find all direct children of this node
-    children = [el for el in element_map.values() 
-                if el.get("data", {}).get("parent") == node_id]
+    all_children = [el for el in element_map.values() 
+                    if el.get("data", {}).get("parent") == node_id]
     
+    # Deduplicate children to avoid adding the same child multiple times
+    # when there are multiple instances of the same template
+    # A template definition should only list each child once, regardless of instance count
+    # For graph children, deduplicate by (child_name, template_name) tuple
+    # For node children, deduplicate by child_name
+    seen_children = set()
+    children = []
+    for child_el in all_children:
+        child_data = child_el.get("data", {})
+        child_type = child_data.get("type")
+        child_name = child_data.get("child_name", child_data.get("label", child_data.get("id")))
+        
+        # Create a unique key for deduplication
+        if child_type == "shelf":
+            # For node children, use just child_name
+            child_key = ("node", child_name)
+        else:
+            # For graph children, use template_name as the key (not child_name)
+            # This ensures all instances of the same template are treated as the same child
+            # The template name is what we'll use in the template definition anyway
+            child_template_name = child_data.get("template_name", f"template_{child_name}")
+            child_key = ("graph", child_template_name)
+        
+        # Only process each unique child once
+        if child_key not in seen_children:
+            seen_children.add(child_key)
+            children.append(child_el)
+        else:
+            # Skip duplicate - this child was already added from another instance
+            print(f"    Skipping duplicate child '{child_name}' in template '{node_template_name}' (already added from another instance)")
     
-    # Process each child
+    # Process each child (now deduplicated)
     for child_el in children:
         child_data = child_el.get("data", {})
         child_id = child_data.get("id")
@@ -1437,6 +1467,10 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
             # This is a hierarchical container (any compound node that's not rack/tray/port)
             child_template_name = child_data.get("template_name", f"template_{child_label}")
             
+            # For graph children, use the template name as the child name in the template definition
+            # This ensures consistency - the child name matches what we're referencing (the template)
+            # Instance-specific names like "2x_0", "2x_1" should not appear in template definitions
+            child_name_for_template = child_template_name
             
             # Only build this child's template if it hasn't been built yet
             if child_template_name not in built_templates:
@@ -1464,7 +1498,8 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
             
             # Add reference to this template in parent
             child = graph_template.children.add()
-            child.name = child_label
+            # Use the extracted base name (template name) for consistency
+            child.name = child_name_for_template
             child.graph_ref.graph_template = child_template_name
     
     # Build a set of host_ids for THIS instance's children
@@ -1528,14 +1563,14 @@ def build_graph_template_with_reuse(node_el, element_map, connections, cluster_d
         conn = port_connections.connections.add()
         
         # Build path using template-relative child names
-        source_path = get_path_to_host(source_child_name, node_id, element_map)
+        source_path = get_path_to_host(source_child_name, node_id, element_map, cluster_desc)
         for path_elem in source_path:
             conn.port_a.path.append(path_elem)
         conn.port_a.tray_id = connection["source"]["tray_id"]
         conn.port_a.port_id = connection["source"]["port_id"]
         
         # Build path using template-relative child names
-        target_path = get_path_to_host(target_child_name, node_id, element_map)
+        target_path = get_path_to_host(target_child_name, node_id, element_map, cluster_desc)
         for path_elem in target_path:
             conn.port_b.path.append(path_elem)
         conn.port_b.tray_id = connection["target"]["tray_id"]
@@ -1726,14 +1761,14 @@ def build_graph_template_recursive(node_el, element_map, connections, cluster_de
             conn = port_connections.connections.add()
             
             # Build path to source
-            source_path = get_path_to_host(source_hostname, node_id, element_map)
+            source_path = get_path_to_host(source_hostname, node_id, element_map, cluster_desc)
             for path_elem in source_path:
                 conn.port_a.path.append(path_elem)
             conn.port_a.tray_id = connection["source"]["tray_id"]
             conn.port_a.port_id = connection["source"]["port_id"]
             
             # Build path to target
-            target_path = get_path_to_host(target_hostname, node_id, element_map)
+            target_path = get_path_to_host(target_hostname, node_id, element_map, cluster_desc)
             for path_elem in target_path:
                 conn.port_b.path.append(path_elem)
             conn.port_b.tray_id = connection["target"]["tray_id"]
@@ -1776,13 +1811,14 @@ def is_descendant_of_any(node_el, ancestor_ids, element_map):
     return False
 
 
-def get_path_to_host(child_name, scope_node_id, element_map):
+def get_path_to_host(child_name, scope_node_id, element_map, cluster_desc=None):
     """Get the path from scope_node_id down to the host with given child_name
     
     Args:
         child_name: Template child name (e.g., "node1")
         scope_node_id: The scope node ID to build path from
         element_map: Map of element IDs to elements
+        cluster_desc: Optional ClusterDescriptor to look up template-relative child names
     """
     # Find the shelf node with this child_name
     shelf_node = None
@@ -1805,11 +1841,62 @@ def get_path_to_host(child_name, scope_node_id, element_map):
         
         if node_id == scope_node_id:
             break
-            
+        
+        node_type = data.get("type")
+        
         # Add node child_name/label to path (at the beginning)
-        if data.get("type") == "shelf":
+        if node_type == "shelf":
+            # For shelf nodes, use child_name (template-relative)
             path.insert(0, data.get("child_name", data.get("label", node_id)))
+        elif node_type == "graph":
+            # For graph nodes, use template-relative child name from template definition
+            template_name = data.get("template_name")
+            child_name_from_data = data.get("child_name")
+            
+            # If we have cluster_desc, look up the parent template to get the correct child name
+            if cluster_desc and template_name:
+                parent_id = data.get("parent")
+                if parent_id:
+                    parent_el = element_map.get(parent_id)
+                    if parent_el:
+                        parent_template_name = parent_el.get("data", {}).get("template_name")
+                        if parent_template_name and parent_template_name in cluster_desc.graph_templates:
+                            parent_template = cluster_desc.graph_templates[parent_template_name]
+                            # Find the child entry in parent template that matches this graph's template
+                            for child_def in parent_template.children:
+                                if child_def.HasField('graph_ref') and child_def.graph_ref.graph_template == template_name:
+                                    # Use the child name from template definition (template-relative, e.g., "2x")
+                                    path.insert(0, child_def.name)
+                                    break
+                            else:
+                                # Child not found in parent template - use template name as fallback
+                                path.insert(0, template_name)
+                        else:
+                            # Parent template not found - use template name
+                            path.insert(0, template_name)
+                    else:
+                        # Parent element not found - use template name
+                        path.insert(0, template_name)
+                else:
+                    # Root node - use template name
+                    path.insert(0, template_name)
+            else:
+                # No cluster_desc available - try to extract base name from instance-specific name
+                # Remove trailing _<number> pattern (e.g., "2x_1" -> "2x")
+                import re
+                if template_name:
+                    # Prefer template name if available
+                    path.insert(0, template_name)
+                elif child_name_from_data:
+                    base_name_match = re.match(r'^(.+?)_\d+$', child_name_from_data)
+                    if base_name_match:
+                        path.insert(0, base_name_match.group(1))
+                    else:
+                        path.insert(0, child_name_from_data)
+                else:
+                    path.insert(0, data.get("label", node_id))
         else:
+            # For other node types, use label
             path.insert(0, data.get("label", node_id))
         
         # Move up to parent
