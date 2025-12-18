@@ -23,7 +23,7 @@ from import_cabling import NetworkCablingCytoscapeVisualizer
 # Import export functionality
 try:
     # Test if export functionality is available
-    from export_descriptors import export_cabling_descriptor_for_visualizer, export_deployment_descriptor_for_visualizer
+    from export_descriptors import export_cabling_descriptor_for_visualizer, export_deployment_descriptor_for_visualizer, export_flat_cabling_descriptor
 
     EXPORT_AVAILABLE = True
 except ImportError as e:
@@ -496,7 +496,8 @@ def generate_cabling_guide():
     """Generate CablingGuide CSV and/or FSD using the cabling generator
     
     IMPORTANT: The cabling guide generation uses:
-    - CablingDescriptor: Based ONLY on hierarchy/topology information (hostname, node_type, connections)
+    - CablingDescriptor: ALWAYS uses flat export (extracted_topology template) regardless of hierarchy
+      This avoids "multiple root nodes" errors and provides a simpler structure for the cabling generator
     - DeploymentDescriptor: Uses physical location information (hall, aisle, rack, shelf_u) when available
     
     The --simple flag is set based on whether location information exists in the DeploymentDescriptor.
@@ -528,8 +529,9 @@ def generate_cabling_guide():
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
-            # Cabling descriptor: Based ONLY on hierarchy/topology information
-            cabling_content = export_cabling_descriptor_for_visualizer(cytoscape_data)
+            # Cabling descriptor: Always use flat export for cabling guide generation
+            # This avoids "multiple root nodes" errors and provides a simpler structure
+            cabling_content = export_flat_cabling_descriptor(cytoscape_data)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
