@@ -1045,16 +1045,6 @@ export class UIDisplayModule {
                 console.log('Clearing existing elements and adding new ones');
                 this.state.cy.elements().remove();
                 this.state.cy.add(data.elements);
-                
-                // #region agent log
-                const shelves = this.state.cy.nodes('[type="shelf"]');
-                shelves.forEach(shelf => {
-                    const nodeType = shelf.data('shelf_node_type');
-                    if (nodeType && nodeType.includes('P150')) {
-                        fetch('http://localhost:7242/ingest/2a8b0834-f05b-4e6c-a5f2-95d9e5fa046b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui-display.js:1048',message:'initVisualization imported shelf P150_LB',data:{shelfId:shelf.id(),shelfNodeType:nodeType,numTrays:shelf.children('[type="tray"]').length,numPorts:shelf.children('[type="port"]').length},timestamp:Date.now(),sessionId:'debug-session'})}).catch(()=>{});
-                    }
-                });
-                // #endregion
 
                 // Apply drag restrictions
                 this.commonModule.applyDragRestrictions();

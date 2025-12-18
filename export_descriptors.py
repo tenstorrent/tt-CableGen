@@ -273,8 +273,6 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
 
             if not source_info or not target_info:
                 edges_skipped_no_info += 1
-                if edges_processed <= 5:  # Debug first few failures
-                    print(f"[extract_connections] Edge {edges_processed}: source_id={source_id}, target_id={target_id}, source_info={source_info}, target_info={target_info}")
                 continue
 
             # Only process port-to-port connections
@@ -282,8 +280,6 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
             target_type = target_info.get("type")
             if source_type != "port" or target_type != "port":
                 edges_skipped_not_ports += 1
-                if edges_processed <= 5:  # Debug first few failures
-                    print(f"[extract_connections] Edge {edges_processed}: Not port-to-port (source={source_type}, target={target_type})")
                 continue
             
             # Get hostname from node hierarchy (port -> tray -> shelf)
@@ -302,8 +298,6 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
             # Skip if we still don't have hostnames
             if not source_hostname or not target_hostname:
                 edges_skipped_no_hostname += 1
-                if edges_processed <= 5:  # Debug first few failures
-                    print(f"[extract_connections] Edge {edges_processed}: Missing hostname (source={source_hostname}, target={target_hostname})")
                 continue
 
             # Get node_type and host_id from the shelf nodes
@@ -720,15 +714,6 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     # Get connections for building the topology
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
-    
-    print(f"[export_flat_cabling_descriptor] Extracted {len(connections)} connections from cytoscape data")
-    if len(connections) == 0:
-        # Debug: Check what edges exist
-        elements = cytoscape_data.get("elements", [])
-        edges = [el for el in elements if "source" in el.get("data", {})]
-        print(f"[export_flat_cabling_descriptor] Found {len(edges)} edges in cytoscape data")
-        if len(edges) > 0:
-            print(f"[export_flat_cabling_descriptor] Sample edge: {edges[0].get('data', {})}")
 
     # Get the common sorted host list (shared with DeploymentDescriptor)
     sorted_hosts = extract_host_list_from_connections(cytoscape_data)
@@ -764,7 +749,6 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
         
         if not all([source_hostname, target_hostname, source_tray_id is not None, target_tray_id is not None, 
                    source_port_id is not None, target_port_id is not None]):
-            print(f"[export_flat_cabling_descriptor] Skipping incomplete connection: source={source_hostname}, target={target_hostname}, tray_ids=({source_tray_id}, {target_tray_id}), port_ids=({source_port_id}, {target_port_id})")
             continue
         
         conn = port_connections.connections.add()
@@ -780,8 +764,6 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
         conn.port_b.port_id = target_port_id
         
         connections_added += 1
-    
-    print(f"[export_flat_cabling_descriptor] Added {connections_added} connections to template (from {len(connections)} extracted)")
 
     # Add graph template to cluster descriptor
     cluster_desc.graph_templates[template_name].CopyFrom(graph_template)
@@ -948,7 +930,6 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     # This handles CSV imports that were switched to hierarchy mode
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     cytoscape_connections = parser.extract_connections()
-    print(f"[export_from_metadata_templates] Extracted {len(cytoscape_connections)} connections from cytoscape edges")
     
     # Check if any template already has connections in metadata
     has_metadata_connections = any(
@@ -958,8 +939,6 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     
     if not has_metadata_connections and cytoscape_connections:
         # No connections in metadata - match cytoscape connections to templates
-        print(f"[export_from_metadata_templates] No connections in metadata, matching {len(cytoscape_connections)} cytoscape connections to templates")
-        
         # Build a map of template_name -> list of connections for that template
         template_connections_map = {}
         for template_name in graph_templates_meta.keys():
@@ -1006,7 +985,6 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                 if 'connections' not in graph_templates_meta[template_name]:
                     graph_templates_meta[template_name]['connections'] = []
                 graph_templates_meta[template_name]['connections'].extend(conns)
-                print(f"[export_from_metadata_templates] Added {len(conns)} connections to template '{template_name}'")
     
     # Build all graph templates from metadata (excluding empty ones)
     for template_name, template_info in graph_templates_meta.items():
@@ -1026,7 +1004,6 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
         
         # Add connections (with deduplication)
         connections_list = template_info.get('connections', [])
-        print(f"[export_from_metadata_templates] Template '{template_name}': {len(connections_list)} connections in metadata")
         if connections_list:
             port_connections = graph_template.internal_connections["QSFP_DD"]
             seen_connections = set()  # Track seen connections to prevent duplicates
@@ -1092,7 +1069,6 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
             
             if duplicate_count > 0:
                 print(f"    Removed {duplicate_count} duplicate connection(s) from template '{template_name}'")
-            print(f"[export_from_metadata_templates] Template '{template_name}': Added {connections_added_to_protobuf} connections to protobuf (from {len(connections_list)} in metadata)")
         
         # Only add non-empty templates
         if len(graph_template.children) > 0:
