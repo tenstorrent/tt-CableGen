@@ -146,7 +146,6 @@ class NetworkCablingCytoscapeVisualizer:
             return default.upper()
         
         normalized = node_type.strip().lower()
-        original_normalized = normalized
         
         # Strip variation suffixes (order matters: check longer suffixes first)
         # _XY_TORUS must be checked before _X_TORUS and _Y_TORUS
@@ -174,14 +173,7 @@ class NetworkCablingCytoscapeVisualizer:
         }
         
         # Return mapped value or convert to uppercase
-        result = type_mappings.get(normalized, normalized.upper())
-        # #region agent log
-        if "p150" in original_normalized.lower() or "p150" in str(node_type).lower():
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"import_cabling.py:176","message":"normalize_node_type P150_LB processing","data":{"input":node_type,"normalized_lower":normalized,"in_mapping":normalized in type_mappings,"result":result},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        return result
+        return type_mappings.get(normalized, normalized.upper())
 
     @staticmethod
     def create_connection_object(source_data, dest_data, cable_length="Unknown", cable_type="400G_AEC"):
@@ -1705,12 +1697,6 @@ class NetworkCablingCytoscapeVisualizer:
                         field_positions["node_type"] = []
                     field_positions["node_type"].append(i)
             
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"import_cabling.py:1570","message":"CSV header detection - field_positions for node_type","data":{"node_type_positions":field_positions.get("node_type",[]),"all_field_positions":{k:len(v) for k,v in field_positions.items()},"headers":headers},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
-            
             # Determine if we have source/destination pairs or single connection
             # Check if we have duplicate field names (indicating source/destination structure)
             has_source_dest = any(len(positions) > 1 for positions in field_positions.values())
@@ -1952,13 +1938,7 @@ class NetworkCablingCytoscapeVisualizer:
                 node_type_value = row_values[field_positions["node_type"]].strip() if row_values[field_positions["node_type"]] else ""
                 # Only normalize if the value is non-empty, otherwise leave it unset (will default later if needed)
                 if node_type_value:
-                    normalized = self.normalize_node_type(node_type_value)
-                    data["node_type"] = normalized
-                    # #region agent log
-                    with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                        import json
-                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B,C","location":"import_cabling.py:1818","message":"node_type extracted and normalized","data":{"end_type":end_type,"raw_value":node_type_value,"normalized":normalized,"field_pos":field_positions["node_type"]},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                    # #endregion
+                    data["node_type"] = self.normalize_node_type(node_type_value)
                 # If empty, don't set node_type - let it default to shelf_unit_type when creating nodes
             # If field position is out of bounds, don't set node_type
         
@@ -2022,38 +2002,14 @@ class NetworkCablingCytoscapeVisualizer:
             # Only set node_type if it's actually present in the CSV data
             # If not present, it will use shelf_unit_type when creating the shelf
             node_type = source_data.get("node_type")
-            hostname = source_data["hostname"]
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1875","message":"_track_hostname_location source","data":{"hostname":hostname,"node_type":node_type,"has_node_type":node_type is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             if node_type:
-                normalized = self.normalize_node_type(node_type)
-                self.shelf_units[hostname] = normalized
-                # #region agent log
-                with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1880","message":"_track_hostname_location source stored","data":{"hostname":hostname,"normalized":normalized,"shelf_units_keys":list(self.shelf_units.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
+                self.shelf_units[source_data["hostname"]] = self.normalize_node_type(node_type)
         if "hostname" in dest_data and dest_data.get("hostname"):
             # Only set node_type if it's actually present in the CSV data
             # If not present, it will use shelf_unit_type when creating the shelf
             node_type = dest_data.get("node_type")
-            hostname = dest_data["hostname"]
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1887","message":"_track_hostname_location dest","data":{"hostname":hostname,"node_type":node_type,"has_node_type":node_type is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             if node_type:
-                normalized = self.normalize_node_type(node_type)
-                self.shelf_units[hostname] = normalized
-                # #region agent log
-                with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"import_cabling.py:1892","message":"_track_hostname_location dest stored","data":{"hostname":hostname,"normalized":normalized,"shelf_units_keys":list(self.shelf_units.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
+                self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
 
     def generate_node_id(self, node_type, *args):
         """Generate consistent node IDs for cytoscape elements
@@ -2947,22 +2903,12 @@ class NetworkCablingCytoscapeVisualizer:
             self.hostname_to_host_index[hostname] = shelf_idx
 
         # Create all nodes using template-based approach (no racks)
-        # #region agent log
-        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D,E","location":"import_cabling.py:2777","message":"_create_shelf_hierarchy start","data":{"shelf_units":dict(self.shelf_units),"shelf_unit_type":self.shelf_unit_type,"hostnames":hostnames,"available_configs":list(self.shelf_unit_configs.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         for shelf_idx, (hostname, shelf_x, shelf_y) in enumerate(shelf_positions):
             # Get the node type for this specific shelf
             shelf_node_type = self.shelf_units.get(hostname, self.shelf_unit_type)
             # Ensure node type is normalized before config lookup
             shelf_node_type = self.normalize_node_type(shelf_node_type)
             shelf_config = self.shelf_unit_configs.get(shelf_node_type, self.current_config)
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D,E","location":"import_cabling.py:2783","message":"_create_shelf_hierarchy shelf creation","data":{"hostname":hostname,"shelf_node_type":shelf_node_type,"in_shelf_units":hostname in self.shelf_units,"config_found":shelf_node_type in self.shelf_unit_configs,"config_tray_count":shelf_config.get("tray_count") if shelf_config else None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
 
             # Create shelf node (no parent)
             shelf_id = self.generate_node_id("shelf", hostname)
@@ -2980,20 +2926,9 @@ class NetworkCablingCytoscapeVisualizer:
                 logical_path=[],  # Empty - no logical topology from CSV
                 is_synthetic_root_child=True  # CSV imports have no logical topology
             )
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                shelf_data = shelf_node.get("data", {})
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2854","message":"shelf node created","data":{"shelf_id":shelf_id,"shelf_node_type_in_data":shelf_data.get("shelf_node_type"),"all_data_keys":list(shelf_data.keys())},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             self.nodes.append(shelf_node)
 
             # Create trays and ports
-            # #region agent log
-            with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2857","message":"_create_trays_and_ports call","data":{"shelf_id":shelf_id,"shelf_config_tray_count":shelf_config.get("tray_count"),"shelf_config_port_count":shelf_config.get("port_count"),"shelf_node_type":shelf_node_type},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname, host_id=shelf_idx)
 
     def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, 
@@ -3011,19 +2946,9 @@ class NetworkCablingCytoscapeVisualizer:
             host_id: Optional host ID (for descriptor format)
             node_name: Optional node name (for descriptor format)
         """
-        # #region agent log
-        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2879","message":"_create_trays_and_ports entry","data":{"shelf_id":shelf_id,"shelf_node_type":shelf_node_type,"shelf_config":shelf_config,"tray_count":shelf_config.get("tray_count"),"port_count":shelf_config.get("port_count")},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         # Create trays based on this shelf's specific configuration
         tray_count = shelf_config["tray_count"]
         tray_ids = list(range(1, tray_count + 1))  # T1, T2, T3, T4 (or however many)
-        # #region agent log
-        with open('/proj_sw/user_dev/agupta/tt-CableGen/.cursor/debug.log', 'a') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"import_cabling.py:2887","message":"_create_trays_and_ports tray creation","data":{"tray_count":tray_count,"tray_ids":tray_ids,"port_count":shelf_config.get("port_count"),"num_trays_created":len(tray_ids)},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         tray_positions = self.get_child_positions_for_parent("shelf", tray_ids, shelf_x, shelf_y)
 
         for tray_id, tray_x, tray_y in tray_positions:

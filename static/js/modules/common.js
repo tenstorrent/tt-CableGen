@@ -42,12 +42,6 @@ export class CommonModule {
         // Preserve the full node type (including variations) - getNodeConfig normalizes internally
         const nodeType = shelfNode.data('shelf_node_type') || 'WH_GALAXY';
         const config = getNodeConfig(nodeType);
-        
-        // #region agent log
-        if (nodeType && nodeType.includes('P150')) {
-            fetch('http://localhost:7242/ingest/2a8b0834-f05b-4e6c-a5f2-95d9e5fa046b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'common.js:44',message:'arrangeTraysAndPorts P150_LB',data:{shelfId:shelfNode.id(),nodeType:nodeType,configFound:!!config,configTrayCount:config?.tray_count,configPortCount:config?.ports_per_tray,trayLayout:config?.tray_layout,numTrays:shelfNode.children('[type="tray"]').length},timestamp:Date.now(),sessionId:'debug-session'})}).catch(()=>{});
-        }
-        // #endregion
 
         if (!config) {
             console.warn(`No config found for node type: ${nodeType} (after normalization)`);
