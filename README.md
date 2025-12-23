@@ -5,6 +5,12 @@ For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this t
 ![Python](https://img.shields.io/badge/python-3.7+-blue.svg)
 ![Flask](https://img.shields.io/badge/flask-3.0.2-green.svg)
 
+<p align="center">
+  <img src="static/img/8x16-bh.png" alt="8x16 BH-Galaxy Mesh Topology" width="800">
+  <br>
+  <em>Example: 4× BH-Galaxy systems forming an 8×16 mesh with 2D-torus connections</em>
+</p>
+
 ## Quick Start
 
 ### Prerequisites
