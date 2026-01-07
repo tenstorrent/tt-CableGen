@@ -2415,6 +2415,111 @@ export class CommonModule {
     }
 
     /**
+     * Apply curve styles to a specific set of edges
+     * More efficient than forceApplyCurveStyles when only a subset of edges changed
+     * @param {Object} edges - Cytoscape edge collection to style
+     */
+    applyCurveStylesToEdges(edges) {
+        if (!this.state.cy || !edges || edges.length === 0) return;
+
+        // Use fixed control-point-step-size for consistent curve appearance
+        const controlPointStepSize = 40;
+
+        this.state.cy.startBatch();
+
+        edges.forEach((edge) => {
+            const styleProps = this._computeEdgeCurveStyle(edge, controlPointStepSize);
+            edge.style(styleProps);
+        });
+
+        this.state.cy.endBatch();
+        this.state.cy.forceRender();
+    }
+
+    /**
+     * Compute curve style properties for a single edge
+     * @param {Object} edge - Cytoscape edge
+     * @param {number} controlPointStepSize - Base step size for curves
+     * @returns {Object} Style properties to apply
+     */
+    _computeEdgeCurveStyle(edge, controlPointStepSize) {
+        let sourceNode, targetNode;
+        let isSameShelf = false;
+        const isRerouted = edge.data('isRerouted');
+
+        // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
+        if (isRerouted) {
+            sourceNode = edge.source();
+            targetNode = edge.target();
+
+            // Check if original endpoints (ports) are on the same shelf for curve styling
+            const endpoints = this.getOriginalEdgeEndpoints(edge);
+            const originalSourceId = endpoints.sourceNode.id();
+            const originalTargetId = endpoints.targetNode.id();
+            isSameShelf = this.checkSameShelf(originalSourceId, originalTargetId);
+        } else {
+            // Regular edges - get original endpoints (ports)
+            const endpoints = this.getOriginalEdgeEndpoints(edge);
+            sourceNode = endpoints.sourceNode;
+            targetNode = endpoints.targetNode;
+
+            // For regular port-to-port edges, check if they're on the same shelf
+            const sourceId = sourceNode.id();
+            const targetId = targetNode.id();
+            isSameShelf = this.checkSameShelf(sourceId, targetId);
+        }
+
+        // Check if this is a cross-graph connection (between different graph nodes)
+        let isCrossGraph = false;
+
+        if (isRerouted) {
+            const sourceIsGraph = sourceNode.data('type') === 'graph';
+            const targetIsGraph = targetNode.data('type') === 'graph';
+            if (sourceIsGraph && targetIsGraph && sourceNode.id() !== targetNode.id()) {
+                isCrossGraph = true;
+            }
+        } else {
+            // For regular edges, find the graph nodes containing the ports
+            let sourceGraphNode = null;
+            let targetGraphNode = null;
+            let current = sourceNode;
+            while (current && current.length > 0) {
+                if (current.data('type') === 'graph') {
+                    sourceGraphNode = current;
+                    break;
+                }
+                current = current.parent();
+            }
+            current = targetNode;
+            while (current && current.length > 0) {
+                if (current.data('type') === 'graph') {
+                    targetGraphNode = current;
+                    break;
+                }
+                current = current.parent();
+            }
+            if (sourceGraphNode && targetGraphNode && sourceGraphNode.id() !== targetGraphNode.id()) {
+                isCrossGraph = true;
+            }
+        }
+
+        if (isSameShelf) {
+            const controlPointDistance = Math.max(10, controlPointStepSize * 0.4);
+            return {
+                'curve-style': 'unbundled-bezier',
+                'control-point-distance': controlPointDistance,
+                'control-point-weight': 0.5
+            };
+        } else {
+            const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
+            return {
+                'curve-style': 'bezier',
+                'control-point-step-size': stepSize
+            };
+        }
+    }
+
+    /**
      * Force apply curve styles to all edges based on whether they're on the same shelf
      * or have the same template type (for collapsed graph nodes in hierarchy mode)
      * Uses bezier curve style which automatically separates multiple edges between the same nodes
