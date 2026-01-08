@@ -914,20 +914,9 @@
                 <div id="connectionLegend"
                     style="margin-bottom: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                     <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">Connection Types Legend</h4>
-                    <!-- CSV-based legend (default) -->
+                    <!-- CSV-based legend (default) - dynamically generated for location mode -->
                     <div id="csvLegend">
-                        <div style="display: flex; align-items: center; margin: 6px 0;">
-                            <div
-                                style="width: 20px; height: 3px; background-color: #4CAF50; margin-right: 10px; border-radius: 2px;">
-                            </div>
-                            <span style="font-size: 13px; color: #333;">Intra-node connections (same node)</span>
-                        </div>
-                        <div style="display: flex; align-items: center; margin: 6px 0;">
-                            <div
-                                style="width: 20px; height: 3px; background-color: #2196F3; margin-right: 10px; border-radius: 2px;">
-                            </div>
-                            <span style="font-size: 13px; color: #333;">Inter-node connections (different nodes)</span>
-                        </div>
+                        <!-- Legend will be populated dynamically by updateConnectionLegend() -->
                     </div>
                     <!-- Descriptor-based legend (hidden by default) -->
                     <div id="descriptorLegend" style="display: none;">
@@ -991,23 +980,33 @@
                 </div>
                 <div class="collapsible-content collapsed" id="connectionRangeFilter">
                     <div class="range-filter-section">
-                        <div style="margin-bottom: 15px;">
-                            <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types:</div>
+                        <div class="location-mode-only" style="margin-bottom: 15px;">
+                            <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types (Racking Hierarchy - Location Mode Only):</div>
                             <div style="display: flex; flex-direction: column; gap: 8px;">
                                 <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                    <input type="checkbox" id="showIntraNodeConnections" checked
+                                    <input type="checkbox" id="showSameHostIdConnections" checked
                                         style="margin-right: 8px; transform: scale(1.1);">
-                                    <span style="font-size: 14px;">Intra-node connections (same node)</span>
+                                    <span style="font-size: 14px;">Same host connections</span>
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                    <input type="checkbox" id="showIntraRackConnections" checked
+                                    <input type="checkbox" id="showSameRackConnections" checked
                                         style="margin-right: 8px; transform: scale(1.1);">
-                                    <span style="font-size: 14px;">Intra-rack connections (same rack)</span>
+                                    <span style="font-size: 14px;">Same rack connections (different host)</span>
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
-                                    <input type="checkbox" id="showInterRackConnections" checked
+                                    <input type="checkbox" id="showSameAisleConnections" checked
                                         style="margin-right: 8px; transform: scale(1.1);">
-                                    <span style="font-size: 14px;">Inter-rack connections (different racks)</span>
+                                    <span style="font-size: 14px;">Same aisle connections (different rack)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="showSameHallConnections" checked
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Same hall connections (different aisle)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="showDifferentHallConnections" checked
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Different hall connections</span>
                                 </label>
                             </div>
                         </div>
@@ -1022,6 +1021,19 @@
                             </select>
                             <div style="font-size: 11px; color: #666; margin-top: 3px;">
                                 Select a specific node to show only its connections
+                            </div>
+                        </div>
+
+                        <div id="destinationFilterContainer" style="margin-bottom: 15px; display: none;">
+                            <label for="destinationFilterSelect"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Filter by
+                                Destination:</label>
+                            <select id="destinationFilterSelect"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background-color: white; color: #333333;">
+                                <option value="">Show all destinations</option>
+                            </select>
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Select a destination node to filter connections from the selected source node
                             </div>
                         </div>
 
@@ -1507,7 +1519,7 @@
                             style="background: #fff3cd; border-color: #ffc107; padding: 15px; border-radius: 5px; margin-top: 15px;">
                             <strong>⚠️ Important:</strong> The deployment descriptor must match your cabling descriptor
                             by index.<br>
-                            <strong>Example:</strong> If cabling descriptor has host_id=0 for "node_alpha", then
+                            <strong>Example:</strong> If cabling descriptor has host=0 for "node_alpha", then
                             deployment descriptor's hosts[0] should contain "node_alpha" with its physical location.
                         </div>
                     </div>

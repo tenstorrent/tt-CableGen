@@ -103,8 +103,6 @@ export class ExportModule {
             }
             return sanitized;
         } finally {
-            // Note: We don't remove from seen set here because we want to detect
-            // circular references even after returning from nested calls
         }
     }
 
@@ -437,32 +435,22 @@ export class ExportModule {
 
         // No hierarchy structure - this is a CSV import
         // The backend will use flat export which doesn't need complex metadata or graph nodes
-        // Just ensure host_index is set on shelf nodes for proper host_id mapping
+        // host_index is now REQUIRED - all nodes must have it set (via DFS or at creation)
         console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected - CSV import, backend will use flat export');
 
-        // Assign host_index to shelves that don't have one (needed for host_id mapping in flat export)
-        let hostIndexCounter = 0;
-        const enrichedElements = elements.map(el => {
-            if (el.data && el.data.type === 'shelf') {
-                // Ensure host_index is set (required for host_id mapping in export)
-                let hostIndex = el.data.host_index;
-                if (hostIndex === undefined || hostIndex === null) {
-                    hostIndex = hostIndexCounter++;
-                }
-
-                return {
-                    ...el,
-                    data: {
-                        ...el.data,
-                        host_index: hostIndex
-                    }
-                };
-            }
-            return el;
+        // Verify that all shelf nodes have host_index (required, no fallback assignment)
+        const shelvesWithoutHostIndex = shelfNodes.filter(shelf => {
+            const hostIndex = shelf.data.host_index;
+            return hostIndex === undefined || hostIndex === null;
         });
 
-        console.log(`[export.enrichWithImplicitHierarchy] Ensured host_index is set on ${shelfNodes.length} shelf nodes for flat export`);
-        return { elements: enrichedElements, metadata };
+        if (shelvesWithoutHostIndex.length > 0) {
+            console.error(`[export.enrichWithImplicitHierarchy] ERROR: ${shelvesWithoutHostIndex.length} shelf nodes missing required host_index. This should not happen - all shelf nodes must have host_index set at creation or via DFS recalculation.`);
+            // Let the Python export code handle the error with a more detailed message
+        }
+
+        // Return elements as-is (no modification needed - host_index should already be set)
+        return { elements, metadata };
     }
 
     /**

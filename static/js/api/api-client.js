@@ -101,7 +101,6 @@ export class ApiClient {
                         : new URL(redirectUrl, this.baseUrl).href;
                     
                     // If redirecting to OAuth2 provider, redirect the entire browser window
-                    // This is necessary because OAuth2 providers don't allow CORS requests
                     if (absoluteRedirectUrl.includes('login.microsoftonline.com') || 
                         absoluteRedirectUrl.includes('/oauth2/') ||
                         absoluteRedirectUrl.includes('/authorize')) {
