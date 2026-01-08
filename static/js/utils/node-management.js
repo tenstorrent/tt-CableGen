@@ -311,16 +311,17 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             console.log(`Deleted ${nodeCount} node(s)`);
         }
 
-        // Recalculate host_indices after deletion in hierarchy mode
+        // Recalculate host_indices after deletion in both hierarchy and location modes
+        // Use common module for unified DFS traversal from canvas root
+        if (commonModule && commonModule.recalculateHostIndices && typeof commonModule.recalculateHostIndices === 'function') {
+            commonModule.recalculateHostIndices();
+        } else if (window.commonModule && window.commonModule.recalculateHostIndices && typeof window.commonModule.recalculateHostIndices === 'function') {
+            window.commonModule.recalculateHostIndices();
+        }
+        
+        // Rename graph instances in hierarchy mode (location mode doesn't have graph instances)
         if (state.mode === 'hierarchy') {
             const hModule = hierarchyModule || window.hierarchyModule;
-            if (hModule && hModule.recalculateHostIndicesForTemplates && typeof hModule.recalculateHostIndicesForTemplates === 'function') {
-                hModule.recalculateHostIndicesForTemplates();
-            } else if (window.recalculateHostIndicesForTemplates && typeof window.recalculateHostIndicesForTemplates === 'function') {
-                window.recalculateHostIndicesForTemplates();
-            }
-            
-            // Rename graph instances to ensure proper numbering at each level after deletion
             if (hModule && hModule.renameGraphInstances && typeof hModule.renameGraphInstances === 'function') {
                 hModule.renameGraphInstances();
             }

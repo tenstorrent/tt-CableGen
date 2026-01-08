@@ -12,6 +12,94 @@ export class HierarchyModule {
     }
 
     /**
+     * Build template name path (template hierarchy, not instance hierarchy)
+     * Returns template names from the containing template down to the node
+     * For the lowest level template, shows node_ref# instead of template name
+     * @param {Object} node - Cytoscape shelf or graph node
+     * @param {string} containingTemplateName - Template name that contains/defines the connection
+     * @returns {string} Template path or empty string
+     */
+    buildTemplateNamePath(node, containingTemplateName) {
+        if (!containingTemplateName) {
+            return '';
+        }
+
+        // Find the graph node that has the containing template name
+        let containingTemplateNode = null;
+        let current = node;
+
+        // First, traverse up to find the graph node with the containing template
+        while (current && current.length > 0) {
+            const currentData = current.data();
+            
+            if (currentData.type === 'graph' && currentData.template_name === containingTemplateName) {
+                containingTemplateNode = current;
+                break;
+            }
+
+            const parent = current.parent();
+            if (parent && parent.length > 0) {
+                current = parent;
+            } else {
+                break;
+            }
+        }
+
+        // If we didn't find the containing template, return empty
+        if (!containingTemplateNode || !containingTemplateNode.length) {
+            return '';
+        }
+
+        // Now collect template names from the containing template down to the node
+        // Include all templates between the containing template and the node
+        // For the lowest level template (shelf's direct parent), show node_ref# instead of template name
+        const templateNames = [];
+        current = node;
+
+        // Identify the shelf's direct parent (lowest level template) to show node_ref# for it
+        let lowestLevelTemplateId = null;
+        let nodeRef = null;
+        if (current.data('type') === 'shelf') {
+            const shelfParent = current.parent();
+            if (shelfParent && shelfParent.length > 0 && shelfParent.data('type') === 'graph') {
+                lowestLevelTemplateId = shelfParent.id();
+                // Get node_ref# (host_index) from the shelf node
+                nodeRef = current.data('host_index') ?? current.data('host_id');
+                current = shelfParent;
+            }
+        }
+
+        // Traverse up from node until we reach the containing template node
+        // Include all graph nodes with template names
+        while (current && current.length > 0 && current.id() !== containingTemplateNode.id()) {
+            const currentData = current.data();
+
+            // For graph nodes, use template_name
+            if (currentData.type === 'graph') {
+                const templateName = currentData.template_name;
+                if (templateName && templateName !== containingTemplateName) {
+                    // For the lowest level template, show node_ref# instead of template name
+                    if (current.id() === lowestLevelTemplateId && nodeRef !== undefined && nodeRef !== null) {
+                        templateNames.unshift(String(nodeRef));
+                    } else {
+                        templateNames.unshift(templateName);
+                    }
+                }
+            }
+
+            // Move to parent
+            const parent = current.parent();
+            if (parent && parent.length > 0) {
+                current = parent;
+            } else {
+                break;
+            }
+        }
+
+        return templateNames.length > 0 ? templateNames.join(' › ') : '';
+    }
+
+    /**
      * Build instance path with indexing from a node up to root
      * @param {Object} node - Cytoscape node (graph or shelf)
      * @returns {Array<string>} Array of indexed labels like ["[0] root", "[1] parent", "[2] child"]
@@ -1824,6 +1912,12 @@ export class HierarchyModule {
                             this.common.applyDragRestrictions();
                             // Update edge curve styles for hierarchy mode after layout completes
                             this.common.forceApplyCurveStyles();
+                            
+                            // Show container after layout and coloring complete
+                            const cyContainer = document.getElementById('cy');
+                            if (cyContainer) {
+                                cyContainer.style.visibility = 'visible';
+                            }
                         }
                     });
                     if (layout) {
@@ -1832,15 +1926,33 @@ export class HierarchyModule {
                         console.warn('fcose layout extension not available, falling back to preset layout');
                         this.state.cy.layout({ name: 'preset' }).run();
                         this.common.forceApplyCurveStyles();
+                        
+                        // Show container after fallback layout completes
+                        const cyContainer = document.getElementById('cy');
+                        if (cyContainer) {
+                            cyContainer.style.visibility = 'visible';
+                        }
                     }
                 } catch (e) {
                     console.warn('Error using fcose layout:', e.message, '- falling back to preset layout');
                     this.state.cy.layout({ name: 'preset' }).run();
                     this.common.forceApplyCurveStyles();
+                    
+                    // Show container after fallback layout completes
+                    const cyContainer = document.getElementById('cy');
+                    if (cyContainer) {
+                        cyContainer.style.visibility = 'visible';
+                    }
                 }
             } else {
                 // No graph nodes, but still update curve styles
                 this.common.forceApplyCurveStyles();
+                
+                // Show container after styling completes
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    cyContainer.style.visibility = 'visible';
+                }
             }
         }, 100);
     }
@@ -1849,6 +1961,16 @@ export class HierarchyModule {
      * Add a new node in hierarchy mode
      * @param {string} nodeType - Normalized node type
      * @param {HTMLElement} nodeTypeSelect - Select element for clearing selection
+     */
+    /**
+     * Add a new shelf node in hierarchy mode
+     * 
+     * **CRITICAL: host_index is REQUIRED** - All shelf nodes must have a unique host_index.
+     * This function assigns host_index from globalHostCounter at creation time.
+     * The host_index is the primary numeric identifier for programmatic access and descriptor mapping.
+     * 
+     * @param {string} nodeType - Node type (e.g., 'WH_GALAXY', 'N300_LB', etc., may include variations like '_DEFAULT', '_X_TORUS')
+     * @param {HTMLSelectElement} nodeTypeSelect - Node type select element (for UI updates)
      */
     addNode(nodeType, nodeTypeSelect) {
         // Logical mode: add to selected parent graph node, or as top-level node
@@ -1871,7 +1993,6 @@ export class HierarchyModule {
             const selectedType = selectedGraphNode.data('type');
 
             // Graph nodes can be parents for new shelf nodes (even if empty)
-            // Note: isParent() returns false for empty graph nodes, so we check type instead
             if (selectedType === 'graph') {
                 parentId = selectedGraphNode.id();
                 parentNode = selectedGraphNode;
@@ -1960,6 +2081,10 @@ export class HierarchyModule {
             // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
             // This handles connections like QSFP connections in DEFAULT variants and torus connections
             this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
+
+            // Mark hierarchy structure as changed (forces re-import of deployment descriptor)
+            this.state.data.hierarchyStructureChanged = true;
+            console.log('[Hierarchy.addNode] Hierarchy structure changed - deployment descriptor needs re-import');
 
             totalNodesAdded = 1;
         } else {
@@ -2058,6 +2183,10 @@ export class HierarchyModule {
 
                 totalNodesAdded++;
             });
+            
+            // Mark hierarchy structure as changed (forces re-import of deployment descriptor)
+            this.state.data.hierarchyStructureChanged = true;
+            console.log('[Hierarchy.addNode] Hierarchy structure changed (template instance) - deployment descriptor needs re-import');
         }
 
         // Update the template definition to include the new node (only for template-based nodes)
@@ -2140,8 +2269,6 @@ export class HierarchyModule {
                 window.showExportStatus?.(`Added node (${nodeType}) to ${parentLabel}`, 'success');
             }
         }
-
-        // Note: We intentionally do NOT reset the dropdown selection to allow users to add multiple nodes of the same type
     }
 
     /**
@@ -3281,244 +3408,10 @@ export class HierarchyModule {
      * the graph hierarchy structure.
      */
     recalculateHostIndicesForTemplates() {
-        console.log('Recalculating host_indices using DFS traversal (consecutive within each graph template instance)...');
-
-        // Track the global host_index counter
-        let nextHostIndex = 0;
-
-        // Track processed graph nodes to prevent infinite loops in nested graph traversal
-        // Note: Shelf nodes don't need tracking since each instance has its own nodes
-        const processedGraphNodes = new Set();
-
-        /**
-         * DFS traversal function to process a graph node and its children
-         * Assigns consecutive host_ids within this graph instance
-         * @param {Object} graphNode - The graph node to process
-         * @param {number} startHostIndex - Starting host_index for this graph instance
-         * @param {number} depth - Current depth in the traversal (for logging)
-         * @returns {number} Next available host_index after processing this graph and its descendants
-         */
-        const dfsTraverse = (graphNode, startHostIndex, depth = 0) => {
-            const indent = '  '.repeat(depth);
-            const graphLabel = graphNode.data('label') || graphNode.id();
-            console.log(`${indent}Processing graph: ${graphLabel} (starting at host_${startHostIndex})`);
-
-            // Track host_index counter for this graph instance (consecutive within this instance)
-            let instanceHostIndex = startHostIndex;
-
-            // Get template for this graph node to preserve original child order
-            const templateName = graphNode.data('template_name');
-            const template = templateName && this.state.data.availableGraphTemplates
-                ? this.state.data.availableGraphTemplates[templateName]
-                : null;
-
-            // Get all direct children of this graph node
-            const directChildren = graphNode.children();
-
-            // Build a map of child_name -> Cytoscape node for quick lookup
-            // IMPORTANT: If multiple children have the same child_name (shouldn't happen, but handle it),
-            // we'll use the first one found. This ensures we process all template children.
-            const childrenByName = new Map();
-            directChildren.forEach(child => {
-                const childName = child.data('child_name');
-                if (childName) {
-                    // Only add if not already in map (prefer first occurrence)
-                    if (!childrenByName.has(childName)) {
-                        childrenByName.set(childName, child);
-                    } else {
-                        console.warn(`${indent}  Duplicate child_name "${childName}" found in graph "${graphLabel}", using first occurrence`);
-                    }
-                } else {
-                    console.warn(`${indent}  Child node ${child.id()} in graph "${graphLabel}" has no child_name`);
-                }
-            });
-            console.log(`${indent}  Built childrenByName map: [${Array.from(childrenByName.keys()).join(', ')}]`);
-
-            // Order children according to template (if available), otherwise fall back to alphabetical
-            // IMPORTANT: Process children in template order (mixed nodes and graphs), not separated by type
-            // This matches the cabling descriptor DFS traversal order
-            const orderedChildren = [];
-
-            if (template && template.children && Array.isArray(template.children)) {
-                // Follow template's children order (matches cabling descriptor DFS order)
-                // Track which children we've already added to prevent duplicates
-                const addedChildIds = new Set();
-                const processedChildNames = new Set();
-                
-                template.children.forEach(templateChild => {
-                    const cytoscapeChild = childrenByName.get(templateChild.name);
-                    if (cytoscapeChild) {
-                        const childId = cytoscapeChild.id();
-                        // Only add if we haven't already added this node
-                        if (!addedChildIds.has(childId)) {
-                            addedChildIds.add(childId);
-                            processedChildNames.add(templateChild.name);
-                            const childType = templateChild.type || cytoscapeChild.data('type');
-                            orderedChildren.push({
-                                node: cytoscapeChild,
-                                type: childType,
-                                childName: templateChild.name
-                            });
-                            console.log(`${indent}  Added template child "${templateChild.name}" (type: ${childType}, id: ${childId}) to orderedChildren`);
-                        } else {
-                            console.warn(`${indent}  Skipping duplicate child "${templateChild.name}" (id: ${childId}) in graph "${graphLabel}"`);
-                        }
-                    } else {
-                        console.warn(`${indent}  Template child "${templateChild.name}" not found in childrenByName for graph "${graphLabel}"`);
-                    }
-                });
-
-                // Add any children not found in template (newly added nodes, etc.)
-                // These should be processed after template children to maintain consecutive numbering within this instance
-                directChildren.forEach(child => {
-                    const childName = child.data('child_name');
-                    if (childName && !processedChildNames.has(childName)) {
-                        // Newly added node not in template - add it to maintain consecutive numbering
-                        // Insert it at the end to preserve template order, but ensure it's processed
-                        orderedChildren.push({
-                            node: child,
-                            type: child.data('type'),
-                            childName: childName
-                        });
-                        processedChildNames.add(childName);
-                        console.log(`${indent}  Found child "${childName}" not in template (newly added), will process for consecutive numbering`);
-                    }
-                });
-            } else {
-                // Fallback: sort alphabetically if no template available
-                directChildren.forEach(child => {
-                    orderedChildren.push({
-                        node: child,
-                        type: child.data('type'),
-                        childName: child.data('child_name') || child.data('label') || ''
-                    });
-                });
-                orderedChildren.sort((a, b) => a.childName.localeCompare(b.childName));
-            }
-
-            // Process children in template order (mixed nodes and graphs, just like Python import)
-            // Within this graph instance, assign consecutive host_ids to siblings
-            orderedChildren.forEach(({ node, type, childName }) => {
-                const nodeId = node.id();
-
-                if (type === 'shelf' || type === 'node') {
-                    // Always renumber shelf nodes to ensure consecutive numbering within this instance
-                    // Each graph instance has its own copy of nodes, so no need to track processed shelf nodes
-                    const oldHostIndex = node.data('host_index');
-                    const newHostIndex = instanceHostIndex;
-                    instanceHostIndex++;
-
-                    // Update shelf node - set both host_index and host_id (host_id is used in protobuf exports)
-                    node.data('host_index', newHostIndex);
-                    node.data('host_id', newHostIndex);
-
-                    // Update label to reflect new host_index
-                    const displayChildName = childName || node.data('child_name') || 'node';
-                    const newLabel = `${displayChildName} (host_${newHostIndex})`;
-                    node.data('label', newLabel);
-
-                    // Update all child tray and port nodes with new host_index and host_id
-                    const trayChildren = node.children('[type="tray"]');
-                    trayChildren.forEach(trayNode => {
-                        trayNode.data('host_index', newHostIndex);
-                        trayNode.data('host_id', newHostIndex);
-
-                        const portChildren = trayNode.children('[type="port"]');
-                        portChildren.forEach(portNode => {
-                            portNode.data('host_index', newHostIndex);
-                            portNode.data('host_id', newHostIndex);
-                        });
-                    });
-                    if (oldHostIndex !== newHostIndex) {
-                        console.log(`${indent}  Updated shelf ${displayChildName}: host_${oldHostIndex} -> host_${newHostIndex}`);
-                    } else {
-                        console.log(`${indent}  Shelf ${displayChildName}: host_${newHostIndex} (unchanged)`);
-                    }
-                } else if (type === 'graph') {
-                    // Recursively process nested graph nodes (DFS)
-                    // Use processedGraphNodes to prevent infinite loops (circular references)
-                    if (processedGraphNodes.has(nodeId)) {
-                        console.warn(`${indent}  Skipping already processed graph "${childName}" (id: ${nodeId}) - possible circular reference`);
-                        return; // Skip to next iteration in forEach (return skips current iteration)
-                    }
-                    processedGraphNodes.add(nodeId);
-                    
-                    // Pass the current instanceHostIndex as the starting point for the nested graph
-                    // The nested graph will process all its descendants and return the next available index
-                    instanceHostIndex = dfsTraverse(node, instanceHostIndex, depth + 1);
-                }
-            });
-
-            // Return the next available host_index after processing this graph instance
-            // This ensures consecutive numbering within this instance
-            return instanceHostIndex;
-        };
-
-        // Find all root graph nodes (graphs with no parent)
-        const rootGraphNodes = this.state.cy.nodes('[type="graph"]').filter(node => {
-            const parent = node.parent();
-            return parent.length === 0; // No parent = root level
-        });
-
-        // Get root template to preserve order (if available)
-        const rootTemplateName = this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.initialRootTemplate;
-        const rootTemplate = rootTemplateName && this.state.data.availableGraphTemplates
-            ? this.state.data.availableGraphTemplates[rootTemplateName]
-            : null;
-
-        let sortedRoots;
-        if (rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
-            // If we have a root template, process root graphs in template order
-            // This matches the cabling descriptor's root_instance child_mappings order
-            const rootGraphsByName = new Map();
-            rootGraphNodes.forEach(node => {
-                const childName = node.data('child_name') || node.data('label') || node.id();
-                rootGraphsByName.set(childName, node);
-            });
-
-            sortedRoots = [];
-            rootTemplate.children.forEach(templateChild => {
-                if (templateChild.type === 'graph') {
-                    const rootGraph = rootGraphsByName.get(templateChild.name);
-                    if (rootGraph) {
-                        sortedRoots.push(rootGraph);
-                    }
-                }
-            });
-
-            // Add any root graphs not found in template (shouldn't happen, but handle gracefully)
-            rootGraphNodes.forEach(node => {
-                if (!sortedRoots.includes(node)) {
-                    sortedRoots.push(node);
-                }
-            });
-        } else {
-            // Fallback: sort alphabetically if no template available
-            sortedRoots = rootGraphNodes.toArray().sort((a, b) => {
-                const labelA = a.data('label') || a.id();
-                const labelB = b.data('label') || b.id();
-                return labelA.localeCompare(labelB);
-            });
-        }
-
-        console.log(`Found ${sortedRoots.length} root graph node(s), starting DFS traversal...`);
-
-        // Perform DFS traversal starting from each root
-        // Each root graph instance gets consecutive host_ids starting from the current global counter
-        // Siblings within each graph instance will have consecutive numbering
-        sortedRoots.forEach((rootGraph, rootIndex) => {
-            const rootLabel = rootGraph.data('label') || rootGraph.id();
-            const startIndex = nextHostIndex;
-            console.log(`[DFS] Processing root ${rootIndex + 1}/${sortedRoots.length}: ${rootLabel}, starting at host_${startIndex}`);
-            const nextIndexForRoot = dfsTraverse(rootGraph, startIndex, 0);
-            console.log(`[DFS] Root ${rootLabel} complete, ended at host_${nextIndexForRoot}, assigned ${nextIndexForRoot - startIndex} host_ids`);
-            nextHostIndex = nextIndexForRoot; // Update global counter after processing this root
-        });
-
-        // Update state.data.globalHostCounter to the next available index
-        this.state.data.globalHostCounter = nextHostIndex;
-        console.log(`DFS traversal complete. Assigned ${nextHostIndex} host indices. Next available: ${this.state.data.globalHostCounter}`);
-
+        // Delegate to common module for unified DFS traversal
+        // This ensures consistent behavior across hierarchy and location modes
+        this.common.recalculateHostIndices();
+        
         // Clear the flag
         this._recalculatingHostIndices = false;
     }
@@ -3529,7 +3422,6 @@ export class HierarchyModule {
      * The first/only pod at a level should be _0.
      */
     renameGraphInstances() {
-        console.log('Renaming graph instances using DFS traversal...');
 
         /**
          * DFS traversal function to process a graph node and its children
@@ -4257,6 +4149,10 @@ export class HierarchyModule {
                 });
             });
         }
+
+        // Mark hierarchy structure as changed (forces re-import of deployment descriptor)
+        this.state.data.hierarchyStructureChanged = true;
+        console.log('[Hierarchy.moveNodeToTemplate] Hierarchy structure changed - deployment descriptor needs re-import');
 
         // Step 4: Add to all instances of target template
         const targetInstances = this.state.cy.nodes().filter(n =>

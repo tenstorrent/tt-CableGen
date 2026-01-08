@@ -11,8 +11,14 @@ export class NodeFactory {
     
     /**
      * Create a shelf node with trays and ports
+     * 
+     * **CRITICAL: host_index is REQUIRED** - All shelf nodes must have a unique host_index.
+     * This is the primary numeric identifier for programmatic access and descriptor mapping.
+     * If not provided, host_index will be auto-incremented from globalHostCounter, but it's
+     * recommended to explicitly provide it to ensure consistency.
+     * 
      * @param {Object} options - Shelf creation options
-     * @param {number} [options.hostIndex] - Host index (auto-incremented if not provided)
+     * @param {number} [options.hostIndex] - Host index (REQUIRED - auto-incremented if not provided, but should be explicit)
      * @param {string} options.label - Human-readable label
      * @param {string} options.nodeType - Node type (must be valid)
      * @param {Object} [options.position={x:0,y:0}] - Initial position
