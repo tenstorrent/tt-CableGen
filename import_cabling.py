@@ -1788,6 +1788,7 @@ class NetworkCablingCytoscapeVisualizer:
                         field_positions[field_name] = positions[0]  # Use first occurrence
             
             node_types_seen = set()
+            seen_connections = set()  # Track connections to avoid duplicates
             
             # Process data lines - start from the line after headers (determined earlier)
             data_start_line = data_start_idx  # Use the detected data start position
@@ -1857,7 +1858,15 @@ class NetworkCablingCytoscapeVisualizer:
                     "cable_type": cable_type
                 }
                 
-                self.connections.append(connection)
+                # Generate a unique key for this connection based on endpoints
+                # A connection is identified by its source and destination endpoints
+                connection_key = self._get_connection_key(source_data, dest_data)
+                
+                # Only add if we haven't seen this exact connection before
+                if connection_key not in seen_connections:
+                    seen_connections.add(connection_key)
+                    self.connections.append(connection)
+                # Skip duplicate connections silently
                 
                 # Track node types (only add non-empty values)
                 source_node_type = source_data.get("node_type")
@@ -1952,6 +1961,36 @@ class NetworkCablingCytoscapeVisualizer:
                 data["label"] = f"{end_type}-{data.get('tray', 1)}-{data.get('port', 1)}"
         
         return data
+
+    def _get_connection_key(self, source_data, dest_data):
+        """
+        Generate a unique key for a connection based on its endpoints.
+        Two connections with the same source and destination endpoints are considered duplicates.
+        Returns a tuple that can be used as a set key.
+        """
+        def get_endpoint_key(endpoint_data):
+            """Generate a key for a single endpoint"""
+            # Include all identifying fields for the endpoint
+            # Order: hostname, hall, aisle, rack_num, shelf_u, tray, port
+            return (
+                endpoint_data.get("hostname", ""),
+                endpoint_data.get("hall", ""),
+                endpoint_data.get("aisle", ""),
+                endpoint_data.get("rack_num", ""),
+                endpoint_data.get("shelf_u", ""),
+                endpoint_data.get("tray", ""),
+                endpoint_data.get("port", "")
+            )
+        
+        source_key = get_endpoint_key(source_data)
+        dest_key = get_endpoint_key(dest_data)
+        
+        # Create a normalized key (source, dest) and (dest, source) should be considered the same
+        # So we always put the "smaller" endpoint first for consistency
+        if source_key < dest_key:
+            return (source_key, dest_key)
+        else:
+            return (dest_key, source_key)
 
     def _track_hierarchical_location(self, source_data, dest_data):
         """Track location information for hierarchical format"""
@@ -2585,6 +2624,10 @@ class NetworkCablingCytoscapeVisualizer:
         
         Structure: Graph (superpod) → Shelf (host_5) → Tray → Port
         
+        **CRITICAL: host_index is REQUIRED** - All shelf nodes must have a unique host_index.
+        This function uses host_id from node_info as the host_index.
+        The host_index is the primary numeric identifier for programmatic access and descriptor mapping.
+        
         Args:
             node_info: Dict with path, child_name, node_type, host_id, depth for the host device
             graph_node_map: Dict mapping graph instance paths to Cytoscape visual element IDs
@@ -2657,6 +2700,8 @@ class NetworkCablingCytoscapeVisualizer:
         # Hostname is a physical/deployment property that comes from deployment descriptor
         # For now, leave hostname empty - it will be populated when deployment descriptor is applied
         
+        # CRITICAL: host_index is REQUIRED - must be set at creation time
+        # This is the primary numeric identifier for programmatic access and descriptor mapping
         shelf_node = self.create_node_from_template(
             "shelf",
             shelf_id,
@@ -2664,7 +2709,7 @@ class NetworkCablingCytoscapeVisualizer:
             shelf_label,
             x,
             y,
-            host_index=host_id,  # Globally unique numeric index (LOGICAL identifier)
+            host_index=host_id,  # REQUIRED: Globally unique numeric index (LOGICAL identifier)
             shelf_node_type=node_type,  # Store as shelf_node_type (standard field)
             node_descriptor_type=node_type,  # Keep for compatibility
             child_name=child_name,
@@ -2702,8 +2747,13 @@ class NetworkCablingCytoscapeVisualizer:
         - Hall level: Only shown if multiple halls exist
         - Aisle level: Only shown if multiple aisles exist (across all halls)
         - Rack level: Always shown
+        
+        **CRITICAL: host_index is REQUIRED** - All shelf nodes must have a unique host_index.
+        This function assigns sequential host_index values starting from 0.
+        The host_index is the primary numeric identifier for programmatic access and descriptor mapping.
         """
         # Track global host index for all shelves
+        # CRITICAL: host_index is REQUIRED - must be unique and sequential
         host_index_counter = 0
         
         # Build a mapping from hostname to host_index for port ID generation

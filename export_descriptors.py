@@ -75,8 +75,57 @@ class CytoscapeDataParser:
                     self.nodes[node_id] = element
 
     def extract_hierarchy_info(self, node_id: str) -> Optional[Dict]:
-        """Extract shelf/tray/port info from node ID using only patterns that are actually used"""
-
+        """
+        Extract shelf/tray/port info from node ID.
+        
+        **PRIMARY PATH**: Read host_id from node_data.host_index (if node exists in self.nodes)
+        **FALLBACK PATH**: Parse node_id string using regex patterns (legacy support)
+        
+        This unified approach ensures we always use host_index when available,
+        falling back to parsing only when necessary.
+        """
+        # PRIMARY PATH: Try to get node data and read host_index
+        if node_id in self.nodes:
+            node_element = self.nodes[node_id]
+            node_data = node_element.get("data", {})
+            host_id = node_data.get("host_index") or node_data.get("host_id")
+            
+            if host_id is not None:
+                # We have host_id from node data - extract tray/port from node_id if needed
+                host_id_str = str(host_id)
+                
+                # Try to extract tray/port from descriptor format: {host_id}:t{tray}:p{port}
+                tray_port_match = re.match(r"^(\d+):t(\d+)(?::p(\d+))?$", node_id)
+                if tray_port_match:
+                    parsed_host_id = tray_port_match.group(1)
+                    if parsed_host_id == host_id_str:
+                        tray_id = int(tray_port_match.group(2))
+                        if tray_port_match.group(3):
+                            # Port format
+                            return {
+                                "type": "port",
+                                "hostname": host_id_str,
+                                "shelf_id": host_id_str,
+                                "tray_id": tray_id,
+                                "port_id": int(tray_port_match.group(3))
+                            }
+                        else:
+                            # Tray format
+                            return {
+                                "type": "tray",
+                                "hostname": host_id_str,
+                                "shelf_id": host_id_str,
+                                "tray_id": tray_id
+                            }
+                elif node_id == host_id_str:
+                    # Simple shelf ID match
+                    return {
+                        "type": "shelf",
+                        "hostname": host_id_str,
+                        "shelf_id": host_id_str
+                    }
+        
+        # FALLBACK PATH: Parse node_id string using regex patterns (legacy support)
         # Define patterns with their handlers - only include patterns that are actually used
         # Order matters: more specific patterns first, fallback last
         patterns = [
@@ -340,13 +389,35 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
         return connections
 
     def _get_hostname_from_port(self, port_id: str) -> Optional[str]:
-        """Get hostname from a port node's data
+        """
+        Get hostname/host_id from a port node's data
+        
+        **PRIMARY PATH**: Read host_index from port node data, then look up shelf node
+        **FALLBACK PATH**: Parse port_id string to extract host_id (legacy support)
         
         Handles multiple formats:
         1. Port ID format like "0:t1:p2" (descriptor/CSV format) - extract host_id and look up shelf
         2. Port has hostname directly in its data
         3. Traverse hierarchy: port -> tray -> shelf
         """
+        # PRIMARY PATH: Try to get port node and read host_index from its data
+        if port_id in self.nodes:
+            port_element = self.nodes[port_id]
+            port_data = port_element.get("data", {})
+            host_id = port_data.get("host_index") or port_data.get("host_id")
+            
+            if host_id is not None:
+                # We have host_id from port data - look up the shelf node
+                # Try to find shelf node with this host_id
+                for shelf_id, shelf_element in self.nodes.items():
+                    shelf_data = shelf_element.get("data", {})
+                    if shelf_data.get("type") == "shelf":
+                        shelf_host_id = shelf_data.get("host_index") or shelf_data.get("host_id")
+                        if shelf_host_id == host_id:
+                            # Found matching shelf - return its hostname or host_id
+                            return shelf_data.get("hostname") or str(host_id)
+        
+        # FALLBACK PATH: Parse port_id string (legacy support)
         # Check if port_id matches descriptor format (e.g., "0:t1:p2")
         import re
         descriptor_match = re.match(r"^(\d+):t\d+:p\d+$", port_id)
@@ -636,8 +707,9 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     """
     # Build a map of host_index -> (hostname, node_type) from shelf nodes
     # This preserves the indexed relationship from the cabling descriptor
+    # CRITICAL: host_index is now REQUIRED - all nodes must have it set (via DFS or at creation)
     host_by_index = {}
-    host_without_index = []  # For CSV imports without host_index
+    seen_hostnames = {}  # Track hostnames for duplicate detection
     
     # Extract all shelf nodes directly to get host_index
     elements = cytoscape_data.get("elements", [])
@@ -652,51 +724,58 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
             node_type = node_data.get("shelf_node_type") or node_data.get("node_type")
             host_index = node_data.get("host_index")
             
-            # Fallback to host_id if host_index not present
+            # Fallback to host_id if host_index not present (for backward compatibility)
             if host_index is None:
                 host_index = node_data.get("host_id")
             
             if not hostname or not node_type:
                 continue  # Skip incomplete nodes
             
-            if host_index is not None:
-                # Has host_index (from cabling descriptor import)
-                host_by_index[host_index] = (hostname, node_type)
+            # CRITICAL: host_index is now REQUIRED - raise error if missing
+            if host_index is None:
+                raise ValueError(
+                    f"Shelf node '{hostname}' is missing required host_index. "
+                    f"This should not happen - all shelf nodes must have host_index set at creation "
+                    f"or via DFS recalculation. Please ensure nodes are created with host_index "
+                    f"or run DFS recalculation."
+                )
+            
+            # CRITICAL: Detect duplicate host_index values (Issue #3)
+            if host_index in host_by_index:
+                existing_hostname, existing_node_type = host_by_index[host_index]
+                raise ValueError(
+                    f"Duplicate host_index {host_index} detected: "
+                    f"'{hostname}' (type: {node_type}) conflicts with "
+                    f"'{existing_hostname}' (type: {existing_node_type}). "
+                    f"Each shelf node must have a unique host_index. "
+                    f"Please run DFS recalculation to ensure unique host_index values."
+                )
+            
+            # Track hostnames for duplicate detection (same hostname should have same host_index)
+            if hostname in seen_hostnames:
+                if seen_hostnames[hostname] != host_index:
+                    raise ValueError(
+                        f"Hostname '{hostname}' appears with different host_index values: "
+                        f"{seen_hostnames[hostname]} and {host_index}. "
+                        f"This indicates inconsistent node data."
+                    )
             else:
-                # No host_index (from CSV import)
-                host_without_index.append((hostname, node_type))
+                seen_hostnames[hostname] = host_index
+            
+            # Store in map
+            host_by_index[host_index] = (hostname, node_type)
     
-    # Determine export strategy based on whether nodes have host_index
-    if host_by_index and not host_without_index:
-        # All nodes have host_index - this is from a cabling descriptor import
-        # Sort by host_index to maintain the indexed relationship
-        sorted_indices = sorted(host_by_index.keys())
-        sorted_hosts = [host_by_index[idx] for idx in sorted_indices]
-        return sorted_hosts
-    
-    elif host_without_index and not host_by_index:
-        # No nodes have host_index - this is from a CSV import
-        # Sort alphabetically by hostname for consistent ordering
-        # Indices will be assigned dynamically based on this order
-        sorted_hosts = sorted(host_without_index)
-        return sorted_hosts
-    
-    elif host_by_index and host_without_index:
-        # Mixed - some have host_index, some don't
-        # This is an error state (shouldn't happen in normal usage)
-        raise ValueError(
-            f"Inconsistent visualization state: {len(host_by_index)} nodes have host_index, "
-            f"but {len(host_without_index)} nodes don't. "
-            f"This usually means nodes from different sources (CSV and descriptor) were mixed. "
-            f"Please use a consistent data source."
-        )
-    
-    else:
+    if not host_by_index:
         # No valid hosts found
         raise ValueError(
             "No valid hosts found for export. "
-            "Hosts must have both hostname and node_type defined."
+            "Hosts must have both hostname, node_type, and host_index defined."
         )
+    
+    # Sort by host_index to maintain the indexed relationship
+    sorted_indices = sorted(host_by_index.keys())
+    sorted_hosts = [host_by_index[idx] for idx in sorted_indices]
+    return sorted_hosts
 
 
 def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
@@ -1938,36 +2017,6 @@ def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
             
     
     return host_id
-
-
-def _ensure_host_indices(cytoscape_data: Dict, sorted_hosts: List[Tuple[str, str]]) -> None:
-    """Ensure all shelf nodes have host_index set.
-    
-    For CSV imports, shelf nodes won't have host_index. This function dynamically
-    assigns host_index based on the sorted host list order.
-    
-    Args:
-        cytoscape_data: The cytoscape visualization data (modified in-place)
-        sorted_hosts: List of (hostname, node_type) tuples in the order they should be indexed
-    """
-    # Build a map: hostname -> index
-    hostname_to_index = {hostname: idx for idx, (hostname, _) in enumerate(sorted_hosts)}
-    
-    # Update shelf nodes with their host_index if missing
-    elements = cytoscape_data.get("elements", [])
-    for element in elements:
-        if "source" in element.get("data", {}):
-            continue  # Skip edges
-        
-        node_data = element.get("data", {})
-        if node_data.get("type") == "shelf":
-            hostname = node_data.get("hostname", "").strip()
-            
-            # Only set host_index if it's missing
-            if node_data.get("host_index") is None and node_data.get("host_id") is None:
-                if hostname in hostname_to_index:
-                    # Dynamically assign host_index based on sorted position
-                    node_data["host_index"] = hostname_to_index[hostname]
 
 
 def export_deployment_descriptor_for_visualizer(

@@ -2,46 +2,16 @@
  * Network Cabling Visualizer - Client-side JavaScript
  * 
  * This is the main visualization module for the CableGen application.
- * It has been refactored from a monolithic file into a modular architecture.
  * 
  * Architecture Overview:
  * ======================
  * - Configuration: Extracted to ./config/ (constants, node-types, API)
  * - State Management: Centralized in ./state/ (VisualizerState, StateObserver)
  * - Factories: Node/connection creation in ./factories/
- * - Modules: Common, Location, Hierarchy modules in ./modules/
+ * - Modules: Common, Location, Hierarchy, Export, UI Display, File Management in ./modules/
  * - API Client: Backend communication in ./api/
  * - UI Managers: Notification, Modal, Status managers in ./ui/
- * 
- * Refactoring Status:
- * ===================
- * Phase 1-6: ✅ Complete
- *   - Configuration extracted
- *   - State management implemented
- *   - Factories created
- *   - Modules separated (common, location, hierarchy)
- *   - API client extracted
- *   - UI managers extracted
- * 
- * Phase 7: ✅ Complete (Cleanup)
- *   - Removed unused template color constants (moved to CommonModule)
- *   - Improved documentation
- * 
- * Phase 8-9: ✅ Complete
- *   - All major functions extracted to modules
- *   - Clean orchestration layer established
- *   - Target of <1,000 lines achieved (932 lines)
- * 
- * Phase 10: ✅ Complete (Final Polish)
- *   - Code quality improvements (removed NOTE comments, consolidated wrappers, optimized listeners)
- *   - HTML inline scripts moved to visualizer.js
- *   - Functions now use state.* instead of window.* globals where possible
- * 
- * Current State:
- * ==============
- * - Legacy globals kept in sync with state via observers (for Cytoscape event handlers)
- * - Functions exposed to window object for Cytoscape event handlers and external dependencies
- * - All new code should use state.* and module APIs directly
+ * - Utils: Utility functions in ./utils/ (node-management, cytoscape-utils)
  */
 
 // ===== Module Imports =====
@@ -331,16 +301,16 @@ function addNewNode() {
 
     // Get base node type
     let nodeType = nodeTypeSelect.value;
-    
+
     // Get selected variation from radio buttons
     const variationRadio = document.querySelector('input[name="nodeVariation"]:checked');
     const variation = variationRadio ? variationRadio.value : '';
-    
+
     // Combine base type with variation
     if (variation) {
         nodeType = nodeType + variation;
     }
-    
+
     // Keep the full node type including variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
     // The node creation functions will handle normalization for config lookup but preserve
     // the original variation name for storage and internal connection creation
@@ -380,31 +350,31 @@ function updateNodeVariationOptions() {
     const variationXTorus = document.getElementById('variationXTorus');
     const variationYTorus = document.getElementById('variationYTorus');
     const variationXYTorus = document.getElementById('variationXYTorus');
-    
+
     if (!nodeTypeSelect || !variationSection) {
         return;
     }
-    
+
     // Only show variations in hierarchy mode
     const isHierarchyMode = state && state.mode === 'hierarchy';
     if (!isHierarchyMode) {
         variationSection.style.display = 'none';
         return;
     }
-    
+
     const selectedType = nodeTypeSelect.value;
-    
+
     // Node types that support DEFAULT variation
     const supportsDefault = ['N300_LB', 'N300_QB', 'P150_QB_AE'];
     // Node types that support torus variations
     const supportsTorus = ['WH_GALAXY', 'BH_GALAXY'];
-    
+
     // Check if selected type supports any variations
     const hasVariations = supportsDefault.includes(selectedType) || supportsTorus.includes(selectedType);
-    
+
     // Show/hide variation section based on whether type supports variations
     variationSection.style.display = hasVariations ? 'block' : 'none';
-    
+
     // Reset to "None" when section is hidden or type doesn't support variations
     if (!hasVariations) {
         const noneRadio = document.querySelector('input[name="nodeVariation"][value=""]');
@@ -413,7 +383,7 @@ function updateNodeVariationOptions() {
         }
         return;
     }
-    
+
     // Show/hide specific variation options based on selected node type
     if (variationDefault) {
         variationDefault.style.display = supportsDefault.includes(selectedType) ? 'flex' : 'none';
@@ -427,7 +397,7 @@ function updateNodeVariationOptions() {
     if (variationXYTorus) {
         variationXYTorus.style.display = supportsTorus.includes(selectedType) ? 'flex' : 'none';
     }
-    
+
     // Reset to "None" when type changes (to avoid invalid combinations)
     const noneRadio = document.querySelector('input[name="nodeVariation"][value=""]');
     if (noneRadio) {
@@ -487,7 +457,9 @@ function populateTemplateFilterDropdown() {
 }
 function showNodeInfo(node, position) { return commonModule.showNodeInfo(node, position); }
 function hideNodeInfo() { return commonModule.hideNodeInfo(); }
-function showConnectionInfo(edge, position) { return commonModule.showConnectionInfo(edge, position); }
+function showConnectionInfo(edge, position) {
+    return commonModule.showConnectionInfo(edge, position);
+}
 function enableShelfEditing(node, position) {
     return commonModule.enableShelfEditing(node, position);
 }
@@ -686,7 +658,7 @@ function setupEventListeners() {
     attachEventListener('addNodeBtn', 'click', () => addNewNode());
     attachEventListener('addGraphBtn', 'click', () => addNewGraph());
     attachEventListener('createTemplateBtn', 'click', () => createNewTemplate());
-    
+
     // Update variation options when node type changes
     const nodeTypeSelect = document.getElementById('nodeTypeSelect');
     if (nodeTypeSelect) {
@@ -932,6 +904,16 @@ async function applyDeploymentDescriptor(file) {
         return;
     }
 
+    // Check if hierarchy structure has changed - force re-import
+    if (state.data.hierarchyStructureChanged) {
+        const errorMsg = 'The hierarchy structure has changed (nodes added, removed, or moved). ' +
+            'The deployment descriptor must be re-imported to match the new structure. ' +
+            'Please re-import the deployment descriptor.';
+        showErrorLocation(errorMsg);
+        console.error('[applyDeploymentDescriptor] Blocked: Hierarchy structure changed');
+        return;
+    }
+
     loading.style.display = 'block';
     uploadBtn.disabled = true;
     const originalText = uploadBtn.textContent;
@@ -973,6 +955,10 @@ async function applyDeploymentDescriptor(file) {
                 console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                 initVisualization(result.data);
             }
+            // Mark deployment descriptor as applied and clear hierarchy change flag
+            state.data.deploymentDescriptorApplied = true;
+            state.data.hierarchyStructureChanged = false;
+
             const message = result.message || `Successfully applied deployment descriptor to ${result.updated_count} hosts`;
             showSuccessLocation(message);
         } else {
@@ -997,6 +983,16 @@ async function applyDeploymentDescriptorFromModal() {
     }
     if (!state.data.currentData || !state.data.currentData.elements) {
         alert('No visualization loaded. This should not happen.');
+        return;
+    }
+
+    // Check if hierarchy structure has changed - force re-import
+    if (state.data.hierarchyStructureChanged) {
+        const errorMsg = 'The hierarchy structure has changed (nodes added, removed, or moved). ' +
+            'The deployment descriptor must be re-imported to match the new structure. ' +
+            'Please re-import the deployment descriptor.';
+        alert(errorMsg);
+        console.error('[applyDeploymentDescriptorFromModal] Blocked: Hierarchy structure changed');
         return;
     }
 
@@ -1042,6 +1038,10 @@ async function applyDeploymentDescriptorFromModal() {
                 console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                 initVisualization(result.data);
             }
+            // Mark deployment descriptor as applied and clear hierarchy change flag
+            state.data.deploymentDescriptorApplied = true;
+            state.data.hierarchyStructureChanged = false;
+
             const modal = document.getElementById('physicalLayoutModal');
             if (modal) modal.classList.remove('active');
             sessionStorage.setItem('physicalLayoutAssigned', 'true');
@@ -1089,10 +1089,6 @@ if (graphTemplateSelect) {
 // Functions are exposed to window object for:
 //   1. Cytoscape event handlers (in modules/common.js, modules/location.js, etc.)
 //   2. External dependencies and debugging
-// 
-// Note: These functions are defined in visualizer.js, so exposing them here maintains
-// cohesion. Moving to cytoscape-utils.js would create unnecessary coupling since most
-// functions are not Cytoscape-specific.
 
 // Functions required by Cytoscape event handlers
 const cytoscapeHandlers = {
@@ -1166,6 +1162,7 @@ const otherFunctions = {
     switchLayoutTab,
     hideInitializationShowControls,
     updateNodeVariationOptions,
+    getPortLocationInfo,
 };
 
 // Combine and expose all functions

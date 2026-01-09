@@ -101,7 +101,6 @@ export class ApiClient {
                         : new URL(redirectUrl, this.baseUrl).href;
                     
                     // If redirecting to OAuth2 provider, redirect the entire browser window
-                    // This is necessary because OAuth2 providers don't allow CORS requests
                     if (absoluteRedirectUrl.includes('login.microsoftonline.com') || 
                         absoluteRedirectUrl.includes('/oauth2/') ||
                         absoluteRedirectUrl.includes('/authorize')) {
@@ -208,6 +207,22 @@ export class ApiClient {
      */
     async exportCablingDescriptor(cytoscapeData) {
         const response = await this.request(API_ENDPOINTS.EXPORT_CABLING_DESCRIPTOR, {
+            method: 'POST',
+            body: cytoscapeData
+        });
+        
+        // Response is text, not JSON
+        return response.data;
+    }
+    
+    /**
+     * Export flat cabling descriptor (extracted_topology template)
+     * Used for CSV imports in location mode where there's no hierarchical structure
+     * @param {Object} cytoscapeData - Cytoscape visualization data
+     * @returns {Promise<string>} Textproto content
+     */
+    async exportFlatCablingDescriptor(cytoscapeData) {
+        const response = await this.request(API_ENDPOINTS.EXPORT_FLAT_CABLING, {
             method: 'POST',
             body: cytoscapeData
         });

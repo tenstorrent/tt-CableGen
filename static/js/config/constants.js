@@ -55,7 +55,7 @@ export const LAYOUT_CONSTANTS = {
     RACK_Y_OFFSET: 150,
     NEW_RACK_DEFAULT_X: 250,
     NEW_RACK_DEFAULT_Y: 300,
-    RACK_SPACING_BUFFER: 1.35,  // 35% extra space
+    RACK_SPACING_BUFFER: 1.5,  // 50% extra space for better visual separation
 
     // Hierarchy mode constants (percentage-based spacing)
     // These are multipliers applied to node dimensions
@@ -197,11 +197,14 @@ export const VISUAL = {
 };
 
 /**
- * Connection color constants for physical view
+ * Connection color constants for physical view based on racking hierarchy
  */
 export const CONNECTION_COLORS = {
-    INTRA_NODE: '#4CAF50',  // Green for same node/shelf
-    INTER_NODE: '#2196F3'   // Blue for different nodes/shelves
+    SAME_HOST_ID: '#4CAF50',  // Green for same host (most specific)
+    SAME_RACK: '#2196F3',     // Blue for same rack, different host
+    SAME_AISLE: '#FF9800',    // Orange for same aisle, different rack
+    SAME_HALL: '#9C27B0',     // Purple for same hall, different aisle
+    DIFFERENT_HALL: '#F44336' // Red for different halls (most general)
 };
 
 /**

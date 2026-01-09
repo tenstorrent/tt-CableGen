@@ -228,12 +228,12 @@ export class CommonModule {
                 const sqrt = Math.sqrt(numItems);
                 let bestRows, bestCols;
                 let bestDiff = Infinity;
-                
+
                 // Try both ceil and floor of sqrt, and nearby values
                 for (let rows = Math.max(1, Math.floor(sqrt)); rows <= Math.ceil(sqrt) + 1; rows++) {
                     const cols = Math.ceil(numItems / rows);
                     const diff = Math.abs(rows - cols);
-                    
+
                     // Prefer grids where rows and cols are as close as possible
                     // Also prefer grids that don't waste too much space
                     if (diff < bestDiff || (diff === bestDiff && rows * cols < bestRows * bestCols)) {
@@ -242,7 +242,7 @@ export class CommonModule {
                         bestCols = cols;
                     }
                 }
-                
+
                 return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
             };
 
@@ -282,7 +282,6 @@ export class CommonModule {
             });
 
             // Calculate starting position
-            // For very small graphs (likely root graph not yet expanded), use a reasonable offset
             const minGraphWidth = 1000;  // Wider minimum for proper shelf spacing
             const minGraphHeight = 600;  // Taller minimum for proper shelf spacing
             const effectiveWidth = Math.max(graphBBox.w, minGraphWidth);
@@ -331,12 +330,12 @@ export class CommonModule {
                 const sqrt = Math.sqrt(numItems);
                 let bestRows, bestCols;
                 let bestDiff = Infinity;
-                
+
                 // Try both ceil and floor of sqrt, and nearby values
                 for (let rows = Math.max(1, Math.floor(sqrt)); rows <= Math.ceil(sqrt) + 1; rows++) {
                     const cols = Math.ceil(numItems / rows);
                     const diff = Math.abs(rows - cols);
-                    
+
                     // Prefer grids where rows and cols are as close as possible
                     // Also prefer grids that don't waste too much space
                     if (diff < bestDiff || (diff === bestDiff && rows * cols < bestRows * bestCols)) {
@@ -345,7 +344,7 @@ export class CommonModule {
                         bestCols = cols;
                     }
                 }
-                
+
                 return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
             };
 
@@ -630,7 +629,7 @@ export class CommonModule {
                     'text-background-padding': 8,
                     'text-border-width': 2,
                     'text-border-color': '#0066cc',
-                    'padding': 10,
+                    'padding': 40,
                     'z-index': 1
                 }
             },
@@ -688,7 +687,7 @@ export class CommonModule {
                     'text-background-padding': 8,
                     'text-border-width': 2,
                     'text-border-color': '#0066cc',
-                    'padding': 10,
+                    'padding': 40,
                     'z-index': 0
                 }
             },
@@ -717,7 +716,7 @@ export class CommonModule {
                     'text-background-padding': 8,
                     'text-border-width': 2,
                     'text-border-color': '#555555',
-                    'padding': 10,
+                    'padding': 40,
                     'z-index': 1,
                     'min-width': 100,
                     'min-height': 100
@@ -784,7 +783,6 @@ export class CommonModule {
             },
 
             // Port styles - leaf nodes with distinct rectangular appearance
-            // Note: width and height are set dynamically by common_arrangeTraysAndPorts based on tray_layout
             // Labels are hidden by default and shown on hover
             {
                 selector: '.port',
@@ -1232,9 +1230,36 @@ export class CommonModule {
         nodeFilterSelect.parentNode.replaceChild(newNodeFilterSelect, nodeFilterSelect);
 
         newNodeFilterSelect.addEventListener('change', () => {
+            // Reset destination filter when node filter changes
+            const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+            const destinationFilterContainer = document.getElementById('destinationFilterContainer');
+            if (destinationFilterSelect) {
+                destinationFilterSelect.value = '';
+            }
+            if (destinationFilterContainer) {
+                destinationFilterContainer.style.display = newNodeFilterSelect.value ? 'block' : 'none';
+            }
+
+            // Populate destination filter if a node is selected
+            if (newNodeFilterSelect.value) {
+                this.populateDestinationFilterDropdown(newNodeFilterSelect.value);
+            }
+
             // Apply node filter when node selection changes
             window.applyNodeFilter?.();
         });
+
+        // Add event listener to destination filter dropdown
+        const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+        if (destinationFilterSelect) {
+            const newDestinationFilterSelect = destinationFilterSelect.cloneNode(true);
+            destinationFilterSelect.parentNode.replaceChild(newDestinationFilterSelect, destinationFilterSelect);
+
+            newDestinationFilterSelect.addEventListener('change', () => {
+                // Apply node filter when destination selection changes
+                window.applyNodeFilter?.();
+            });
+        }
     }
 
     /**
@@ -1260,17 +1285,71 @@ export class CommonModule {
     }
 
     /**
-     * Extract shelf ID from any node ID
+     * Validate that hostname/shelf_id is unique across all shelf nodes
+     * 
+     * @param {string} value - Hostname or shelf_id to check
+     * @param {string} excludeNodeId - Optional node ID to exclude from check (for edits)
+     * @returns {boolean} True if unique, false if duplicate found
+     */
+    validateShelfIdentifierUniqueness(value, excludeNodeId = null) {
+        if (!value || !this.state.cy) return false;
+        const allShelves = this.state.cy.nodes('[type="shelf"]');
+        for (const shelf of allShelves) {
+            if (excludeNodeId && shelf.id() === excludeNodeId) continue;
+            const shelfData = shelf.data();
+            if (shelfData.hostname === value || shelfData.shelf_id === value) {
+                return false; // Duplicate found
+            }
+        }
+        return true; // Unique
+    }
+
+    /**
+     * Extract shelf ID (node ID) from any node ID
+     * 
+     * **IMPORTANT**: This function returns the actual shelf node ID for use with `getElementById()`.
+     * It does NOT return hostname/shelf_id for display - those are accessed separately.
+     * 
+     * **PRIORITY ORDER**:
+     * 1. If node is a shelf, return its ID directly
+     * 2. If node is tray/port, get parent shelf and return its ID
+     * 3. Parse nodeId string to extract shelf ID (legacy support)
+     * 
+     * **NOTE**: For human-readable display, access `node.data('hostname')` or `node.data('shelf_id')` directly.
+     * For comparisons, use hostname/shelf_id from node data, not this function's return value.
+     * 
      * Handles formats:
      * - "0" -> "0" (shelf)
      * - "0:t1" -> "0" (tray)
      * - "0:t1:p1" -> "0" (port)
+     * 
      * @param {string} nodeId - Node ID (can be shelf, tray, or port)
-     * @returns {string|null} Shelf ID (host_index) or null
+     * @returns {string|null} Shelf node ID (for use with getElementById) or null
      */
     extractShelfIdFromNodeId(nodeId) {
         if (!nodeId) return null;
 
+        // Try to get node and extract shelf node ID
+        if (this.state.cy) {
+            const node = this.state.cy.getElementById(nodeId);
+            if (node && node.length) {
+                const nodeData = node.data();
+                const nodeType = nodeData.type;
+
+                // If it's a shelf node, return its ID directly
+                if (nodeType === 'shelf' || nodeType === 'node') {
+                    return nodeId; // Return the actual node ID for getElementById()
+                }
+
+                // For tray/port nodes, get parent shelf and return its ID
+                const parentShelf = this.getParentShelfNode(node);
+                if (parentShelf && parentShelf.length) {
+                    return parentShelf.id(); // Return the actual shelf node ID
+                }
+            }
+        }
+
+        // FALLBACK PATH: Parse nodeId string (legacy support)
         // For descriptor format: "0:t1:p1" or "0:t1" -> extract "0"
         // Match pattern: start of string, digits (shelf ID), optionally followed by ":t" and more
         const match = nodeId.match(/^(\d+)(?::t\d+(?::p\d+)?)?$/);
@@ -1278,24 +1357,49 @@ export class CommonModule {
             return match[1];
         }
 
-        // For other formats, try to get the node and check its type
-        if (this.state.cy) {
-            const node = this.state.cy.getElementById(nodeId);
-            if (node && node.length) {
-                const nodeType = node.data('type');
-                if (nodeType === 'shelf' || nodeType === 'node') {
-                    return nodeId; // Already a shelf node
+        // Fallback: return as-is (might be a label-based ID or shelf ID already)
+        return nodeId;
+    }
+
+    /**
+     * Natural sort comparison function that handles numbers properly
+     * Sorts "1, 2, 10" instead of "1, 10, 2"
+     * @param {string} a - First string to compare
+     * @param {string} b - Second string to compare
+     * @returns {number} Negative if a < b, positive if a > b, 0 if equal
+     */
+    naturalCompare(a, b) {
+        // Split strings into parts (numbers and non-numbers)
+        const regex = /(\d+|\D+)/g;
+        const partsA = a.match(regex) || [];
+        const partsB = b.match(regex) || [];
+
+        const minLength = Math.min(partsA.length, partsB.length);
+
+        for (let i = 0; i < minLength; i++) {
+            const partA = partsA[i];
+            const partB = partsB[i];
+
+            // Check if both parts are numbers
+            const numA = parseInt(partA, 10);
+            const numB = parseInt(partB, 10);
+
+            if (!isNaN(numA) && !isNaN(numB)) {
+                // Both are numbers, compare numerically
+                if (numA !== numB) {
+                    return numA - numB;
                 }
-                // Try to get parent shelf
-                const parentShelf = this.getParentShelfNode(node);
-                if (parentShelf && parentShelf.length) {
-                    return parentShelf.id();
+            } else {
+                // At least one is not a number, compare as strings
+                const strCompare = partA.localeCompare(partB, undefined, { numeric: true, sensitivity: 'base' });
+                if (strCompare !== 0) {
+                    return strCompare;
                 }
             }
         }
 
-        // Fallback: return as-is (might be a label-based ID or shelf ID already)
-        return nodeId;
+        // If all parts match up to minLength, shorter string comes first
+        return partsA.length - partsB.length;
     }
 
     /**
@@ -1333,7 +1437,28 @@ export class CommonModule {
      * @returns {string} Display label
      */
     getNodeDisplayLabel(nodeData, locationModule = null) {
-        // Priority 1: Hostname
+        // In location mode, prioritize shelf U format: "Shelf {shelf_u} ({host_index}: hostname)"
+        if (this.state && this.state.mode === 'location') {
+            const shelfU = nodeData.shelf_u;
+            const hostIndex = nodeData.host_index ?? nodeData.host_id;
+            const hostname = nodeData.hostname;
+
+            if (shelfU !== undefined && shelfU !== null && shelfU !== '') {
+                if (hostIndex !== undefined && hostIndex !== null) {
+                    if (hostname) {
+                        return `Shelf ${shelfU} (${hostIndex}: ${hostname})`;
+                    } else {
+                        return `Shelf ${shelfU} (${hostIndex})`;
+                    }
+                } else if (hostname) {
+                    return `Shelf ${shelfU} (${hostname})`;
+                } else {
+                    return `Shelf ${shelfU}`;
+                }
+            }
+        }
+
+        // Priority 1: Hostname (for non-location mode or when shelf U not available)
         if (nodeData.hostname) {
             return nodeData.hostname;
         }
@@ -1364,40 +1489,6 @@ export class CommonModule {
         return nodeData.id;
     }
 
-    /**
-     * Determine if a connection should be shown based on type filters
-     * Handles hierarchy mode special case where connections without location data
-     * are shown by default (they're logical/hierarchical connections)
-     * @param {boolean} isIntraNode - Whether connection is intra-node
-     * @param {boolean} isIntraRack - Whether connection is intra-rack
-     * @param {boolean} isInterRack - Whether connection is inter-rack
-     * @param {boolean} showIntraNode - Whether intra-node filter is enabled
-     * @param {boolean} showIntraRack - Whether intra-rack filter is enabled
-     * @param {boolean} showInterRack - Whether inter-rack filter is enabled
-     * @param {number} sourceRack - Source rack number (0 if no location data)
-     * @param {number} targetRack - Target rack number (0 if no location data)
-     * @returns {boolean} True if connection should be shown
-     */
-    shouldShowConnectionByType(isIntraNode, isIntraRack, isInterRack, showIntraNode, showIntraRack, showInterRack, sourceRack, targetRack) {
-        // In hierarchy mode, connections without rack_num are logical/hierarchical connections
-        // They should be shown by default if no location-based filtering is applicable
-        const isHierarchyMode = this.state.mode === 'hierarchy';
-        const hasLocationData = (sourceRack > 0 || targetRack > 0);
-
-        // Check if connection should be visible based on type
-        let shouldShowByType = false;
-        if (isIntraNode && showIntraNode) shouldShowByType = true;
-        if (isIntraRack && showIntraRack) shouldShowByType = true;
-        if (isInterRack && showInterRack) shouldShowByType = true;
-
-        // In hierarchy mode, if connection doesn't have location data, show it by default
-        // (it's a logical/hierarchical connection, not location-based)
-        if (isHierarchyMode && !hasLocationData && !isIntraNode) {
-            shouldShowByType = true;
-        }
-
-        return shouldShowByType;
-    }
 
     /**
      * Check if a label already contains host_index to avoid double printing
@@ -1425,137 +1516,16 @@ export class CommonModule {
 
     /**
      * Apply connection type filter (location mode only)
-     * Filters connections based on intra-node, intra-rack, and inter-rack types
+     * Filters connections based on racking hierarchy (same host, same rack, same aisle, same hall, different hall)
+     * 
+     * NOTE: This function is essentially a wrapper that calls applyNodeFilter() since both functions
+     * apply the same set of filters (node, template, and connection type). The connection type filters
+     * are location-mode-only and delegate to locationModule for racking hierarchy logic.
      */
     applyConnectionTypeFilter() {
-        if (!this.state || !this.state.cy) {
-            return;
-        }
-
-        // Get connection type filter settings
-        const showIntraNode = document.getElementById('showIntraNodeConnections')?.checked || false;
-        const showIntraRack = document.getElementById('showIntraRackConnections')?.checked || false;
-        const showInterRack = document.getElementById('showInterRackConnections')?.checked || false;
-
-        // Get node filter setting
-        const nodeFilterSelect = document.getElementById('nodeFilterSelect');
-        const selectedNodeId = nodeFilterSelect ? nodeFilterSelect.value : '';
-
-        // Get all edges
-        const allEdges = this.state.cy.edges();
-        let visibleCount = 0;
-        let hiddenCount = 0;
-
-        // Reset all edges to visible first, then apply filters
-        // Use Cytoscape's show() method instead of style('display', 'element')
-        allEdges.forEach((edge) => {
-            edge.show();
-        });
-
-        // Filter edges based on connection type, node, and template filters
-        allEdges.forEach((edge) => {
-            // Check template filter (hierarchy mode only) - use hierarchy module helper
-            if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
-                if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
-                    edge.hide();
-                    hiddenCount++;
-                    return;
-                }
-            }
-
-            // Check node filter
-            if (selectedNodeId !== '') {
-                const selectedShelfId = this.extractShelfIdFromNodeId(selectedNodeId);
-                const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
-                const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
-                const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
-                
-                // Check if this is an internal connection (node definition connection)
-                // Internal connections have is_internal flag and both ports are on the same shelf
-                const isInternalConnection = edge.data('is_internal') === true || 
-                                           (sourceShelfId && targetShelfId && sourceShelfId === targetShelfId);
-                
-                // Show connection if:
-                // 1. Source or target shelf matches selected shelf, OR
-                // 2. It's an internal connection and the shelf matches (both source and target are the same shelf)
-                const isConnectedToSelectedNode = sourceShelfId === selectedShelfId || targetShelfId === selectedShelfId;
-                const isInternalForSelectedNode = isInternalConnection && sourceShelfId === selectedShelfId;
-                
-                if (!isConnectedToSelectedNode && !isInternalForSelectedNode) {
-                    edge.hide();
-                    hiddenCount++;
-                    return;
-                }
-            }
-
-            // Get original endpoints for rerouted edges, current endpoints otherwise
-            const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
-
-            // Extract shelf IDs from source and target nodes
-            const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
-            const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
-
-            // Get the shelf nodes directly using their IDs
-            const sourceShelfNode = sourceShelfId ? this.state.cy.getElementById(sourceShelfId) : null;
-            const targetShelfNode = targetShelfId ? this.state.cy.getElementById(targetShelfId) : null;
-
-            // Determine connection types
-            const isIntraNode = sourceShelfId && targetShelfId && sourceShelfId === targetShelfId;
-
-            // For rack-level filtering, get rack numbers from shelf nodes
-            let sourceRack = 0;
-            let targetRack = 0;
-
-            if (sourceShelfNode && sourceShelfNode.length) {
-                sourceRack = this._normalizeRackNum(sourceShelfNode.data('rack_num') || sourceShelfNode.data('rack')) || 0;
-            }
-
-            if (targetShelfNode && targetShelfNode.length) {
-                targetRack = this._normalizeRackNum(targetShelfNode.data('rack_num') || targetShelfNode.data('rack')) || 0;
-            }
-
-            const isIntraRack = sourceRack === targetRack && sourceRack > 0 && !isIntraNode; // Intra-rack but not intra-node
-            const isInterRack = sourceRack !== targetRack && sourceRack > 0 && targetRack > 0;
-
-            // Check if connection should be visible based on type
-            const shouldShowByType = this.shouldShowConnectionByType(
-                isIntraNode, isIntraRack, isInterRack,
-                showIntraNode, showIntraRack, showInterRack,
-                sourceRack, targetRack
-            );
-
-            if (shouldShowByType) {
-                edge.show();
-                visibleCount++;
-            } else {
-                edge.hide();
-                hiddenCount++;
-            }
-        });
-
-        // Update status - combine with other active filters
-        const statusDiv = document.getElementById('rangeStatus');
-        if (statusDiv) {
-            const filterParts = [];
-            // Get template filter for status (hierarchy mode only)
-            if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
-                const selectedTemplate = window.hierarchyModule.getSelectedTemplateFilter();
-                if (selectedTemplate) {
-                    filterParts.push(`template: ${selectedTemplate}`);
-                }
-            }
-            if (selectedNodeId) {
-                const selectedNode = this.state.cy.getElementById(selectedNodeId);
-                const nodeLabel = selectedNode && selectedNode.length ? selectedNode.data('label') || selectedNodeId : selectedNodeId;
-                filterParts.push(`node: ${nodeLabel}`);
-            }
-            if (filterParts.length === 0) {
-                statusDiv.textContent = `Showing ${visibleCount} connections (${hiddenCount} hidden by type filter)`;
-            } else {
-                statusDiv.textContent = `Showing ${visibleCount} connections filtered by ${filterParts.join(', ')} and type (${hiddenCount} hidden)`;
-            }
-            statusDiv.style.color = '#28a745';
-        }
+        // Simply delegate to applyNodeFilter() which applies all filters together
+        // (node filter, template filter, and connection type filter)
+        this.applyNodeFilter();
     }
 
     /**
@@ -1571,15 +1541,34 @@ export class CommonModule {
         const nodeFilterSelect = document.getElementById('nodeFilterSelect');
         const selectedNodeId = nodeFilterSelect ? nodeFilterSelect.value : '';
 
-        // Get connection type filter settings
-        const showIntraNode = document.getElementById('showIntraNodeConnections')?.checked || false;
-        const showIntraRack = document.getElementById('showIntraRackConnections')?.checked || false;
-        const showInterRack = document.getElementById('showInterRackConnections')?.checked || false;
+        // Get racking hierarchy filter settings (location-mode-only)
+        // Delegate to locationModule to get these values (location-specific logic)
+        let showSameHostId = true, showSameRack = true, showSameAisle = true,
+            showSameHall = true, showDifferentHall = true;
+        if (window.locationModule && typeof window.locationModule.getRackingHierarchyFilterValues === 'function') {
+            const filterValues = window.locationModule.getRackingHierarchyFilterValues();
+            showSameHostId = filterValues.showSameHostId;
+            showSameRack = filterValues.showSameRack;
+            showSameAisle = filterValues.showSameAisle;
+            showSameHall = filterValues.showSameHall;
+            showDifferentHall = filterValues.showDifferentHall;
+        }
 
         // Get all edges
         const allEdges = this.state.cy.edges();
+        // Note: Rerouted edges are duplicates created when nodes are collapsed
+        // We filter all edges for visibility, but only count visible original edges (not rerouted ones, not hidden collapsed ones)
         let visibleCount = 0;
         let hiddenCount = 0;
+
+        // Check which original edges are hidden due to collapse (before we reset visibility)
+        // An original edge is hidden by collapse if there's a rerouted edge pointing to it
+        const originalEdgesHiddenByCollapse = new Set();
+        allEdges.forEach((edge) => {
+            if (edge.data('isRerouted') && edge.data('originalEdgeId')) {
+                originalEdgesHiddenByCollapse.add(edge.data('originalEdgeId'));
+            }
+        });
 
         // Reset all edges to visible first, then apply filters
         // Use Cytoscape's show() method instead of style('display', 'element')
@@ -1588,12 +1577,23 @@ export class CommonModule {
         });
 
         // Apply all filters together
+        // We filter all edges (including rerouted) for visibility, but only count visible original edges
         allEdges.forEach((edge) => {
+            const isRerouted = edge.data('isRerouted');
+            
+            // Skip rerouted edges from counting (they're visual duplicates of hidden original edges)
+            // Skip original edges that are hidden due to collapse (they're replaced by rerouted edges)
+            const isHiddenByCollapse = !isRerouted && originalEdgesHiddenByCollapse.has(edge.id());
+            const shouldCount = !isRerouted && !isHiddenByCollapse;
+            
             // Check template filter (hierarchy mode only) - use hierarchy module helper
             if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
                 if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
                     edge.hide();
-                    hiddenCount++;
+                    // Only count visible original edges that aren't hidden by collapse
+                    if (shouldCount) {
+                        hiddenCount++;
+                    }
                     return;
                 }
             }
@@ -1604,60 +1604,94 @@ export class CommonModule {
                 const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
                 const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
                 const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
-                
+
                 // Check if this is an internal connection (node definition connection)
                 // Internal connections have is_internal flag and both ports are on the same shelf
-                const isInternalConnection = edge.data('is_internal') === true || 
-                                           (sourceShelfId && targetShelfId && sourceShelfId === targetShelfId);
-                
+                const isInternalConnection = edge.data('is_internal') === true ||
+                    (sourceShelfId && targetShelfId && sourceShelfId === targetShelfId);
+
                 // Show connection if:
                 // 1. Source or target shelf matches selected shelf, OR
                 // 2. It's an internal connection and the shelf matches (both source and target are the same shelf)
                 const isConnectedToSelectedNode = sourceShelfId === selectedShelfId || targetShelfId === selectedShelfId;
                 const isInternalForSelectedNode = isInternalConnection && sourceShelfId === selectedShelfId;
-                
+
                 if (!isConnectedToSelectedNode && !isInternalForSelectedNode) {
                     edge.hide();
-                    hiddenCount++;
+                    // Only count visible original edges that aren't hidden by collapse
+                    if (shouldCount) {
+                        hiddenCount++;
+                    }
                     return;
+                }
+
+                // Check destination filter if a destination is selected
+                const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+                const selectedDestinationId = destinationFilterSelect ? destinationFilterSelect.value : '';
+
+                if (selectedDestinationId !== '') {
+                    const selectedDestinationShelfId = this.extractShelfIdFromNodeId(selectedDestinationId);
+
+                    // Determine which endpoint is the destination (the one that's not the source)
+                    // For edges connected to the selected source node:
+                    // - If sourceShelfId matches selectedShelfId, then destination is targetShelfId
+                    // - If targetShelfId matches selectedShelfId, then destination is sourceShelfId
+                    // - If both match (internal connection), destination is the same shelf
+                    let destinationShelfId;
+                    if (sourceShelfId === selectedShelfId) {
+                        // Edge originates from selected node, destination is target
+                        destinationShelfId = targetShelfId;
+                    } else if (targetShelfId === selectedShelfId) {
+                        // Edge terminates at selected node, destination is source
+                        destinationShelfId = sourceShelfId;
+                    } else {
+                        // This shouldn't happen if node filter is working correctly, but handle it
+                        return;
+                    }
+
+                    // Hide if destination doesn't match selected destination
+                    if (destinationShelfId !== selectedDestinationShelfId) {
+                        edge.hide();
+                        // Only count visible original edges that aren't hidden by collapse
+                        if (shouldCount) {
+                            hiddenCount++;
+                        }
+                        return;
+                    }
                 }
             }
 
-            // Check connection type filter
+            // Check connection type filter (racking hierarchy - LOCATION MODE ONLY)
             const { sourceNode, targetNode } = this.getOriginalEdgeEndpoints(edge);
             const sourceShelfId = this.extractShelfIdFromNodeId(sourceNode.id());
             const targetShelfId = this.extractShelfIdFromNodeId(targetNode.id());
             const sourceShelfNode = sourceShelfId ? this.state.cy.getElementById(sourceShelfId) : null;
             const targetShelfNode = targetShelfId ? this.state.cy.getElementById(targetShelfId) : null;
 
-            const isIntraNode = sourceShelfId && targetShelfId && sourceShelfId === targetShelfId;
-            let sourceRack = 0;
-            let targetRack = 0;
-            if (sourceShelfNode && sourceShelfNode.length) {
-                sourceRack = this._normalizeRackNum(sourceShelfNode.data('rack_num') || sourceShelfNode.data('rack')) || 0;
-            }
-            if (targetShelfNode && targetShelfNode.length) {
-                targetRack = this._normalizeRackNum(targetShelfNode.data('rack_num') || targetShelfNode.data('rack')) || 0;
-            }
-            const isIntraRack = sourceRack === targetRack && sourceRack > 0 && !isIntraNode;
-            const isInterRack = sourceRack !== targetRack && sourceRack > 0 && targetRack > 0;
-
             let shouldShowByType = true;
-            if (selectedNodeId === '') {
-                // Only apply type filter if no other filters are active
-                shouldShowByType = this.shouldShowConnectionByType(
-                    isIntraNode, isIntraRack, isInterRack,
-                    showIntraNode, showIntraRack, showInterRack,
-                    sourceRack, targetRack
+            if (this.state.mode === 'location' && window.locationModule) {
+                // Racking hierarchy filters ONLY apply in location mode
+                // These filters classify connections based on physical racking: same host, same rack, same aisle, same hall, or different hall
+                const connectionLevel = window.locationModule.getConnectionHierarchyLevel(sourceShelfNode, targetShelfNode);
+                shouldShowByType = window.locationModule.shouldShowConnectionByHierarchyLevel(
+                    connectionLevel,
+                    showSameHostId, showSameRack, showSameAisle, showSameHall, showDifferentHall
                 );
             }
+            // In hierarchy mode: racking hierarchy filters are IGNORED (not applicable to logical topology)
 
             if (shouldShowByType) {
                 edge.show();
-                visibleCount++;
+                // Only count visible original edges that aren't hidden by collapse
+                if (shouldCount) {
+                    visibleCount++;
+                }
             } else {
                 edge.hide();
-                hiddenCount++;
+                // Only count visible original edges that aren't hidden by collapse
+                if (shouldCount) {
+                    hiddenCount++;
+                }
             }
         });
 
@@ -1676,12 +1710,19 @@ export class CommonModule {
                 const selectedNode = this.state.cy.getElementById(selectedNodeId);
                 const nodeLabel = selectedNode && selectedNode.length ? selectedNode.data('label') || selectedNodeId : selectedNodeId;
                 filterParts.push(`node: ${nodeLabel}`);
+
+                // Add destination filter if selected
+                const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+                const selectedDestinationId = destinationFilterSelect ? destinationFilterSelect.value : '';
+                if (selectedDestinationId) {
+                    const selectedDestinationNode = this.state.cy.getElementById(selectedDestinationId);
+                    const destinationLabel = selectedDestinationNode && selectedDestinationNode.length ?
+                        selectedDestinationNode.data('label') || selectedDestinationId : selectedDestinationId;
+                    filterParts.push(`destination: ${destinationLabel}`);
+                }
             }
-            if (filterParts.length === 0) {
-                statusDiv.textContent = `Showing ${visibleCount} connections (${hiddenCount} hidden)`;
-            } else {
-                statusDiv.textContent = `Showing ${visibleCount} connections filtered by ${filterParts.join(', ')} (${hiddenCount} hidden)`;
-            }
+            // Status text removed - no longer showing connection counts
+            statusDiv.textContent = '';
             statusDiv.style.color = '#28a745';
         }
     }
@@ -1721,18 +1762,18 @@ export class CommonModule {
             let nodeLabel;
 
             if (isLocationMode) {
-                // In location mode, show "hostname (host_index)" format
+                // In location mode, primarily focus on host_id: "#: hostname" format
                 const hostname = nodeData.hostname;
-                const hostIndex = nodeData.host_index;
+                const hostIndex = nodeData.host_index ?? nodeData.host_id;
 
-                if (hostname && hostIndex !== undefined && hostIndex !== null) {
-                    nodeLabel = `${hostname} (host_${hostIndex})`;
+                if (hostIndex !== undefined && hostIndex !== null) {
+                    if (hostname) {
+                        nodeLabel = `${hostIndex}: ${hostname}`;
+                    } else {
+                        nodeLabel = `${hostIndex}`;
+                    }
                 } else if (hostname) {
                     nodeLabel = hostname;
-                } else if (hostIndex !== undefined && hostIndex !== null) {
-                    // Fallback to display label with host_index if no hostname
-                    const displayLabel = this.getNodeDisplayLabel(nodeData, locationModule) || nodeId;
-                    nodeLabel = `${displayLabel} (host_${hostIndex})`;
                 } else {
                     // Fallback to display label if no hostname or host_index
                     nodeLabel = this.getNodeDisplayLabel(nodeData, locationModule) || nodeId;
@@ -1778,11 +1819,11 @@ export class CommonModule {
             options.push({ value: nodeId, label: labelString });
         });
 
-        // Sort options alphabetically by label (ensure labels are strings)
+        // Sort options using natural sort (handles numbers properly)
         options.sort((a, b) => {
             const labelA = String(a.label || '');
             const labelB = String(b.label || '');
-            return labelA.localeCompare(labelB);
+            return this.naturalCompare(labelA, labelB);
         });
 
         // Add sorted options to dropdown
@@ -1791,6 +1832,159 @@ export class CommonModule {
             option.value = opt.value;
             option.textContent = opt.label;
             nodeFilterSelect.appendChild(option);
+        });
+    }
+
+    /**
+     * Populate destination filter dropdown with nodes connected to the selected source node
+     * @param {string} sourceNodeId - ID of the selected source node
+     */
+    populateDestinationFilterDropdown(sourceNodeId) {
+        if (!this.state || !this.state.cy) {
+            return;
+        }
+
+        const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+        if (!destinationFilterSelect) {
+            return;
+        }
+
+        // Clear existing options except the default
+        destinationFilterSelect.innerHTML = '<option value="">Show all destinations</option>';
+
+        const sourceNode = this.state.cy.getElementById(sourceNodeId);
+        if (!sourceNode || sourceNode.length === 0) {
+            return;
+        }
+
+        const sourceShelfId = this.extractShelfIdFromNodeId(sourceNodeId);
+        const locationModule = window.locationModule || null;
+
+        // Get all edges in the graph and find those connected to the source shelf
+        const allEdges = this.state.cy.edges();
+        const destinationShelfIds = new Set();
+
+        // Check if source node has internal connections (connections within itself)
+        let hasInternalConnections = false;
+
+        // Collect all destination shelf IDs from edges connected to the source shelf
+        allEdges.forEach((edge) => {
+            const { sourceNode: edgeSource, targetNode: edgeTarget } = this.getOriginalEdgeEndpoints(edge);
+            const edgeSourceShelfId = this.extractShelfIdFromNodeId(edgeSource.id());
+            const edgeTargetShelfId = this.extractShelfIdFromNodeId(edgeTarget.id());
+
+            // Check if this edge is connected to the source shelf
+            let destinationShelfId = null;
+            if (edgeSourceShelfId === sourceShelfId) {
+                // Source matches, destination is the target
+                destinationShelfId = edgeTargetShelfId;
+            } else if (edgeTargetShelfId === sourceShelfId) {
+                // Target matches, destination is the source
+                destinationShelfId = edgeSourceShelfId;
+            } else {
+                // Skip edges not connected to the source shelf
+                return;
+            }
+
+            // Check for internal connections (same shelf)
+            if (destinationShelfId === sourceShelfId) {
+                hasInternalConnections = true;
+            }
+
+            // Add destination shelf ID if it exists
+            if (destinationShelfId && !destinationShelfIds.has(destinationShelfId)) {
+                destinationShelfIds.add(destinationShelfId);
+            }
+        });
+
+        // Always include the source node itself if it has any connections (including internal)
+        if (hasInternalConnections || destinationShelfIds.size > 0) {
+            destinationShelfIds.add(sourceShelfId);
+        }
+
+        // Build options array
+        const options = [];
+        const isLocationMode = this.state.mode === 'location';
+        const isHierarchyMode = this.state.mode === 'hierarchy';
+
+        destinationShelfIds.forEach((destShelfId) => {
+            const destShelfNode = this.state.cy.getElementById(destShelfId);
+            if (!destShelfNode || destShelfNode.length === 0) {
+                return;
+            }
+
+            const destNodeData = destShelfNode.data();
+            let nodeLabel;
+
+            if (isLocationMode) {
+                // In location mode, use "#: hostname" format
+                const hostname = destNodeData.hostname;
+                const hostIndex = destNodeData.host_index ?? destNodeData.host_id;
+
+                if (hostIndex !== undefined && hostIndex !== null) {
+                    if (hostname) {
+                        nodeLabel = `${hostIndex}: ${hostname}`;
+                    } else {
+                        nodeLabel = `${hostIndex}`;
+                    }
+                } else if (hostname) {
+                    nodeLabel = hostname;
+                } else {
+                    nodeLabel = this.getNodeDisplayLabel(destNodeData, locationModule) || destShelfId;
+                }
+            } else if (isHierarchyMode) {
+                // In hierarchy mode, use the same format as "Filter by Node" dropdown
+                // Show path representation: "superpod1 > node2 > n300_lb (host_0)"
+                if (window.hierarchyModule) {
+                    const pathArray = window.hierarchyModule.getPath(destShelfNode);
+                    const pathLabels = [];
+
+                    // Convert each path segment ID to its label
+                    pathArray.forEach((pathId) => {
+                        const pathNode = this.state.cy.getElementById(pathId);
+                        if (pathNode && pathNode.length) {
+                            const pathLabel = pathNode.data('label') || pathId;
+                            pathLabels.push(pathLabel);
+                        } else {
+                            pathLabels.push(pathId);
+                        }
+                    });
+
+                    // Format as "superpod1 > node2 > n300_lb (host_0)"
+                    if (pathLabels.length > 0) {
+                        const hostIndex = destNodeData.host_index;
+                        nodeLabel = this.formatLabelWithHostIndex(pathLabels.join(' > '), hostIndex);
+                    } else {
+                        // Fallback if path is empty
+                        const nodeLabelStr = destNodeData.label || destShelfId;
+                        const hostIndex = destNodeData.host_index;
+                        nodeLabel = this.formatLabelWithHostIndex(nodeLabelStr, hostIndex);
+                    }
+                } else {
+                    // Fallback if hierarchyModule not available
+                    nodeLabel = this.getNodeDisplayLabel(destNodeData, locationModule) || destShelfId;
+                }
+            } else {
+                // For other cases, use the standard display label
+                nodeLabel = this.getNodeDisplayLabel(destNodeData, locationModule) || destShelfId;
+            }
+
+            options.push({ value: destShelfId, label: String(nodeLabel || destShelfId) });
+        });
+
+        // Sort options using natural sort (handles numbers properly)
+        options.sort((a, b) => {
+            const labelA = String(a.label || '');
+            const labelB = String(b.label || '');
+            return this.naturalCompare(labelA, labelB);
+        });
+
+        // Populate dropdown
+        options.forEach((option) => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            destinationFilterSelect.appendChild(optionElement);
         });
     }
 
@@ -1804,19 +1998,26 @@ export class CommonModule {
             return;
         }
 
-        // Reset connection type checkboxes to checked (default state)
-        const showIntraNode = document.getElementById('showIntraNodeConnections');
-        const showIntraRack = document.getElementById('showIntraRackConnections');
-        const showInterRack = document.getElementById('showInterRackConnections');
-
-        if (showIntraNode) showIntraNode.checked = true;
-        if (showIntraRack) showIntraRack.checked = true;
-        if (showInterRack) showInterRack.checked = true;
+        // Reset racking hierarchy filter checkboxes (location-mode-only)
+        // Delegate to locationModule for location-specific reset logic
+        if (window.locationModule && typeof window.locationModule.resetRackingHierarchyFilters === 'function') {
+            window.locationModule.resetRackingHierarchyFilters();
+        }
 
         // Reset node filter to "Show all nodes"
         const nodeFilterSelect = document.getElementById('nodeFilterSelect');
         if (nodeFilterSelect) {
             nodeFilterSelect.value = '';
+        }
+
+        // Reset destination filter
+        const destinationFilterSelect = document.getElementById('destinationFilterSelect');
+        const destinationFilterContainer = document.getElementById('destinationFilterContainer');
+        if (destinationFilterSelect) {
+            destinationFilterSelect.value = '';
+        }
+        if (destinationFilterContainer) {
+            destinationFilterContainer.style.display = 'none';
         }
 
         // Reset template filter to "Show all templates" (hierarchy mode only)
@@ -1832,7 +2033,7 @@ export class CommonModule {
         // Update status
         const statusDiv = document.getElementById('rangeStatus');
         if (statusDiv) {
-            statusDiv.textContent = 'Showing all connections';
+            statusDiv.textContent = '';
             statusDiv.style.color = '#666';
         }
     }
@@ -1918,14 +2119,14 @@ export class CommonModule {
 
         const pathParts = [];
 
-        // Hall name (if available and not empty)
+        // Hall name (if available and not empty) - label as "Hall {hall}"
         if (hall !== undefined && hall !== null && hall !== '') {
-            pathParts.push(hall);
+            pathParts.push(`Hall ${hall}`);
         }
 
-        // Aisle (if available and not empty)
+        // Aisle (if available and not empty) - label as "Aisle {aisle}"
         if (aisle !== undefined && aisle !== null && aisle !== '') {
-            pathParts.push(aisle);
+            pathParts.push(`Aisle ${aisle}`);
         }
 
         // Rack number (if available)
@@ -2275,39 +2476,55 @@ export class CommonModule {
         let sourcePath = '';
         let targetPath = '';
 
+        // Extract tray and port numbers for hierarchy mode display
+        let sourceTrayPort = '';
+        let targetTrayPort = '';
         if (isHierarchyMode) {
-            // Get shelf nodes from port nodes (buildTemplatePath works on shelf/graph nodes, not ports)
-            let sourceShelfNode = null;
-            let targetShelfNode = null;
-
-            if (sourceNode && sourceNode.length) {
-                const sourceType = sourceNode.data('type');
-                if (sourceType === 'port' || sourceType === 'tray') {
-                    sourceShelfNode = this.getParentShelfNode(sourceNode);
-                } else if (sourceType === 'shelf' || sourceType === 'graph') {
-                    sourceShelfNode = sourceNode;
-                }
-
-                if (sourceShelfNode && sourceShelfNode.length) {
-                    const pathParts = this.buildTemplatePath(sourceShelfNode);
-                    if (pathParts.length > 0) {
-                        sourcePath = pathParts.join(' › ');
-                    }
-                }
+            const sourceTray = sourceNode.data('tray');
+            const sourcePort = sourceNode.data('port');
+            if (sourceTray !== undefined && sourcePort !== undefined) {
+                sourceTrayPort = `Tray ${sourceTray} > Port ${sourcePort}`;
             }
 
-            if (targetNode && targetNode.length) {
-                const targetType = targetNode.data('type');
-                if (targetType === 'port' || targetType === 'tray') {
-                    targetShelfNode = this.getParentShelfNode(targetNode);
-                } else if (targetType === 'shelf' || targetType === 'graph') {
-                    targetShelfNode = targetNode;
+            const targetTray = targetNode.data('tray');
+            const targetPort = targetNode.data('port');
+            if (targetTray !== undefined && targetPort !== undefined) {
+                targetTrayPort = `Tray ${targetTray} > Port ${targetPort}`;
+            }
+        }
+
+        if (isHierarchyMode) {
+            // In hierarchy mode, build template-based path from containing template down to node
+            // Show node_ref# for lowest level template
+            const templateName = edgeData.template_name || edgeData.containerTemplate;
+            if (templateName) {
+                // Get shelf nodes from port nodes
+                let sourceShelfNode = null;
+                let targetShelfNode = null;
+
+                if (sourceNode && sourceNode.length) {
+                    const sourceType = sourceNode.data('type');
+                    if (sourceType === 'port' || sourceType === 'tray') {
+                        sourceShelfNode = this.getParentShelfNode(sourceNode);
+                    } else if (sourceType === 'shelf' || sourceType === 'graph') {
+                        sourceShelfNode = sourceNode;
+                    }
+
+                    if (sourceShelfNode && sourceShelfNode.length && window.hierarchyModule) {
+                        sourcePath = window.hierarchyModule.buildTemplateNamePath(sourceShelfNode, templateName);
+                    }
                 }
 
-                if (targetShelfNode && targetShelfNode.length) {
-                    const pathParts = this.buildTemplatePath(targetShelfNode);
-                    if (pathParts.length > 0) {
-                        targetPath = pathParts.join(' › ');
+                if (targetNode && targetNode.length) {
+                    const targetType = targetNode.data('type');
+                    if (targetType === 'port' || targetType === 'tray') {
+                        targetShelfNode = this.getParentShelfNode(targetNode);
+                    } else if (targetType === 'shelf' || targetType === 'graph') {
+                        targetShelfNode = targetNode;
+                    }
+
+                    if (targetShelfNode && targetShelfNode.length && window.hierarchyModule) {
+                        targetPath = window.hierarchyModule.buildTemplateNamePath(targetShelfNode, templateName);
                     }
                 }
             }
@@ -2343,20 +2560,109 @@ export class CommonModule {
             }
         }
 
+        // Get host_index and hostname for source and target (for location mode)
+        let sourceHostInfo = '';
+        let targetHostInfo = '';
+        if (isLocationMode) {
+            // Get shelf nodes to extract host_index and hostname
+            let sourceShelfForHost = null;
+            let targetShelfForHost = null;
+
+            if (sourceNode && sourceNode.length) {
+                const sourceType = sourceNode.data('type');
+                if (sourceType === 'port' || sourceType === 'tray') {
+                    sourceShelfForHost = this.getParentShelfNode(sourceNode);
+                } else if (sourceType === 'shelf') {
+                    sourceShelfForHost = sourceNode;
+                }
+            }
+
+            if (targetNode && targetNode.length) {
+                const targetType = targetNode.data('type');
+                if (targetType === 'port' || targetType === 'tray') {
+                    targetShelfForHost = this.getParentShelfNode(targetNode);
+                } else if (targetType === 'shelf') {
+                    targetShelfForHost = targetNode;
+                }
+            }
+
+            // Format host_index: hostname for source
+            if (sourceShelfForHost && sourceShelfForHost.length) {
+                const sourceHostIndex = sourceShelfForHost.data('host_index') ?? sourceShelfForHost.data('host_id');
+                const sourceHostname = sourceShelfForHost.data('hostname') || '';
+                if (sourceHostIndex !== undefined && sourceHostIndex !== null) {
+                    if (sourceHostname) {
+                        sourceHostInfo = `${sourceHostIndex}: ${sourceHostname}`;
+                    } else {
+                        sourceHostInfo = `${sourceHostIndex}`;
+                    }
+                } else if (sourceHostname) {
+                    sourceHostInfo = sourceHostname;
+                }
+            }
+
+            // Format host_index: hostname for target
+            if (targetShelfForHost && targetShelfForHost.length) {
+                const targetHostIndex = targetShelfForHost.data('host_index') ?? targetShelfForHost.data('host_id');
+                const targetHostname = targetShelfForHost.data('hostname') || '';
+                if (targetHostIndex !== undefined && targetHostIndex !== null) {
+                    if (targetHostname) {
+                        targetHostInfo = `${targetHostIndex}: ${targetHostname}`;
+                    } else {
+                        targetHostInfo = `${targetHostIndex}`;
+                    }
+                } else if (targetHostname) {
+                    targetHostInfo = targetHostname;
+                }
+            }
+        }
+
         // Build HTML content
         let html = `<strong>Connection Details</strong><br><br>`;
 
+        // In hierarchy mode, show template name at the start
+        if (isHierarchyMode) {
+            const templateName = edgeData.template_name || edgeData.containerTemplate;
+            if (templateName) {
+                html += `<strong>Template:</strong> ${templateName}<br><br>`;
+            }
+        }
+
         html += `<strong>Source:</strong><br>`;
-        html += `${sourceInfo}`;
-        if ((isHierarchyMode || isLocationMode) && sourcePath) {
-            html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${sourcePath}</span>`;
+        if (isHierarchyMode) {
+            // In hierarchy mode: Full instance path is main line, Tray/Port is secondary
+            html += `${sourceInfo}`;
+            if (sourceTrayPort) {
+                html += `<br><span style="color: #666; font-size: 0.9em;">${sourceTrayPort}</span>`;
+            }
+        } else {
+            // In location mode: show host info, label, and path
+            if (sourceHostInfo) {
+                html += `${sourceHostInfo}<br>`;
+            }
+            html += `${sourceInfo}`;
+            if (sourcePath) {
+                html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${sourcePath}</span>`;
+            }
         }
         html += `<br><br>`;
 
         html += `<strong>Target:</strong><br>`;
-        html += `${targetInfo}`;
-        if ((isHierarchyMode || isLocationMode) && targetPath) {
-            html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${targetPath}</span>`;
+        if (isHierarchyMode) {
+            // In hierarchy mode: Full instance path is main line, Tray/Port is secondary
+            html += `${targetInfo}`;
+            if (targetTrayPort) {
+                html += `<br><span style="color: #666; font-size: 0.9em;">${targetTrayPort}</span>`;
+            }
+        } else {
+            // In location mode: show host info, label, and path
+            if (targetHostInfo) {
+                html += `${targetHostInfo}<br>`;
+            }
+            html += `${targetInfo}`;
+            if (targetPath) {
+                html += `<br><span style="color: #666; font-size: 0.9em;">Path: ${targetPath}</span>`;
+            }
         }
         html += `<br><br>`;
 
@@ -2412,6 +2718,111 @@ export class CommonModule {
         }
 
         return null;
+    }
+
+    /**
+     * Apply curve styles to a specific set of edges
+     * More efficient than forceApplyCurveStyles when only a subset of edges changed
+     * @param {Object} edges - Cytoscape edge collection to style
+     */
+    applyCurveStylesToEdges(edges) {
+        if (!this.state.cy || !edges || edges.length === 0) return;
+
+        // Use fixed control-point-step-size for consistent curve appearance
+        const controlPointStepSize = 40;
+
+        this.state.cy.startBatch();
+
+        edges.forEach((edge) => {
+            const styleProps = this._computeEdgeCurveStyle(edge, controlPointStepSize);
+            edge.style(styleProps);
+        });
+
+        this.state.cy.endBatch();
+        this.state.cy.forceRender();
+    }
+
+    /**
+     * Compute curve style properties for a single edge
+     * @param {Object} edge - Cytoscape edge
+     * @param {number} controlPointStepSize - Base step size for curves
+     * @returns {Object} Style properties to apply
+     */
+    _computeEdgeCurveStyle(edge, controlPointStepSize) {
+        let sourceNode, targetNode;
+        let isSameShelf = false;
+        const isRerouted = edge.data('isRerouted');
+
+        // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
+        if (isRerouted) {
+            sourceNode = edge.source();
+            targetNode = edge.target();
+
+            // Check if original endpoints (ports) are on the same shelf for curve styling
+            const endpoints = this.getOriginalEdgeEndpoints(edge);
+            const originalSourceId = endpoints.sourceNode.id();
+            const originalTargetId = endpoints.targetNode.id();
+            isSameShelf = this.checkSameShelf(originalSourceId, originalTargetId);
+        } else {
+            // Regular edges - get original endpoints (ports)
+            const endpoints = this.getOriginalEdgeEndpoints(edge);
+            sourceNode = endpoints.sourceNode;
+            targetNode = endpoints.targetNode;
+
+            // For regular port-to-port edges, check if they're on the same shelf
+            const sourceId = sourceNode.id();
+            const targetId = targetNode.id();
+            isSameShelf = this.checkSameShelf(sourceId, targetId);
+        }
+
+        // Check if this is a cross-graph connection (between different graph nodes)
+        let isCrossGraph = false;
+
+        if (isRerouted) {
+            const sourceIsGraph = sourceNode.data('type') === 'graph';
+            const targetIsGraph = targetNode.data('type') === 'graph';
+            if (sourceIsGraph && targetIsGraph && sourceNode.id() !== targetNode.id()) {
+                isCrossGraph = true;
+            }
+        } else {
+            // For regular edges, find the graph nodes containing the ports
+            let sourceGraphNode = null;
+            let targetGraphNode = null;
+            let current = sourceNode;
+            while (current && current.length > 0) {
+                if (current.data('type') === 'graph') {
+                    sourceGraphNode = current;
+                    break;
+                }
+                current = current.parent();
+            }
+            current = targetNode;
+            while (current && current.length > 0) {
+                if (current.data('type') === 'graph') {
+                    targetGraphNode = current;
+                    break;
+                }
+                current = current.parent();
+            }
+            if (sourceGraphNode && targetGraphNode && sourceGraphNode.id() !== targetGraphNode.id()) {
+                isCrossGraph = true;
+            }
+        }
+
+        if (isSameShelf) {
+            const controlPointDistance = Math.max(10, controlPointStepSize * 0.4);
+            return {
+                'curve-style': 'unbundled-bezier',
+                'control-point-distance': controlPointDistance,
+                'control-point-weight': 0.5
+            };
+        } else {
+            const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
+            return {
+                'curve-style': 'bezier',
+                'control-point-step-size': stepSize
+            };
+        }
     }
 
     /**
@@ -2562,8 +2973,6 @@ export class CommonModule {
         this.state.cy.endBatch();
 
         // Force render to ensure changes take effect
-        // NOTE: Do NOT call style().update() here as it can reset styles to stylesheet defaults
-        // Programmatic styles applied via edge.style() should persist
         this.state.cy.forceRender();
     }
 
@@ -2628,13 +3037,22 @@ export class CommonModule {
             }
         }
 
-        // Get shelf node - use robust method that works even when collapsed
+        // Get shelf node - use the same method that works in showConnectionInfo
+        // This ensures consistency with how location paths are built
         let shelfNode = null;
-        if (trayNode && trayNode.length) {
+        const portType = portNode.data('type');
+        if (portType === 'port' || portType === 'tray') {
+            shelfNode = this.getParentShelfNode(portNode);
+        } else if (portType === 'shelf') {
+            shelfNode = portNode;
+        }
+
+        // Fallback: try parent() method if getParentShelfNode didn't work
+        if ((!shelfNode || !shelfNode.length) && trayNode && trayNode.length) {
             shelfNode = trayNode.parent();
         }
 
-        // If parent() fails, extract shelf ID from port ID and get shelf directly
+        // Final fallback: extract shelf ID from port ID
         if (!shelfNode || !shelfNode.length) {
             const shelfId = this.extractShelfIdFromNodeId(portId);
             if (shelfId) {
@@ -2642,12 +3060,9 @@ export class CommonModule {
             }
         }
 
-        // Fallback: use getParentShelfNode helper
-        if (!shelfNode || !shelfNode.length) {
-            shelfNode = this.getParentShelfNode(portNode);
-        }
 
         // Get location data from shelf node (if available)
+        // Also check parent rack node if data is missing (similar to buildLocationPath)
         let hostname = '';
         let hall = '';
         let aisle = '';
@@ -2656,12 +3071,53 @@ export class CommonModule {
         let hostIndex = undefined;
 
         if (shelfNode && shelfNode.length) {
-            hostname = shelfNode.data('hostname') || '';
-            hall = shelfNode.data('hall') || '';
-            aisle = shelfNode.data('aisle') || '';
-            rackNum = shelfNode.data('rack_num');
-            shelfU = shelfNode.data('shelf_u');
-            hostIndex = shelfNode.data('host_index');
+            const shelfData = shelfNode.data();
+            hostname = shelfData.hostname || '';
+            hall = shelfData.hall || '';
+            aisle = shelfData.aisle || '';
+            rackNum = shelfData.rack_num;
+            shelfU = shelfData.shelf_u;
+            hostIndex = shelfData.host_index;
+
+            // If hall/aisle/rack_num are not on the shelf node, try to get them from parent rack node
+            if ((!hall || !aisle || rackNum === undefined || rackNum === null) && shelfNode.parent().length > 0) {
+                const parent = shelfNode.parent();
+                const parentData = parent.data();
+                if (parentData.type === 'rack') {
+                    if (!hall || hall === '') {
+                        hall = parentData.hall;
+                    }
+                    if (!aisle || aisle === '') {
+                        aisle = parentData.aisle;
+                    }
+                    if (rackNum === undefined || rackNum === null) {
+                        rackNum = parentData.rack_num;
+                    }
+                }
+            }
+
+            // Normalize rackNum and shelfU - extract numeric values from strings if needed
+            // Handle cases where rackNum might be "Rack 02" or "02" or 2
+            if (rackNum !== undefined && rackNum !== null) {
+                if (typeof rackNum === 'string') {
+                    // Try to extract number from strings like "Rack 02" or "02"
+                    const match = rackNum.match(/\d+/);
+                    if (match) {
+                        rackNum = parseInt(match[0], 10);
+                    }
+                }
+            }
+
+            // Handle cases where shelfU might be "Shelf 02" or "02" or 2
+            if (shelfU !== undefined && shelfU !== null) {
+                if (typeof shelfU === 'string') {
+                    // Try to extract number from strings like "Shelf 02" or "02"
+                    const match = shelfU.match(/\d+/);
+                    if (match) {
+                        shelfU = parseInt(match[0], 10);
+                    }
+                }
+            }
         } else {
             // If we can't get shelf node, try to extract host_index from port ID
             // Port ID might be in format: {shelfId}:t{trayNum}:p{portNum} where shelfId is host_index
@@ -2673,53 +3129,209 @@ export class CommonModule {
 
         const trayLabel = trayNode && trayNode.length ? trayNode.data('label') : (trayNum !== undefined ? `T${trayNum}` : 'Tray');
 
+        // In location mode, show the full location-based label format (like CSV: HallAisleRackUShelfU-Tray-Port)
+        const isLocationMode = this.state && this.state.mode === 'location';
+        const isHierarchyMode = this.state && this.state.mode === 'hierarchy';
+
         // Build location string
         const locationParts = [];
 
-        // Prefer location format (Hall-Aisle-Rack-Shelf) as default
-        if (hall && aisle && rackNum !== undefined && shelfU !== undefined) {
-            // Use location format: HallAisle##U##
-            if (locationModule && typeof locationModule.buildLabel === 'function') {
-                locationParts.push(locationModule.buildLabel(hall, aisle, rackNum, shelfU));
-            } else if (window.location_buildLabel) {
-                locationParts.push(window.location_buildLabel(hall, aisle, rackNum, shelfU));
+        if (isHierarchyMode && shelfNode && shelfNode.length) {
+            // In hierarchy mode, build the full instance path from root to shelf
+            // Use hierarchyModule.getPath to get all node IDs in the path, then get labels
+            let pathArray = [];
+            if (window.hierarchyModule && typeof window.hierarchyModule.getPath === 'function') {
+                const pathIds = window.hierarchyModule.getPath(shelfNode);
+                // Get labels for each node in the path
+                pathArray = pathIds.map(pathId => {
+                    const pathNode = this.state.cy.getElementById(pathId);
+                    if (pathNode && pathNode.length) {
+                        const pathData = pathNode.data();
+                        // For graph nodes, use child_name or label
+                        if (pathData.type === 'graph') {
+                            return pathData.child_name || pathData.label || '';
+                        }
+                        // For shelf nodes, use child_name if available
+                        else if (pathData.type === 'shelf' && pathData.child_name) {
+                            return pathData.child_name;
+                        }
+                    }
+                    return '';
+                }).filter(label => label); // Remove empty strings
             } else {
-                // Fallback
-                locationParts.push(`${hall}${aisle}${rackNum}U${shelfU}`);
+                // Fallback to buildTemplatePath
+                pathArray = this.buildTemplatePath(shelfNode);
             }
-        } else if (hostname) {
-            // Fallback to hostname if location info is unavailable
-            locationParts.push(hostname);
-        } else if (shelfNode && shelfNode.length && shelfNode.data('label')) {
-            // Final fallback to shelf label
-            locationParts.push(shelfNode.data('label'));
-        }
-
-        // Always add host_index, tray, and port at the end - regardless of collapse/expand state
-        // Format: ... › host {hostIndex}:t{trayNum}:p{portNum}
-        // This ensures consistent endpoint description that doesn't change with collapse/expand
-        // Use compact descriptor format when host_index, tray, and port are all available
-        if (hostIndex !== undefined && hostIndex !== null && trayNum !== undefined && trayNum !== null && portNum !== undefined && portNum !== null) {
-            // Compact format: "host 1:t1:p1"
-            locationParts.push(`host ${hostIndex}:t${trayNum}:p${portNum}`);
-        } else {
-            // Fallback to separate parts if any component is missing
+            
+            // Process each path segment to remove (host_X) patterns for cleaner display
+            const cleanPathArray = pathArray.map(pathLabel => {
+                // Remove (host_X) pattern from each segment
+                return pathLabel.replace(/\s*\(host_\d+\)\s*/gi, '').trim();
+            }).filter(label => label); // Remove empty strings
+            
+            // Build the main path string
+            let mainPath = '';
+            if (cleanPathArray.length > 0) {
+                mainPath = cleanPathArray.join(' > ');
+            }
+            
+            // Add host_id in parentheses at the end (without tray/port info)
             if (hostIndex !== undefined && hostIndex !== null) {
-                locationParts.push(`host_${hostIndex}`);
+                if (mainPath) {
+                    locationParts.push(`${mainPath} (host id: ${hostIndex})`);
+                } else {
+                    locationParts.push(`(host id: ${hostIndex})`);
+                }
+            } else if (mainPath) {
+                locationParts.push(mainPath);
+            }
+        } else if (isLocationMode) {
+            // In location mode, construct the label using all available location info
+            // Format matches CSV: {Hall}{Aisle}{Rack}U{ShelfU}-{Tray}-{Port}
+            // Example: "SC_Floor_5A01U32-2-1" = SC_Floor_5 (Hall) + A (Aisle) + 01 (Rack) + U32 (Shelf U) + -2-1 (Tray-Port)
+            
+            // Check if we have all required location data (hall and aisle can be empty strings, so check explicitly)
+            const hasHall = hall !== undefined && hall !== null && String(hall).trim() !== '';
+            const hasAisle = aisle !== undefined && aisle !== null && String(aisle).trim() !== '';
+            const hasRack = rackNum !== undefined && rackNum !== null && rackNum !== '';
+            const hasShelfU = shelfU !== undefined && shelfU !== null && shelfU !== '';
+            const hasTray = trayNum !== undefined && trayNum !== null;
+            const hasPort = portNum !== undefined && portNum !== null;
+
+            const hasAllLocationData = hasHall && hasAisle && hasRack && hasShelfU && hasTray && hasPort;
+
+            if (hasAllLocationData) {
+                // Build the full CSV-style label: HallAisleRackUShelfU-Tray-Port
+                // Normalize rack and shelf U: parse strings to numbers, then pad
+                let rackStr = '';
+                if (typeof rackNum === 'string') {
+                    const parsed = parseInt(rackNum, 10);
+                    rackStr = isNaN(parsed) ? String(rackNum) : String(parsed).padStart(2, '0');
+                } else if (typeof rackNum === 'number') {
+                    rackStr = String(rackNum).padStart(2, '0');
+                } else {
+                    rackStr = String(rackNum);
+                }
+
+                let shelfUStr = '';
+                if (typeof shelfU === 'string') {
+                    const parsed = parseInt(shelfU, 10);
+                    shelfUStr = isNaN(parsed) ? String(shelfU) : String(parsed).padStart(2, '0');
+                } else if (typeof shelfU === 'number') {
+                    shelfUStr = String(shelfU).padStart(2, '0');
+                } else {
+                    shelfUStr = String(shelfU);
+                }
+
+                const locationLabel = `${hall}${aisle}${rackStr}U${shelfUStr}-${trayNum}-${portNum}`;
+                locationParts.push(locationLabel);
+            } else {
+                // Partial location data available - build what we can
+                const labelParts = [];
+
+                // Add Hall
+                if (hall) {
+                    labelParts.push(hall);
+                }
+
+                // Add Aisle
+                if (aisle) {
+                    labelParts.push(aisle);
+                }
+
+                // Add Rack (zero-padded to 2 digits if numeric)
+                if (rackNum !== undefined && rackNum !== null) {
+                    const rackStr = typeof rackNum === 'number' ? String(rackNum).padStart(2, '0') : String(rackNum);
+                    labelParts.push(rackStr);
+                }
+
+                // Add Shelf U (format: U##)
+                if (shelfU !== undefined && shelfU !== null) {
+                    const shelfUStr = typeof shelfU === 'number' ? String(shelfU).padStart(2, '0') : String(shelfU);
+                    labelParts.push(`U${shelfUStr}`);
+                }
+
+                // Combine location parts: HallAisleRackUShelfU
+                const locationPrefix = labelParts.join('');
+
+                // Add Tray and Port if available
+                if (locationPrefix) {
+                    if (trayNum !== undefined && trayNum !== null && portNum !== undefined && portNum !== null) {
+                        locationParts.push(`${locationPrefix}-${trayNum}-${portNum}`);
+                    } else {
+                        locationParts.push(locationPrefix);
+                        // Add tray/port separately if available
+                        if (trayNum !== undefined && trayNum !== null) {
+                            locationParts.push(`T${trayNum}`);
+                        }
+                        if (portNum !== undefined && portNum !== null) {
+                            locationParts.push(`P${portNum}`);
+                        }
+                    }
+                } else {
+                    // Fallback: use descriptor format if location info is missing
+                    if (hostIndex !== undefined && hostIndex !== null && trayNum !== undefined && trayNum !== null && portNum !== undefined && portNum !== null) {
+                        locationParts.push(`${hostIndex}:t${trayNum}:p${portNum}`);
+                    } else {
+                        if (hostIndex !== undefined && hostIndex !== null) {
+                            locationParts.push(`${hostIndex}`);
+                        }
+                        if (trayNum !== undefined && trayNum !== null) {
+                            locationParts.push(`t${trayNum}`);
+                        }
+                        if (portNum !== undefined && portNum !== null) {
+                            locationParts.push(`p${portNum}`);
+                        }
+                    }
+                }
+            }
+        } else {
+            // In hierarchy mode or other modes, use the original format with location parts
+            // Prefer location format (Hall-Aisle-Rack-Shelf) as default
+            if (hall && aisle && rackNum !== undefined && shelfU !== undefined) {
+                // Use location format: HallAisle##U##
+                if (locationModule && typeof locationModule.buildLabel === 'function') {
+                    locationParts.push(locationModule.buildLabel(hall, aisle, rackNum, shelfU));
+                } else if (window.location_buildLabel) {
+                    locationParts.push(window.location_buildLabel(hall, aisle, rackNum, shelfU));
+                } else {
+                    // Fallback
+                    locationParts.push(`${hall}${aisle}${rackNum}U${shelfU}`);
+                }
+            } else if (hostname) {
+                // Fallback to hostname if location info is unavailable
+                locationParts.push(hostname);
+            } else if (shelfNode && shelfNode.length && shelfNode.data('label')) {
+                // Final fallback to shelf label
+                locationParts.push(shelfNode.data('label'));
             }
 
-            // Add tray info (use tray number if available, otherwise tray label)
-            if (trayNum !== undefined && trayNum !== null) {
-                locationParts.push(`T${trayNum}`);
-            } else if (trayLabel) {
-                locationParts.push(trayLabel);
-            }
+            // Always add host_index, tray, and port at the end - regardless of collapse/expand state
+            // Format: ... › host {hostIndex}:t{trayNum}:p{portNum}
+            // This ensures consistent endpoint description that doesn't change with collapse/expand
+            // Use compact descriptor format when host_index, tray, and port are all available
+            if (hostIndex !== undefined && hostIndex !== null && trayNum !== undefined && trayNum !== null && portNum !== undefined && portNum !== null) {
+                // Compact format: "host 1:t1:p1"
+                locationParts.push(`host ${hostIndex}:t${trayNum}:p${portNum}`);
+            } else {
+                // Fallback to separate parts if any component is missing
+                if (hostIndex !== undefined && hostIndex !== null) {
+                    locationParts.push(`host_${hostIndex}`);
+                }
 
-            // Add port info (use port number if available, otherwise port label)
-            if (portNum !== undefined && portNum !== null) {
-                locationParts.push(`P${portNum}`);
-            } else if (portLabel) {
-                locationParts.push(portLabel);
+                // Add tray info (use tray number if available, otherwise tray label)
+                if (trayNum !== undefined && trayNum !== null) {
+                    locationParts.push(`T${trayNum}`);
+                } else if (trayLabel) {
+                    locationParts.push(trayLabel);
+                }
+
+                // Add port info (use port number if available, otherwise port label)
+                if (portNum !== undefined && portNum !== null) {
+                    locationParts.push(`P${portNum}`);
+                } else if (portLabel) {
+                    locationParts.push(portLabel);
+                }
             }
         }
 
@@ -3195,7 +3807,7 @@ export class CommonModule {
             // Hierarchy mode: use template-based coloring (matches legend)
             connectionColor = this.getTemplateColor(template_name);
         } else {
-            // Physical mode: use intra-node vs inter-node coloring
+            // Physical mode: delegate to location module for hierarchy-based coloring
             const sourceGrandparent = this.getParentAtLevel(sourceNode, 2);
             const targetGrandparent = this.getParentAtLevel(targetNode, 2);
 
@@ -3205,10 +3817,15 @@ export class CommonModule {
             const targetIsShelf = targetGrandparent && targetGrandparent.length &&
                 (targetGrandparent.data('type') === 'shelf' || targetGrandparent.data('type') === 'node');
 
-            if (sourceIsShelf && targetIsShelf && sourceGrandparent.id() === targetGrandparent.id()) {
-                connectionColor = CONNECTION_COLORS.INTRA_NODE;
+            if (!sourceIsShelf || !targetIsShelf) {
+                connectionColor = CONNECTION_COLORS.DIFFERENT_HALL;
+            } else if (window.locationModule) {
+                // Delegate to location module for hierarchy-based coloring
+                const connectionLevel = window.locationModule.getConnectionHierarchyLevel(sourceGrandparent, targetGrandparent);
+                connectionColor = window.locationModule.getConnectionColorForLevel(connectionLevel);
             } else {
-                connectionColor = CONNECTION_COLORS.INTER_NODE;
+                // Fallback if location module not available
+                connectionColor = CONNECTION_COLORS.DIFFERENT_HALL;
             }
         }
 
@@ -3280,6 +3897,11 @@ export class CommonModule {
             this.forceApplyCurveStyles();
         }, 50);
 
+        // In location mode, ensure connections are properly colored after creation
+        if (visualizationMode === 'location' && window.locationModule && typeof window.locationModule.recolorConnections === 'function') {
+            window.locationModule.recolorConnections();
+        }
+
         // Update the connection legend after creating a connection
         if (this.state.data.currentData) {
             if (window.updateConnectionLegend && typeof window.updateConnectionLegend === 'function') {
@@ -3297,7 +3919,7 @@ export class CommonModule {
     getInternalConnectionsFromNodeType(nodeType) {
         const nodeTypeUpper = nodeType.toUpperCase();
         const connections = [];
-        
+
         // N300_LB_DEFAULT and N300_QB_DEFAULT: QSFP connections
         if (nodeTypeUpper === 'N300_LB_DEFAULT' || nodeTypeUpper === 'N300_QB_DEFAULT') {
             connections.push(
@@ -3305,7 +3927,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 3, port_b: 2 }
             );
         }
-        
+
         // P150_QB_AE_DEFAULT: QSFP connections
         else if (nodeTypeUpper === 'P150_QB_AE_DEFAULT') {
             connections.push(
@@ -3319,7 +3941,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-        
+
         // WH_GALAXY_X_TORUS: X-torus QSFP connections
         else if (nodeTypeUpper === 'WH_GALAXY_X_TORUS') {
             connections.push(
@@ -3333,7 +3955,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 3, tray_b: 4, port_b: 3 }
             );
         }
-        
+
         // WH_GALAXY_Y_TORUS: Y-torus QSFP connections
         else if (nodeTypeUpper === 'WH_GALAXY_Y_TORUS') {
             connections.push(
@@ -3343,7 +3965,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-        
+
         // WH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
         else if (nodeTypeUpper === 'WH_GALAXY_XY_TORUS') {
             // X-torus connections
@@ -3365,7 +3987,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-        
+
         // BH_GALAXY_X_TORUS: X-torus QSFP connections
         else if (nodeTypeUpper === 'BH_GALAXY_X_TORUS') {
             connections.push(
@@ -3379,7 +4001,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 4, port_b: 3 }
             );
         }
-        
+
         // BH_GALAXY_Y_TORUS: Y-torus QSFP connections
         else if (nodeTypeUpper === 'BH_GALAXY_Y_TORUS') {
             connections.push(
@@ -3389,7 +4011,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-        
+
         // BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
         else if (nodeTypeUpper === 'BH_GALAXY_XY_TORUS') {
             // X-torus connections
@@ -3411,7 +4033,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-        
+
         return connections;
     }
 
@@ -3426,35 +4048,35 @@ export class CommonModule {
         if (internalConnections.length === 0) {
             return; // No internal connections for this node type
         }
-        
+
         const internalConnectionColor = "#00AA00"; // Green for internal connections
-        
+
         internalConnections.forEach(connDef => {
             const { port_type, tray_a, port_a, tray_b, port_b } = connDef;
-            
+
             // Generate port IDs using the same format as node factory
             const portAId = `${shelfId}:t${tray_a}:p${port_a}`;
             const portBId = `${shelfId}:t${tray_b}:p${port_b}`;
-            
+
             // Check if ports exist
             const portANode = this.state.cy.getElementById(portAId);
             const portBNode = this.state.cy.getElementById(portBId);
-            
+
             if (!portANode.length || !portBNode.length) {
                 console.warn(`[createInternalConnectionsForNode] Ports not found for internal connection: ${portAId} -> ${portBId}`);
                 return;
             }
-            
+
             // Check if connection already exists
             const existingConnections = this.state.cy.edges(`[source="${portAId}"][target="${portBId}"], [source="${portBId}"][target="${portAId}"]`);
             if (existingConnections.length > 0) {
                 return; // Connection already exists
             }
-            
+
             // Create the internal connection edge
             const connectionNumber = this.getNextConnectionNumber();
             const edgeId = `connection_${connectionNumber}`;
-            
+
             const newEdge = {
                 data: {
                     id: edgeId,
@@ -3474,10 +4096,10 @@ export class CommonModule {
                 },
                 classes: 'connection internal-connection'
             };
-            
+
             this.state.cy.add(newEdge);
         });
-        
+
         // Update visuals after creating connections
         this.updatePortConnectionStatus();
         setTimeout(() => {
@@ -3617,6 +4239,437 @@ export class CommonModule {
             }
         }
         return current;
+    }
+
+    /**
+     * Recalculate host_indices using DFS traversal from canvas root.
+     * Treats canvas as implicit root - processes all root graphs and top-level shelves.
+     * Works in both hierarchy and location modes.
+     * 
+     * This function ensures unique, consecutive host_index values starting from 0
+     * across all shelf nodes in the visualization.
+     */
+    recalculateHostIndices() {
+
+        // Track the global host_index counter (start from 0 for complete renumbering)
+        let nextHostIndex = 0;
+
+        // Track processed graph nodes to prevent infinite loops in nested graph traversal
+        const processedGraphNodes = new Set();
+
+        /**
+         * DFS traversal function to process a graph node and its children
+         * Assigns consecutive host_ids within this graph instance
+         * @param {Object} graphNode - The graph node to process
+         * @param {number} startHostIndex - Starting host_index for this graph instance
+         * @param {number} depth - Current depth in the traversal (for logging)
+         * @returns {number} Next available host_index after processing this graph and its descendants
+         */
+        const dfsTraverse = (graphNode, startHostIndex, depth = 0) => {
+            const indent = '  '.repeat(depth);
+            const graphLabel = graphNode.data('label') || graphNode.id();
+            console.log(`${indent}[DFS] Processing graph: ${graphLabel} (starting at host_${startHostIndex})`);
+
+            // Track host_index counter for this graph instance (consecutive within this instance)
+            let instanceHostIndex = startHostIndex;
+
+            // Get template for this graph node to preserve original child order
+            const templateName = graphNode.data('template_name');
+            const template = templateName && this.state.data.availableGraphTemplates
+                ? this.state.data.availableGraphTemplates[templateName]
+                : null;
+
+            // Get all direct children of this graph node
+            const directChildren = graphNode.children();
+
+            // Build a map of child_name -> Cytoscape node for quick lookup
+            const childrenByName = new Map();
+            directChildren.forEach(child => {
+                const childName = child.data('child_name');
+                if (childName) {
+                    if (!childrenByName.has(childName)) {
+                        childrenByName.set(childName, child);
+                    } else {
+                        console.warn(`${indent}  Duplicate child_name "${childName}" found in graph "${graphLabel}", using first occurrence`);
+                    }
+                } else {
+                    console.warn(`${indent}  Child node ${child.id()} in graph "${graphLabel}" has no child_name`);
+                }
+            });
+            console.log(`${indent}  Built childrenByName map: [${Array.from(childrenByName.keys()).join(', ')}]`);
+
+            // Order children according to template (if available), otherwise fall back to alphabetical
+            const orderedChildren = [];
+
+            if (template && template.children && Array.isArray(template.children)) {
+                // Follow template's children order (matches cabling descriptor DFS order)
+                const addedChildIds = new Set();
+                const processedChildNames = new Set();
+
+                template.children.forEach(templateChild => {
+                    const cytoscapeChild = childrenByName.get(templateChild.name);
+                    if (cytoscapeChild) {
+                        const childId = cytoscapeChild.id();
+                        if (!addedChildIds.has(childId)) {
+                            addedChildIds.add(childId);
+                            processedChildNames.add(templateChild.name);
+                            const childType = templateChild.type || cytoscapeChild.data('type');
+                            orderedChildren.push({
+                                node: cytoscapeChild,
+                                type: childType,
+                                childName: templateChild.name
+                            });
+                            console.log(`${indent}  Added template child "${templateChild.name}" (type: ${childType}, id: ${childId})`);
+                        } else {
+                            console.warn(`${indent}  Skipping duplicate child "${templateChild.name}" (id: ${childId})`);
+                        }
+                    } else {
+                        console.warn(`${indent}  Template child "${templateChild.name}" not found in childrenByName`);
+                    }
+                });
+
+                // Add any children not found in template (newly added nodes, etc.)
+                directChildren.forEach(child => {
+                    const childName = child.data('child_name');
+                    if (childName && !processedChildNames.has(childName)) {
+                        orderedChildren.push({
+                            node: child,
+                            type: child.data('type'),
+                            childName: childName
+                        });
+                        processedChildNames.add(childName);
+                        console.log(`${indent}  Found child "${childName}" not in template (newly added)`);
+                    }
+                });
+            } else {
+                // Fallback: sort alphabetically if no template available
+                directChildren.forEach(child => {
+                    orderedChildren.push({
+                        node: child,
+                        type: child.data('type'),
+                        childName: child.data('child_name') || child.data('label') || ''
+                    });
+                });
+                orderedChildren.sort((a, b) => a.childName.localeCompare(b.childName));
+            }
+
+            // Process children in template order
+            orderedChildren.forEach(({ node, type, childName }) => {
+                const nodeId = node.id();
+
+                if (type === 'shelf' || type === 'node') {
+                    const oldHostIndex = node.data('host_index');
+                    const newHostIndex = instanceHostIndex;
+                    instanceHostIndex++;
+
+                    // Update shelf node - set both host_index and host_id
+                    node.data('host_index', newHostIndex);
+                    node.data('host_id', newHostIndex);
+
+                    // Update label to reflect new host_index
+                    const displayChildName = childName || node.data('child_name') || 'node';
+                    // In location mode, labels are updated by updateAllShelfLabels() after DFS completes
+                    // In hierarchy mode, use hierarchy format
+                    if (this.state.mode === 'location') {
+                        // Location mode: labels will be updated by updateAllShelfLabels() after DFS
+                    } else {
+                        // Hierarchy mode: use hierarchy format
+                        const newLabel = `${displayChildName} (host_${newHostIndex})`;
+                        node.data('label', newLabel);
+                    }
+
+                    // Update all child tray and port nodes with new host_index and host_id
+                    const trayChildren = node.children('[type="tray"]');
+                    trayChildren.forEach(trayNode => {
+                        trayNode.data('host_index', newHostIndex);
+                        trayNode.data('host_id', newHostIndex);
+
+                        const portChildren = trayNode.children('[type="port"]');
+                        portChildren.forEach(portNode => {
+                            portNode.data('host_index', newHostIndex);
+                            portNode.data('host_id', newHostIndex);
+                        });
+                    });
+                    if (oldHostIndex !== newHostIndex) {
+                        console.log(`${indent}  Updated shelf ${displayChildName}: host_${oldHostIndex} -> host_${newHostIndex}`);
+                    } else {
+                        console.log(`${indent}  Shelf ${displayChildName}: host_${newHostIndex} (unchanged)`);
+                    }
+                } else if (type === 'graph') {
+                    // Recursively process nested graph nodes (DFS)
+                    if (processedGraphNodes.has(nodeId)) {
+                        console.warn(`${indent}  Skipping already processed graph "${childName}" (id: ${nodeId}) - possible circular reference`);
+                        return;
+                    }
+                    processedGraphNodes.add(nodeId);
+                    instanceHostIndex = dfsTraverse(node, instanceHostIndex, depth + 1);
+                }
+            });
+
+            return instanceHostIndex;
+        };
+
+        // Treat canvas as implicit root - collect ALL root-level nodes (graphs and shelves)
+        // Canvas = root, root graphs + top-level shelves = children of canvas
+        // In location mode, shelves are children of racks, so we need to process ALL shelves
+        const rootGraphNodes = this.state.cy.nodes('[type="graph"]').filter(node => {
+            const parent = node.parent();
+            return parent.length === 0; // No parent = root level (child of canvas)
+        });
+
+        // Collect ALL shelf nodes (both root-level and nested under racks/graphs)
+        // In hierarchy mode: shelves are children of graphs
+        // In location mode: shelves are children of racks
+        // We need to process all shelves to ensure uniqueness across both modes
+        const allShelfNodes = this.state.cy.nodes('[type="shelf"]');
+
+        // Separate root-level shelves (direct children of canvas) from nested shelves
+        const rootShelfNodes = allShelfNodes.filter(node => {
+            const parent = node.parent();
+            return parent.length === 0; // No parent = root level (child of canvas)
+        });
+
+        // Collect nested shelves (children of racks in location mode, or children of graphs in hierarchy mode)
+        // These will be processed recursively through their parent containers
+        const nestedShelfNodes = allShelfNodes.filter(node => {
+            const parent = node.parent();
+            if (parent.length === 0) return false; // Skip root-level shelves
+
+            const parentType = parent.data('type');
+            // In location mode: shelves under racks
+            // In hierarchy mode: shelves under graphs (handled by dfsTraverse)
+            return parentType === 'rack' || parentType === 'aisle' || parentType === 'hall';
+        });
+
+        // Get root template to preserve order (if available)
+        const rootTemplateName = this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.initialRootTemplate;
+        const rootTemplate = rootTemplateName && this.state.data.availableGraphTemplates
+            ? this.state.data.availableGraphTemplates[rootTemplateName]
+            : null;
+
+        // Process root graphs first (they contain nested shelves)
+        let sortedRootGraphs;
+        if (rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
+            const rootGraphsByName = new Map();
+            rootGraphNodes.forEach(node => {
+                const childName = node.data('child_name') || node.data('label') || node.id();
+                rootGraphsByName.set(childName, node);
+            });
+
+            sortedRootGraphs = [];
+            rootTemplate.children.forEach(templateChild => {
+                if (templateChild.type === 'graph') {
+                    const rootGraph = rootGraphsByName.get(templateChild.name);
+                    if (rootGraph) {
+                        sortedRootGraphs.push(rootGraph);
+                    }
+                }
+            });
+
+            // Add any root graphs not found in template
+            rootGraphNodes.forEach(node => {
+                if (!sortedRootGraphs.includes(node)) {
+                    sortedRootGraphs.push(node);
+                }
+            });
+        } else {
+            // Fallback: sort alphabetically if no template available
+            sortedRootGraphs = rootGraphNodes.toArray().sort((a, b) => {
+                const labelA = a.data('label') || a.id();
+                const labelB = b.data('label') || b.id();
+                return labelA.localeCompare(labelB);
+            });
+        }
+
+        // Sort top-level shelves (children of canvas, not in any graph)
+        // Use location-based ordering if available, otherwise fallback to label
+        const sortedRootShelves = rootShelfNodes.toArray().sort((a, b) => {
+            const aData = a.data();
+            const bData = b.data();
+
+            // If both have location data, sort by location hierarchy
+            const aHasLocation = aData.hall || aData.aisle || (aData.rack_num !== undefined) || (aData.shelf_u !== undefined);
+            const bHasLocation = bData.hall || bData.aisle || (bData.rack_num !== undefined) || (bData.shelf_u !== undefined);
+
+            if (aHasLocation && bHasLocation) {
+                // Sort by hall (alphabetically)
+                const aHall = aData.hall || '';
+                const bHall = bData.hall || '';
+                if (aHall !== bHall) {
+                    return aHall.localeCompare(bHall);
+                }
+
+                // Sort by aisle (alphabetically)
+                const aAisle = aData.aisle || '';
+                const bAisle = bData.aisle || '';
+                if (aAisle !== bAisle) {
+                    return aAisle.localeCompare(bAisle);
+                }
+
+                // Sort by rack_num (numerically, ascending)
+                const aRack = aData.rack_num !== undefined ? aData.rack_num : -1;
+                const bRack = bData.rack_num !== undefined ? bData.rack_num : -1;
+                if (aRack !== bRack) {
+                    return aRack - bRack;
+                }
+
+                // Sort by shelf_u (numerically, ascending)
+                const aShelfU = aData.shelf_u !== undefined ? aData.shelf_u : (aData.shelfU !== undefined ? aData.shelfU : -1);
+                const bShelfU = bData.shelf_u !== undefined ? bData.shelf_u : (bData.shelfU !== undefined ? bData.shelfU : -1);
+                if (aShelfU !== bShelfU) {
+                    return aShelfU - bShelfU;
+                }
+            }
+
+            // Fallback: sort by label
+            const labelA = aData.label || a.id();
+            const labelB = bData.label || b.id();
+            return labelA.localeCompare(labelB);
+        });
+
+        // Sort nested shelves (for location mode - shelves under racks)
+        // Order by location hierarchy: hall > aisle > rack_num > shelf_u
+        // This ensures consecutive racks have consecutive ordering of nodes
+        const sortedNestedShelves = nestedShelfNodes.toArray().sort((a, b) => {
+            // Get location data from shelf node, fallback to parent rack if not available
+            const getLocationData = (node) => {
+                const data = node.data();
+                const parent = node.parent();
+                const parentData = parent.length > 0 ? parent.data() : {};
+
+                return {
+                    hall: data.hall || parentData.hall || '',
+                    aisle: data.aisle || parentData.aisle || '',
+                    rack_num: data.rack_num !== undefined ? data.rack_num : (parentData.rack_num !== undefined ? parentData.rack_num : -1),
+                    shelf_u: data.shelf_u !== undefined ? data.shelf_u : (data.shelfU !== undefined ? data.shelfU : -1)
+                };
+            };
+
+            const aLoc = getLocationData(a);
+            const bLoc = getLocationData(b);
+
+            // Sort by hall (alphabetically)
+            if (aLoc.hall !== bLoc.hall) {
+                return aLoc.hall.localeCompare(bLoc.hall);
+            }
+
+            // Sort by aisle (alphabetically)
+            if (aLoc.aisle !== bLoc.aisle) {
+                return aLoc.aisle.localeCompare(bLoc.aisle);
+            }
+
+            // Sort by rack_num (numerically, ascending)
+            if (aLoc.rack_num !== bLoc.rack_num) {
+                return aLoc.rack_num - bLoc.rack_num;
+            }
+
+            // Sort by shelf_u (numerically, ascending)
+            if (aLoc.shelf_u !== bLoc.shelf_u) {
+                return aLoc.shelf_u - bLoc.shelf_u;
+            }
+
+            // Fallback: sort by label if location data is identical
+            const labelA = a.data('label') || a.id();
+            const labelB = b.data('label') || b.id();
+            return labelA.localeCompare(labelB);
+        });
+
+        // Process root graphs first (they contain nested shelves in hierarchy mode)
+        sortedRootGraphs.forEach((rootGraph, rootIndex) => {
+            const startIndex = nextHostIndex;
+            const nextIndexForRoot = dfsTraverse(rootGraph, startIndex, 0);
+            nextHostIndex = nextIndexForRoot;
+        });
+
+        // Process top-level shelves (children of canvas, not in any graph)
+        sortedRootShelves.forEach((rootShelf, shelfIndex) => {
+            const newHostIndex = nextHostIndex;
+            nextHostIndex++;
+
+            // Update shelf node - set both host_index and host_id
+            rootShelf.data('host_index', newHostIndex);
+            rootShelf.data('host_id', newHostIndex);
+
+            // Update label to reflect new host_index
+            // In location mode, use location format; otherwise use hierarchy format
+            if (this.state.mode === 'location') {
+                // Location mode: use updateAllShelfLabels() which will be called after DFS completes
+                // For now, just update host_index - labels will be refreshed by updateAllShelfLabels()
+            } else {
+                // Hierarchy mode: use hierarchy format
+                const displayChildName = rootShelf.data('child_name') || rootShelf.data('label') || 'shelf';
+                const newLabel = `${displayChildName} (host_${newHostIndex})`;
+                rootShelf.data('label', newLabel);
+            }
+
+            // Update all child tray and port nodes with new host_index and host_id
+            const trayChildren = rootShelf.children('[type="tray"]');
+            trayChildren.forEach(trayNode => {
+                trayNode.data('host_index', newHostIndex);
+                trayNode.data('host_id', newHostIndex);
+
+                const portChildren = trayNode.children('[type="port"]');
+                portChildren.forEach(portNode => {
+                    portNode.data('host_index', newHostIndex);
+                    portNode.data('host_id', newHostIndex);
+                });
+            });
+
+            // Updated top-level shelf host_index
+        });
+
+        // Process nested shelves (children of racks in location mode)
+        // These ensure uniqueness in location mode where shelves are organized under racks
+        sortedNestedShelves.forEach((nestedShelf, shelfIndex) => {
+            const shelfLabel = nestedShelf.data('label') || nestedShelf.id();
+            const parentLabel = nestedShelf.parent().length > 0 ? nestedShelf.parent().data('label') || nestedShelf.parent().id() : 'canvas';
+            const oldHostIndex = nestedShelf.data('host_index');
+            const newHostIndex = nextHostIndex;
+            nextHostIndex++;
+
+            // Update shelf node - set both host_index and host_id
+            nestedShelf.data('host_index', newHostIndex);
+            nestedShelf.data('host_id', newHostIndex);
+
+            // Update label to reflect new host_index (preserve existing label format)
+            // In location mode, use location format; otherwise use hierarchy format
+            if (this.state.mode === 'location') {
+                // Location mode: use updateAllShelfLabels() which will be called after DFS completes
+                // For now, just update host_index - labels will be refreshed by updateAllShelfLabels()
+            } else {
+                // Hierarchy mode: use hierarchy format
+                const displayChildName = nestedShelf.data('child_name') || nestedShelf.data('label') || 'shelf';
+                const newLabel = `${displayChildName} (host_${newHostIndex})`;
+                nestedShelf.data('label', newLabel);
+            }
+
+            // Update all child tray and port nodes with new host_index and host_id
+            const trayChildren = nestedShelf.children('[type="tray"]');
+            trayChildren.forEach(trayNode => {
+                trayNode.data('host_index', newHostIndex);
+                trayNode.data('host_id', newHostIndex);
+
+                const portChildren = trayNode.children('[type="port"]');
+                portChildren.forEach(portNode => {
+                    portNode.data('host_index', newHostIndex);
+                    portNode.data('host_id', newHostIndex);
+                });
+            });
+
+            if (oldHostIndex !== newHostIndex) {
+                console.log(`[DFS] Updated nested shelf ${shelfLabel} (under ${parentLabel}): host_${oldHostIndex} -> host_${newHostIndex}`);
+            } else {
+                console.log(`[DFS] Nested shelf ${shelfLabel} (under ${parentLabel}): host_${newHostIndex} (unchanged)`);
+            }
+        });
+
+        // Update state.data.globalHostCounter to the next available index
+        this.state.data.globalHostCounter = nextHostIndex;
+
+        // In location mode, update all shelf labels to use location format after host_index updates
+        if (this.state.mode === 'location' && window.locationModule) {
+            window.locationModule.updateAllShelfLabels();
+        }
     }
 
 }

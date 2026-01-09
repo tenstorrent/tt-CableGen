@@ -2,7 +2,7 @@
  * UI Display Module - Handles all UI display and initialization functions
  * Extracted from visualizer.js to centralize UI logic
  */
-import { LAYOUT_CONSTANTS } from '../config/constants.js';
+import { LAYOUT_CONSTANTS, CONNECTION_COLORS } from '../config/constants.js';
 import { verifyCytoscapeExtensions as verifyCytoscapeExtensionsUtil } from '../utils/cytoscape-utils.js';
 
 export class UIDisplayModule {
@@ -54,13 +54,19 @@ export class UIDisplayModule {
 
         if (!indicator || !currentModeDiv || !descriptionDiv) return;
 
+        // Hide the indicator completely if session started in location mode
+        if (this.state.data.initialMode === 'location') {
+            indicator.style.display = 'none';
+            return;
+        }
+
         // Show the indicator
         indicator.style.display = 'block';
 
         // Get connection filter elements
         // Connection type filters are location mode only, node filter is available in both modes
-        const intraNodeCheckbox = document.getElementById('showIntraNodeConnections');
-        const connectionTypesSection = intraNodeCheckbox ? intraNodeCheckbox.closest('div[style*="margin-bottom"]') : null;
+        const sameHostIdCheckbox = document.getElementById('showSameHostIdConnections');
+        const connectionTypesSection = sameHostIdCheckbox ? sameHostIdCheckbox.closest('div[style*="margin-bottom"]') : null;
 
         if (this.state.mode === 'hierarchy') {
             indicator.style.background = '#fff3cd';
@@ -100,7 +106,7 @@ export class UIDisplayModule {
 
         // Update Add Node button state after mode indicator update
         this.updateAddNodeButtonState();
-        
+
         // Update variation options based on current mode and selected node type
         if (window.updateNodeVariationOptions && typeof window.updateNodeVariationOptions === 'function') {
             window.updateNodeVariationOptions();
@@ -146,7 +152,7 @@ export class UIDisplayModule {
             // Check both initial data and current Cytoscape edges for dynamic updates
             const dataEdges = data.elements ? data.elements.filter(e => e.group === 'edges' || (e.data && e.data.source && e.data.target)) : [];
             const cytoscapeEdges = this.state.cy ? this.state.cy.edges() : [];
-            
+
             // Combine both sources for comprehensive coverage
             const allEdges = [...dataEdges];
             cytoscapeEdges.forEach(edge => {
@@ -167,12 +173,12 @@ export class UIDisplayModule {
 
             // Check if there are any internal connections (Node Connections)
             const hasInternalConnections = allEdges.some(e => e.data && e.data.is_internal === true);
-            
+
             // Section 1: Templates (if any exist)
             if (templateNames.size > 0 || hasInternalConnections) {
                 legendHTML += '<div style="margin-bottom: 12px;">';
                 legendHTML += '<div style="font-size: 12px; font-weight: bold; color: #555; margin-bottom: 6px;">Templates:</div>';
-                
+
                 // Add "Node Connections" entry for internal connections
                 if (hasInternalConnections) {
                     const nodeConnectionsColor = "#00AA00"; // Green color for internal connections
@@ -184,7 +190,7 @@ export class UIDisplayModule {
                         </div>
                     `;
                 }
-                
+
                 const sortedTemplates = Array.from(templateNames).sort();
                 sortedTemplates.forEach(templateName => {
                     // Get the color for this template using the same function used for connections
@@ -212,9 +218,32 @@ export class UIDisplayModule {
 
             descriptorLegend.innerHTML = legendHTML;
         } else {
-            // Show CSV/physical legend, hide descriptor/hierarchy legend
+            // Show CSV/physical legend with hierarchy-based coloring, hide descriptor/hierarchy legend
             csvLegend.style.display = 'block';
             descriptorLegend.style.display = 'none';
+
+            // Generate legend HTML for location mode with hierarchy levels
+            let legendHTML = '<div style="font-size: 12px; font-weight: bold; color: #555; margin-bottom: 6px;">Racking Hierarchy:</div>';
+
+            // Add legend entries for each hierarchy level
+            const hierarchyLevels = [
+                { level: 'same_host_id', label: 'Same host', color: CONNECTION_COLORS.SAME_HOST_ID },
+                { level: 'same_rack', label: 'Same rack (different host)', color: CONNECTION_COLORS.SAME_RACK },
+                { level: 'same_aisle', label: 'Same aisle (different rack)', color: CONNECTION_COLORS.SAME_AISLE },
+                { level: 'same_hall', label: 'Same hall (different aisle)', color: CONNECTION_COLORS.SAME_HALL },
+                { level: 'different_hall', label: 'Different halls', color: CONNECTION_COLORS.DIFFERENT_HALL }
+            ];
+
+            hierarchyLevels.forEach(({ level, label, color }) => {
+                legendHTML += `
+                    <div style="display: flex; align-items: center; margin: 6px 0;">
+                        <div style="width: 20px; height: 3px; background-color: ${color}; margin-right: 10px; border-radius: 2px;"></div>
+                        <span style="font-size: 13px; color: #333;">${label}</span>
+                    </div>
+                `;
+            });
+
+            csvLegend.innerHTML = legendHTML;
         }
     }
 
@@ -239,14 +268,14 @@ export class UIDisplayModule {
         // Check single node selection
         if (hasNode) {
             const nodeType = this.state.editing.selectedNode.data('type');
-            isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+            isDeletable = ['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType);
         }
 
         // Check if any multi-selected nodes are deletable
         if (selectedNodes.length > 0) {
             isDeletable = isDeletable || selectedNodes.some(node => {
                 const nodeType = node.data('type');
-                return ['shelf', 'rack', 'graph'].includes(nodeType);
+                return ['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType);
             });
         }
 
@@ -843,6 +872,25 @@ export class UIDisplayModule {
                             }
                         }
 
+                        // Update label to use location mode format: "Shelf {shelf_u} ({host_index}: hostname)"
+                        const currentHostIndex = node.data('host_index') ?? node.data('host_id');
+                        const currentHostname = node.data('hostname');
+                        const currentShelfU = node.data('shelf_u');
+
+                        if (currentShelfU !== undefined && currentShelfU !== null && currentShelfU !== '') {
+                            if (currentHostIndex !== undefined && currentHostIndex !== null) {
+                                if (currentHostname) {
+                                    node.data('label', `Shelf ${currentShelfU} (${currentHostIndex}: ${currentHostname})`);
+                                } else {
+                                    node.data('label', `Shelf ${currentShelfU} (${currentHostIndex})`);
+                                }
+                            } else if (currentHostname) {
+                                node.data('label', `Shelf ${currentShelfU} (${currentHostname})`);
+                            } else {
+                                node.data('label', `Shelf ${currentShelfU}`);
+                            }
+                        }
+
                         nodeIndex++;
                         assignedCount++;
                     }
@@ -887,6 +935,12 @@ export class UIDisplayModule {
         if (cyLoading) {
             cyLoading.style.display = 'none';
         }
+
+        // Track initial mode - empty canvas preserves current mode
+        const currentMode = this.state.mode;
+        this.state.data.initialMode = currentMode;
+        this.state.data.hierarchyStructureChanged = false;
+        this.state.data.deploymentDescriptorApplied = false;
 
         // Create empty data structure that matches what initVisualization expects
         this.state.data.currentData = {
@@ -935,6 +989,8 @@ export class UIDisplayModule {
             return;
         }
 
+        // Hide container until initialization is complete
+        cyContainer.style.visibility = 'hidden';
         cyLoading.style.display = 'none';
 
         console.log('Initializing Cytoscape with data:', data);
@@ -1011,9 +1067,17 @@ export class UIDisplayModule {
 
         if (!isEmpty) {
             if (hasGraphNodes || isDescriptor) {
+                // Track initial mode BEFORE calling setVisualizationMode (which calls updateModeIndicator)
+                this.state.data.initialMode = 'hierarchy';
+                this.state.data.hierarchyStructureChanged = false;
+                this.state.data.deploymentDescriptorApplied = false;
                 window.setVisualizationMode?.('hierarchy');
-                console.log('Detected hierarchy mode (descriptor/textproto import)');
+                console.log('Detected hierarchy mode (descriptor/textproto import) - node creation blocked in location mode');
             } else {
+                // Track initial mode BEFORE calling setVisualizationMode (which calls updateModeIndicator)
+                this.state.data.initialMode = 'location';
+                this.state.data.hierarchyStructureChanged = false;
+                this.state.data.deploymentDescriptorApplied = false;
                 window.setVisualizationMode?.('location');
                 console.log('Detected location mode (CSV import)');
             }
@@ -1029,7 +1093,11 @@ export class UIDisplayModule {
 
         if (isEmpty) {
             const currentMode = this.state.mode;
-            console.log(`Empty canvas - preserving current mode: ${currentMode}`);
+            // Track initial mode for empty canvas
+            this.state.data.initialMode = currentMode;
+            this.state.data.hierarchyStructureChanged = false;
+            this.state.data.deploymentDescriptorApplied = false;
+            console.log(`Empty canvas - preserving current mode: ${currentMode} (initialMode set to ${currentMode})`);
         }
 
         // Ensure container has proper dimensions
@@ -1041,6 +1109,12 @@ export class UIDisplayModule {
 
         try {
             if (this.state.cy) {
+                // Hide container during reinitialization
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    cyContainer.style.visibility = 'hidden';
+                }
+
                 // Clear existing elements and add new ones
                 console.log('Clearing existing elements and adding new ones');
                 this.state.cy.elements().remove();
@@ -1057,6 +1131,11 @@ export class UIDisplayModule {
                     this.commonModule.addCytoscapeEventHandlers();
                     // Apply curve styles after layout is complete
                     this.commonModule.forceApplyCurveStyles();
+
+                    // Show container after initialization completes
+                    if (cyContainer) {
+                        cyContainer.style.visibility = 'visible';
+                    }
                 }, 50);
             } else {
                 // Create new Cytoscape instance
@@ -1112,26 +1191,18 @@ export class UIDisplayModule {
                     // Hierarchy mode - use hierarchical layout
                     this.hierarchyModule.calculateLayout();
 
-                    // For textproto imports, host_index is already set from host_id during import
-                    // Only recalculate if host_index is missing (e.g., empty canvas or manual additions)
+                    // DFS recalculation ensures unique, consecutive host_index values in both modes
+                    // For textproto imports: host_index is already set from host_id, but we still run DFS to ensure uniqueness
+                    // For non-textproto imports (empty canvas, CSV): DFS ensures proper numbering
                     const isTextprotoImport = isDescriptor || (data.metadata && data.metadata.file_format === 'descriptor');
 
                     if (!isTextprotoImport) {
-                        // For non-textproto imports (e.g., empty canvas), only recalculate if host_index is missing
-                        const allShelves = this.state.cy.nodes('[type="shelf"]');
-                        const needsRecalculation = allShelves.length > 0 && allShelves.some(node => {
-                            const hostIndex = node.data('host_index');
-                            return hostIndex === undefined || hostIndex === null;
-                        });
-
-                        if (needsRecalculation) {
-                            console.log('Some shelf nodes missing host_index, recalculating...');
-                            this.hierarchyModule.recalculateHostIndicesForTemplates();
-                        } else {
-                            console.log('All shelf nodes have host_index, preserving existing assignments');
-                        }
+                        // For non-textproto imports, run DFS to ensure unique, consecutive host_index values
+                        this.hierarchyModule.recalculateHostIndicesForTemplates();
                     } else {
-                        console.log('Textproto import detected - using host_index from host_id (no DFS re-indexing)');
+                        // For textproto imports, host_index comes from host_id, but we still run DFS to ensure uniqueness
+                        // This handles cases where host_id might have duplicates or gaps
+                        this.hierarchyModule.recalculateHostIndicesForTemplates();
                     }
                 } else {
                     // Location mode - check if racks exist, if not create them from shelf location data (like switchMode does)
@@ -1154,6 +1225,10 @@ export class UIDisplayModule {
                     // calculateLayout() creates the hall/aisle nodes, resetLayout() does final positioning and cleanup
                     this.locationModule.calculateLayout();
 
+                    // Run DFS recalculation ONCE on initial import to ensure unique, consecutive host_index values
+                    // This is NOT tied to calculateLayout() - DFS only runs here (on import) and after structural changes
+                    this.commonModule.recalculateHostIndices();
+
                     // After calculateLayout creates the nodes, call resetLayout for final positioning and cleanup
                     // Use a timeout to ensure calculateLayout's async operations complete first
                     setTimeout(() => {
@@ -1161,9 +1236,17 @@ export class UIDisplayModule {
                     }, 200);
                 }
 
-                // Fit viewport to show all content (for hierarchy mode, or immediate fit for location mode)
+                // Fit viewport to show all content (for hierarchy mode)
                 if (currentMode === 'hierarchy') {
                     this.state.cy.fit(null, 50);
+                    this.state.cy.center();
+                    this.state.cy.forceRender();
+                    
+                    // Show container after fit completes (hierarchy mode)
+                    const cyContainer = document.getElementById('cy');
+                    if (cyContainer) {
+                        cyContainer.style.visibility = 'visible';
+                    }
                 }
 
                 // Apply drag restrictions after layout (for hierarchy mode)
@@ -1179,6 +1262,22 @@ export class UIDisplayModule {
                     this.commonModule.addCytoscapeEventHandlers();
                 }, 50);
             }
+
+            // Final fallback: ensure container is visible after reasonable timeout (only if still hidden)
+            // This should rarely be needed since location mode shows in calculateLayout and hierarchy mode shows after fit
+            setTimeout(() => {
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer && cyContainer.style.visibility === 'hidden') {
+                    console.log('[initVisualization] Fallback: showing container after timeout');
+                    // Ensure fit is applied even in fallback
+                    if (this.state.cy) {
+                        this.state.cy.fit(null, 50);
+                        this.state.cy.center();
+                        this.state.cy.forceRender();
+                    }
+                    cyContainer.style.visibility = 'visible';
+                }
+            }, 1500);
 
             // Log Cytoscape instance status (state.cy should be set by this point)
             if (this.state.cy) {
@@ -1200,6 +1299,12 @@ export class UIDisplayModule {
                 window.updatePortConnectionStatus?.();
                 // Final step: ensure all edge colors match template colors from JS
                 this.updateAllEdgeColorsToTemplateColors();
+
+                // Show container after all initialization is complete
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    cyContainer.style.visibility = 'visible';
+                }
             }, 100);
 
             // Initialize delete button state
@@ -1221,7 +1326,6 @@ export class UIDisplayModule {
             window.populateTemplateFilterDropdown?.();
 
             // Re-attach handlers after dropdowns are populated to ensure they work
-            // This is important because cloning/replacing dropdowns removes event listeners
             setTimeout(() => {
                 window.addConnectionTypeEventHandlers?.();
             }, 200);
@@ -1368,8 +1472,7 @@ export class UIDisplayModule {
 
         // Stacked hall/aisle layout constants
         const hallSpacing = 1200; // Vertical spacing between halls
-        const aisleOffsetX = 400; // Horizontal offset for each aisle (diagonal stack)
-        const aisleOffsetY = 400; // Vertical offset for each aisle (diagonal stack)
+        const aisleSpacing = 1000; // Vertical spacing between aisles (no horizontal offset) - increased for better separation
 
         // First pass: calculate all new positions and deltas BEFORE making any changes
         const positionUpdates = [];
@@ -1380,9 +1483,9 @@ export class UIDisplayModule {
 
             let aisleIndex = 0;
             Object.keys(rackHierarchy[hall]).sort().forEach(aisle => {
-                // Square offset: each aisle is offset diagonally from the previous one
-                const aisleStartX = baseX + (aisleIndex * aisleOffsetX);
-                const aisleStartY = hallStartY + (aisleIndex * aisleOffsetY);
+                // Aisles are arranged vertically (no horizontal offset)
+                const aisleStartX = baseX;
+                const aisleStartY = hallStartY + (aisleIndex * aisleSpacing);
 
                 let rackX = aisleStartX;
                 rackHierarchy[hall][aisle].forEach((rackData) => {
@@ -1488,10 +1591,21 @@ export class UIDisplayModule {
                             this.commonModule.forceApplyCurveStyles();
                             window.updatePortConnectionStatus?.();
 
+                            // Update all shelf labels to ensure they use the correct format
+                            if (this.state.mode === 'location' && window.locationModule) {
+                                window.locationModule.updateAllShelfLabels();
+                            }
+
                             // Fit the view to show all nodes with padding
                             this.state.cy.fit(50);
                             this.state.cy.center();
                             this.state.cy.forceRender();
+
+                            // Show container after layout and coloring complete
+                            const cyContainer = document.getElementById('cy');
+                            if (cyContainer) {
+                                cyContainer.style.visibility = 'visible';
+                            }
 
                             // Show success message
                             this.showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
@@ -1510,6 +1624,11 @@ export class UIDisplayModule {
             // Reapply edge curve styles after repositioning
             this.commonModule.forceApplyCurveStyles();
 
+            // Update all shelf labels to ensure they use the correct format
+            if (this.state.mode === 'location' && window.locationModule) {
+                window.locationModule.updateAllShelfLabels();
+            }
+
             // Update port connection status visual indicators
             window.updatePortConnectionStatus?.();
 
@@ -1519,6 +1638,12 @@ export class UIDisplayModule {
 
             // Force another render to ensure everything is updated
             this.state.cy.forceRender();
+
+            // Show container after layout and coloring complete
+            const cyContainer = document.getElementById('cy');
+            if (cyContainer) {
+                cyContainer.style.visibility = 'visible';
+            }
 
             // Show success message
             this.showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
@@ -1532,6 +1657,18 @@ export class UIDisplayModule {
     toggleVisualizationMode() {
         if (!this.state.cy) {
             alert('No visualization loaded. Please upload a file first.');
+            return;
+        }
+
+        // Block mode switching if session started in location mode
+        if (this.state.data.initialMode === 'location') {
+            const errorMsg = 'Cannot switch modes. This session started in location mode (from CSV import). ' +
+                'Mode switching is only allowed for sessions that started in hierarchy mode (from descriptor import or empty topology canvas).';
+            alert(errorMsg);
+            console.error('[toggleVisualizationMode] Blocked: Session started in location mode');
+            if (this.notificationManager) {
+                this.notificationManager.show(errorMsg, 'error');
+            }
             return;
         }
 

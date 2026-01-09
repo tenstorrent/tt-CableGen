@@ -103,8 +103,8 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         const nodeLabel = node.data('label') || node.id();
 
         // Check if node type is deletable
-        if (!['shelf', 'rack', 'graph'].includes(nodeType)) {
-            console.warn('Only shelf, rack, and graph nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
+        if (!['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType)) {
+            console.warn('Only shelf, rack, graph, hall, and aisle nodes can be deleted directly.\nPorts and trays are deleted automatically with their parent shelf.');
             return;
         }
 
@@ -229,7 +229,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             const nodeType = node.data('type');
 
             // Check if node type is deletable
-            if (!['shelf', 'rack', 'graph'].includes(nodeType)) {
+            if (!['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType)) {
                 console.log(`Skipping non-deletable node type: ${nodeType}`);
                 return;
             }
@@ -311,16 +311,17 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             console.log(`Deleted ${nodeCount} node(s)`);
         }
 
-        // Recalculate host_indices after deletion in hierarchy mode
+        // Recalculate host_indices after deletion in both hierarchy and location modes
+        // Use common module for unified DFS traversal from canvas root
+        if (commonModule && commonModule.recalculateHostIndices && typeof commonModule.recalculateHostIndices === 'function') {
+            commonModule.recalculateHostIndices();
+        } else if (window.commonModule && window.commonModule.recalculateHostIndices && typeof window.commonModule.recalculateHostIndices === 'function') {
+            window.commonModule.recalculateHostIndices();
+        }
+        
+        // Rename graph instances in hierarchy mode (location mode doesn't have graph instances)
         if (state.mode === 'hierarchy') {
             const hModule = hierarchyModule || window.hierarchyModule;
-            if (hModule && hModule.recalculateHostIndicesForTemplates && typeof hModule.recalculateHostIndicesForTemplates === 'function') {
-                hModule.recalculateHostIndicesForTemplates();
-            } else if (window.recalculateHostIndicesForTemplates && typeof window.recalculateHostIndicesForTemplates === 'function') {
-                window.recalculateHostIndicesForTemplates();
-            }
-            
-            // Rename graph instances to ensure proper numbering at each level after deletion
             if (hModule && hModule.renameGraphInstances && typeof hModule.renameGraphInstances === 'function') {
                 hModule.renameGraphInstances();
             }

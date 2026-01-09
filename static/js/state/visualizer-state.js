@@ -27,7 +27,10 @@ export class VisualizerState {
             hierarchyModeState: null, // Store current hierarchy state when switching to location mode
             globalHostCounter: 0, // Global counter for unique host IDs across all instances
             availableGraphTemplates: {}, // Store graph templates from loaded textproto
-            nodeConfigs: {} // Will be populated from config module
+            nodeConfigs: {}, // Will be populated from config module
+            initialMode: null, // Track the mode when session started (from import or empty canvas)
+            hierarchyStructureChanged: false, // Track if hierarchy structure changed (forces re-import of deployment descriptor)
+            deploymentDescriptorApplied: false // Track if deployment descriptor has been applied
         };
 
         // UI state
