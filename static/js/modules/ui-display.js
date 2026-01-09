@@ -54,6 +54,12 @@ export class UIDisplayModule {
 
         if (!indicator || !currentModeDiv || !descriptionDiv) return;
 
+        // Hide the indicator completely if session started in location mode
+        if (this.state.data.initialMode === 'location') {
+            indicator.style.display = 'none';
+            return;
+        }
+
         // Show the indicator
         indicator.style.display = 'block';
 
@@ -262,14 +268,14 @@ export class UIDisplayModule {
         // Check single node selection
         if (hasNode) {
             const nodeType = this.state.editing.selectedNode.data('type');
-            isDeletable = ['shelf', 'rack', 'graph'].includes(nodeType);
+            isDeletable = ['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType);
         }
 
         // Check if any multi-selected nodes are deletable
         if (selectedNodes.length > 0) {
             isDeletable = isDeletable || selectedNodes.some(node => {
                 const nodeType = node.data('type');
-                return ['shelf', 'rack', 'graph'].includes(nodeType);
+                return ['shelf', 'rack', 'graph', 'hall', 'aisle'].includes(nodeType);
             });
         }
 
@@ -1061,18 +1067,18 @@ export class UIDisplayModule {
 
         if (!isEmpty) {
             if (hasGraphNodes || isDescriptor) {
-                window.setVisualizationMode?.('hierarchy');
-                // Track initial mode - session started in hierarchy mode
+                // Track initial mode BEFORE calling setVisualizationMode (which calls updateModeIndicator)
                 this.state.data.initialMode = 'hierarchy';
                 this.state.data.hierarchyStructureChanged = false;
                 this.state.data.deploymentDescriptorApplied = false;
+                window.setVisualizationMode?.('hierarchy');
                 console.log('Detected hierarchy mode (descriptor/textproto import) - node creation blocked in location mode');
             } else {
-                window.setVisualizationMode?.('location');
-                // Track initial mode - session started in location mode
+                // Track initial mode BEFORE calling setVisualizationMode (which calls updateModeIndicator)
                 this.state.data.initialMode = 'location';
                 this.state.data.hierarchyStructureChanged = false;
                 this.state.data.deploymentDescriptorApplied = false;
+                window.setVisualizationMode?.('location');
                 console.log('Detected location mode (CSV import)');
             }
         }
@@ -1230,9 +1236,17 @@ export class UIDisplayModule {
                     }, 200);
                 }
 
-                // Fit viewport to show all content (for hierarchy mode, or immediate fit for location mode)
+                // Fit viewport to show all content (for hierarchy mode)
                 if (currentMode === 'hierarchy') {
                     this.state.cy.fit(null, 50);
+                    this.state.cy.center();
+                    this.state.cy.forceRender();
+                    
+                    // Show container after fit completes (hierarchy mode)
+                    const cyContainer = document.getElementById('cy');
+                    if (cyContainer) {
+                        cyContainer.style.visibility = 'visible';
+                    }
                 }
 
                 // Apply drag restrictions after layout (for hierarchy mode)
@@ -1249,16 +1263,21 @@ export class UIDisplayModule {
                 }, 50);
             }
 
-            // For hierarchy mode, show container after all async operations complete
-            // (Location mode shows container in calculateLayout/resetLayout callbacks)
+            // Final fallback: ensure container is visible after reasonable timeout (only if still hidden)
+            // This should rarely be needed since location mode shows in calculateLayout and hierarchy mode shows after fit
             setTimeout(() => {
-                // Final fallback: ensure container is visible after reasonable timeout
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer && cyContainer.style.visibility === 'hidden') {
                     console.log('[initVisualization] Fallback: showing container after timeout');
+                    // Ensure fit is applied even in fallback
+                    if (this.state.cy) {
+                        this.state.cy.fit(null, 50);
+                        this.state.cy.center();
+                        this.state.cy.forceRender();
+                    }
                     cyContainer.style.visibility = 'visible';
                 }
-            }, 1000);
+            }, 1500);
 
             // Log Cytoscape instance status (state.cy should be set by this point)
             if (this.state.cy) {

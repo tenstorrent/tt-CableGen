@@ -1556,8 +1556,19 @@ export class CommonModule {
 
         // Get all edges
         const allEdges = this.state.cy.edges();
+        // Note: Rerouted edges are duplicates created when nodes are collapsed
+        // We filter all edges for visibility, but only count visible original edges (not rerouted ones, not hidden collapsed ones)
         let visibleCount = 0;
         let hiddenCount = 0;
+
+        // Check which original edges are hidden due to collapse (before we reset visibility)
+        // An original edge is hidden by collapse if there's a rerouted edge pointing to it
+        const originalEdgesHiddenByCollapse = new Set();
+        allEdges.forEach((edge) => {
+            if (edge.data('isRerouted') && edge.data('originalEdgeId')) {
+                originalEdgesHiddenByCollapse.add(edge.data('originalEdgeId'));
+            }
+        });
 
         // Reset all edges to visible first, then apply filters
         // Use Cytoscape's show() method instead of style('display', 'element')
@@ -1566,12 +1577,23 @@ export class CommonModule {
         });
 
         // Apply all filters together
+        // We filter all edges (including rerouted) for visibility, but only count visible original edges
         allEdges.forEach((edge) => {
+            const isRerouted = edge.data('isRerouted');
+            
+            // Skip rerouted edges from counting (they're visual duplicates of hidden original edges)
+            // Skip original edges that are hidden due to collapse (they're replaced by rerouted edges)
+            const isHiddenByCollapse = !isRerouted && originalEdgesHiddenByCollapse.has(edge.id());
+            const shouldCount = !isRerouted && !isHiddenByCollapse;
+            
             // Check template filter (hierarchy mode only) - use hierarchy module helper
             if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
                 if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
                     edge.hide();
-                    hiddenCount++;
+                    // Only count visible original edges that aren't hidden by collapse
+                    if (shouldCount) {
+                        hiddenCount++;
+                    }
                     return;
                 }
             }
@@ -1596,7 +1618,10 @@ export class CommonModule {
 
                 if (!isConnectedToSelectedNode && !isInternalForSelectedNode) {
                     edge.hide();
-                    hiddenCount++;
+                    // Only count visible original edges that aren't hidden by collapse
+                    if (shouldCount) {
+                        hiddenCount++;
+                    }
                     return;
                 }
 
@@ -1627,7 +1652,10 @@ export class CommonModule {
                     // Hide if destination doesn't match selected destination
                     if (destinationShelfId !== selectedDestinationShelfId) {
                         edge.hide();
-                        hiddenCount++;
+                        // Only count visible original edges that aren't hidden by collapse
+                        if (shouldCount) {
+                            hiddenCount++;
+                        }
                         return;
                     }
                 }
@@ -1654,10 +1682,16 @@ export class CommonModule {
 
             if (shouldShowByType) {
                 edge.show();
-                visibleCount++;
+                // Only count visible original edges that aren't hidden by collapse
+                if (shouldCount) {
+                    visibleCount++;
+                }
             } else {
                 edge.hide();
-                hiddenCount++;
+                // Only count visible original edges that aren't hidden by collapse
+                if (shouldCount) {
+                    hiddenCount++;
+                }
             }
         });
 
@@ -1687,11 +1721,8 @@ export class CommonModule {
                     filterParts.push(`destination: ${destinationLabel}`);
                 }
             }
-            if (filterParts.length === 0) {
-                statusDiv.textContent = `Showing ${visibleCount} connections (${hiddenCount} hidden)`;
-            } else {
-                statusDiv.textContent = `Showing ${visibleCount} connections filtered by ${filterParts.join(', ')} (${hiddenCount} hidden)`;
-            }
+            // Status text removed - no longer showing connection counts
+            statusDiv.textContent = '';
             statusDiv.style.color = '#28a745';
         }
     }
@@ -2002,7 +2033,7 @@ export class CommonModule {
         // Update status
         const statusDiv = document.getElementById('rangeStatus');
         if (statusDiv) {
-            statusDiv.textContent = 'Showing all connections';
+            statusDiv.textContent = '';
             statusDiv.style.color = '#666';
         }
     }
@@ -3865,6 +3896,11 @@ export class CommonModule {
         setTimeout(() => {
             this.forceApplyCurveStyles();
         }, 50);
+
+        // In location mode, ensure connections are properly colored after creation
+        if (visualizationMode === 'location' && window.locationModule && typeof window.locationModule.recolorConnections === 'function') {
+            window.locationModule.recolorConnections();
+        }
 
         // Update the connection legend after creating a connection
         if (this.state.data.currentData) {

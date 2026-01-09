@@ -71,6 +71,12 @@ export class LocationModule {
         // Update all shelf labels to use location mode format after location data is updated
         if (updatedCount > 0) {
             this.updateAllShelfLabels();
+            
+            // Recolor connections after location updates (in location mode)
+            const mode = this.state.mode;
+            if (mode === 'location') {
+                this.recolorConnections();
+            }
         }
 
         console.log(`[updateShelfLocations] Updated ${updatedCount} shelf nodes with location data`);
@@ -577,7 +583,12 @@ export class LocationModule {
 
                             this.common.forceApplyCurveStyles();
                             
-                            // Show container after layout and coloring complete
+                            // Fit the view to show all nodes with padding before showing container
+                            this.state.cy.fit(null, 50);
+                            this.state.cy.center();
+                            this.state.cy.forceRender();
+                            
+                            // Show container after layout, coloring, and zoom complete
                             const cyContainer = document.getElementById('cy');
                             if (cyContainer) {
                                 cyContainer.style.visibility = 'visible';
@@ -587,9 +598,15 @@ export class LocationModule {
                     if (layout) {
                         layout.run();
                     } else {
-                        // If layout didn't run (no location nodes), show container after coloring
+                        // If layout didn't run (no location nodes), fit and show container after coloring
                         this.recolorConnections();
                         this.updateAllShelfLabels();
+                        
+                        // Fit the view to show all nodes with padding before showing container
+                        this.state.cy.fit(null, 50);
+                        this.state.cy.center();
+                        this.state.cy.forceRender();
+                        
                         const cyContainer = document.getElementById('cy');
                         if (cyContainer) {
                             cyContainer.style.visibility = 'visible';
@@ -597,18 +614,30 @@ export class LocationModule {
                     }
                 } catch (e) {
                     console.warn('Error applying fcose layout in location mode:', e.message);
-                    // Show container even if layout fails, after coloring
+                    // Show container even if layout fails, after coloring and fit
                     this.recolorConnections();
                     this.updateAllShelfLabels();
+                    
+                    // Fit the view to show all nodes with padding before showing container
+                    this.state.cy.fit(null, 50);
+                    this.state.cy.center();
+                    this.state.cy.forceRender();
+                    
                     const cyContainer = document.getElementById('cy');
                     if (cyContainer) {
                         cyContainer.style.visibility = 'visible';
                     }
                 }
             } else {
-                // No location nodes - show container after coloring
+                // No location nodes - show container after coloring and fit
                 this.recolorConnections();
                 this.updateAllShelfLabels();
+                
+                // Fit the view to show all nodes with padding before showing container
+                this.state.cy.fit(null, 50);
+                this.state.cy.center();
+                this.state.cy.forceRender();
+                
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer) {
                     cyContainer.style.visibility = 'visible';
@@ -2124,9 +2153,14 @@ export class LocationModule {
             window.clearAllSelections();
         }
 
+        // Recolor connections after location changes (in location mode)
+        const mode = this.state.mode;
+        if (mode === 'location' && (hallChanged || aisleChanged || rackChanged)) {
+            this.recolorConnections();
+        }
+
         // If rack or shelf_u changed in location mode, automatically reset layout to properly reposition nodes
         // In hierarchy mode, location changes don't affect the visualization layout
-        const mode = this.state.mode;
         if ((rackChanged || shelfUChanged) && mode === 'location') {
 
             // Call resetLayout to recalculate positions
@@ -2536,6 +2570,12 @@ export class LocationModule {
 
         // Update node filter dropdown
         window.populateNodeFilterDropdown?.();
+
+        // Recolor connections after location changes (in location mode)
+        const mode = this.state.mode;
+        if (mode === 'location' && (hallChanged || aisleChanged || rackChanged)) {
+            this.recolorConnections();
+        }
 
         // Close dialog and clear selections
         if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {

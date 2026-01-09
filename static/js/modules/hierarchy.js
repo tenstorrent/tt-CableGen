@@ -1913,7 +1913,12 @@ export class HierarchyModule {
                             // Update edge curve styles for hierarchy mode after layout completes
                             this.common.forceApplyCurveStyles();
                             
-                            // Show container after layout and coloring complete
+                            // Fit the view to show all nodes with padding before showing container
+                            this.state.cy.fit(null, 50);
+                            this.state.cy.center();
+                            this.state.cy.forceRender();
+                            
+                            // Show container after layout, styling, and zoom complete
                             const cyContainer = document.getElementById('cy');
                             if (cyContainer) {
                                 cyContainer.style.visibility = 'visible';
@@ -1927,7 +1932,12 @@ export class HierarchyModule {
                         this.state.cy.layout({ name: 'preset' }).run();
                         this.common.forceApplyCurveStyles();
                         
-                        // Show container after fallback layout completes
+                        // Fit the view to show all nodes with padding before showing container
+                        this.state.cy.fit(null, 50);
+                        this.state.cy.center();
+                        this.state.cy.forceRender();
+                        
+                        // Show container after fallback layout and zoom complete
                         const cyContainer = document.getElementById('cy');
                         if (cyContainer) {
                             cyContainer.style.visibility = 'visible';
@@ -1938,7 +1948,12 @@ export class HierarchyModule {
                     this.state.cy.layout({ name: 'preset' }).run();
                     this.common.forceApplyCurveStyles();
                     
-                    // Show container after fallback layout completes
+                    // Fit the view to show all nodes with padding before showing container
+                    this.state.cy.fit(null, 50);
+                    this.state.cy.center();
+                    this.state.cy.forceRender();
+                    
+                    // Show container after fallback layout and zoom complete
                     const cyContainer = document.getElementById('cy');
                     if (cyContainer) {
                         cyContainer.style.visibility = 'visible';
@@ -1948,7 +1963,12 @@ export class HierarchyModule {
                 // No graph nodes, but still update curve styles
                 this.common.forceApplyCurveStyles();
                 
-                // Show container after styling completes
+                // Fit the view to show all nodes with padding before showing container
+                this.state.cy.fit(null, 50);
+                this.state.cy.center();
+                this.state.cy.forceRender();
+                
+                // Show container after styling and zoom complete
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer) {
                     cyContainer.style.visibility = 'visible';

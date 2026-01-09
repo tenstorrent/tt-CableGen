@@ -888,6 +888,45 @@
             <!-- Control Sections (hidden initially, shown after initialization) -->
             <div id="controlSections" style="display: none;">
 
+                <div class="info-panel">
+                    <strong>Quick Start:</strong><br>
+                    • Load existing file OR click "Empty Canvas" to build from scratch<br>
+                    • Pan: Click and drag | Zoom: Mouse wheel<br>
+                    • Double-click graphs/nodes/racks to collapse/expand (device details always visible)<br>
+                    • Click elements to view details<br><br>
+
+                    <strong>Editing (General):</strong><br>
+                    • <u>Connections:</u> Enable edit mode → click two ports to connect | Click edge then delete
+                    button/Backspace/Delete<br>
+                    • <u>Add Nodes:</u> Enable Connection Editing to access "Add New Node" section<br><br>
+
+                    <div class="location-mode-only">
+                        <strong>Location Mode Interactions:</strong><br>
+                        • <u>Right-click Host/Rack/Aisle/Hall:</u> Edit location properties (requires editing mode
+                        enabled)<br>
+                        • <u>Double-click Shelf/Rack:</u> Collapse/expand to hide/show child nodes (trays, ports)<br>
+                        • <u>Connection Filters:</u> Toggle visibility of intra-node, intra-rack, or inter-rack
+                        connections<br>
+                        • <u>Reset Layout:</u> Recalculates positions (racks by number, shelves by U)<br>
+                    </div>
+
+                    <div class="hierarchy-mode-only">
+                        <strong>Hierarchy Mode Interactions:</strong><br>
+                        • <u>Right-click Graph Template:</u> Rename template or move instance to different template -
+                        requires editing mode enabled<br>
+                        • <u>Rename Template:</u> Right-click template node → Enter new name → Updates all instances of
+                        that template<br>
+                        • <u>Move Instance:</u> Right-click template/instance → Select target template → Moves instance
+                        in hierarchy<br>
+                        • <u>Double-click Graph/Template:</u> Collapse/expand to hide/show child nodes and instances<br>
+                        • <u>Template Management:</u> Organize instances by moving them between templates to restructure
+                        hierarchy<br>
+                    </div>
+
+                    <strong>Export:</strong><br>
+                    • Export topology as CablingDescriptor, DeploymentDescriptor, or Cabling Guide CSV<br>
+                </div>
+
                 <!-- Visualization Mode Indicator with Toggle -->
                 <div id="visualizationModeIndicator"
                     style="display: none; margin: 15px 0; padding: 12px; border-radius: 6px; background: #e7f3ff; border: 2px solid #2196F3;">
@@ -981,7 +1020,7 @@
                 <div class="collapsible-content collapsed" id="connectionRangeFilter">
                     <div class="range-filter-section">
                         <div class="location-mode-only" style="margin-bottom: 15px;">
-                            <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types (Racking Hierarchy - Location Mode Only):</div>
+                            <div style="font-weight: bold; margin-bottom: 8px; color: #333333;">Connection Types:</div>
                             <div style="display: flex; flex-direction: column; gap: 8px;">
                                 <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
                                     <input type="checkbox" id="showSameHostIdConnections" checked
@@ -1142,26 +1181,37 @@
 
                         <!-- Variation radio buttons (shown only for node types that support variations) -->
                         <div id="nodeVariationSection" style="margin-bottom: 10px; display: none;">
-                            <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Variation:</label>
-                            <div id="nodeVariationRadioGroup" style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                            <label
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Variation:</label>
+                            <div id="nodeVariationRadioGroup"
+                                style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 13px;">
-                                    <input type="radio" name="nodeVariation" value="" checked style="margin-right: 6px;">
+                                    <input type="radio" name="nodeVariation" value="" checked
+                                        style="margin-right: 6px;">
                                     <span>None (Base)</span>
                                 </label>
-                                <label id="variationDefault" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
-                                    <input type="radio" name="nodeVariation" value="_DEFAULT" style="margin-right: 6px;">
+                                <label id="variationDefault"
+                                    style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_DEFAULT"
+                                        style="margin-right: 6px;">
                                     <span>DEFAULT (with QSFP connections)</span>
                                 </label>
-                                <label id="variationXTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
-                                    <input type="radio" name="nodeVariation" value="_X_TORUS" style="margin-right: 6px;">
+                                <label id="variationXTorus"
+                                    style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_X_TORUS"
+                                        style="margin-right: 6px;">
                                     <span>X_TORUS</span>
                                 </label>
-                                <label id="variationYTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
-                                    <input type="radio" name="nodeVariation" value="_Y_TORUS" style="margin-right: 6px;">
+                                <label id="variationYTorus"
+                                    style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_Y_TORUS"
+                                        style="margin-right: 6px;">
                                     <span>Y_TORUS</span>
                                 </label>
-                                <label id="variationXYTorus" style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
-                                    <input type="radio" name="nodeVariation" value="_XY_TORUS" style="margin-right: 6px;">
+                                <label id="variationXYTorus"
+                                    style="display: none; align-items: center; cursor: pointer; font-size: 13px;">
+                                    <input type="radio" name="nodeVariation" value="_XY_TORUS"
+                                        style="margin-right: 6px;">
                                     <span>XY_TORUS</span>
                                 </label>
                             </div>
@@ -1329,8 +1379,7 @@
                             </div>
                         </div>
 
-                        <div style="margin-bottom: 15px;" id="exportCablingDescriptorSection"
-                            class="hierarchy-mode-only">
+                        <div style="margin-bottom: 15px;" id="exportCablingDescriptorSection">
                             <button id="exportCablingBtn"
                                 style="width: 100%; padding: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
                                 📄 Export CablingDescriptor
@@ -1371,51 +1420,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div class="info-panel">
-                    <strong>Quick Start:</strong><br>
-                    • Choose a tab: <strong>Location/Deployment</strong> (CSV) for physical layout or
-                    <strong>Topology</strong> (textproto) for logical design<br>
-                    • Load existing file OR click "Empty Canvas" to build from scratch<br>
-                    • Pan: Click and drag | Zoom: Mouse wheel<br>
-                    • Double-click graphs/nodes/racks to collapse/expand (device details always visible)<br>
-                    • Click elements to view details<br><br>
-
-                    <strong>Editing (General):</strong><br>
-                    • <u>Connections:</u> Enable edit mode → click two ports to connect | Click edge then delete
-                    button/Backspace/Delete<br>
-                    • <u>Add Nodes:</u> Enable Connection Editing to access "Add New Node" section<br><br>
-
-                    <div class="location-mode-only">
-                        <strong>Location Mode Interactions:</strong><br>
-                        • <u>Right-click Shelf:</u> Edit deployment info (hostname, hall, aisle, rack number, shelf U
-                        position) - requires editing mode enabled<br>
-                        • <u>Right-click Rack:</u> Edit rack deployment info (hall, aisle, rack number) - updates all
-                        shelves in rack<br>
-                        • <u>Right-click Hall:</u> Edit hall name and properties<br>
-                        • <u>Right-click Aisle:</u> Edit aisle name and properties<br>
-                        • <u>Double-click Shelf/Rack:</u> Collapse/expand to hide/show child nodes (trays, ports)<br>
-                        • <u>Connection Filters:</u> Toggle visibility of intra-node, intra-rack, or inter-rack
-                        connections<br>
-                        • <u>Reset Layout:</u> Recalculates positions (racks by number, shelves by U)<br>
-                    </div>
-
-                    <div class="hierarchy-mode-only">
-                        <strong>Hierarchy Mode Interactions:</strong><br>
-                        • <u>Right-click Graph Template:</u> Rename template or move instance to different template -
-                        requires editing mode enabled<br>
-                        • <u>Rename Template:</u> Right-click template node → Enter new name → Updates all instances of
-                        that template<br>
-                        • <u>Move Instance:</u> Right-click template/instance → Select target template → Moves instance
-                        in hierarchy<br>
-                        • <u>Double-click Graph/Template:</u> Collapse/expand to hide/show child nodes and instances<br>
-                        • <u>Template Management:</u> Organize instances by moving them between templates to restructure
-                        hierarchy<br>
-                    </div>
-
-                    <strong>Export:</strong><br>
-                    • Export topology as CablingDescriptor, DeploymentDescriptor, or Cabling Guide CSV<br>
                 </div>
 
             </div>
