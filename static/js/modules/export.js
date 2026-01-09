@@ -200,6 +200,62 @@ export class ExportModule {
             return;
         }
 
+        // If session started in location mode, use flat export (extracted_topology template)
+        if (this.state.data.initialMode === 'location') {
+            // Use flat export - no validation needed, creates extracted_topology template automatically
+            const exportBtn = document.getElementById('exportCablingBtn');
+            const originalText = exportBtn ? exportBtn.textContent : 'Export';
+
+            try {
+                if (exportBtn) {
+                    exportBtn.textContent = '⏳ Exporting...';
+                    exportBtn.disabled = true;
+                }
+                this.statusManager.show('Generating CablingDescriptor (flat export)...', 'info');
+
+                // Get current cytoscape data
+                const rawElements = this.state.cy.elements().jsons();
+                const sanitizedElements = this.sanitizeForJSON(rawElements);
+
+                const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                    ? this.state.data.currentData.metadata
+                    : {};
+                const sanitizedMetadata = this.sanitizeForJSON(rawMetadata);
+
+                const cytoscapeData = {
+                    elements: sanitizedElements,
+                    metadata: sanitizedMetadata
+                };
+
+                // Filter to only include fields needed for export
+                const filteredData = this.commonModule.filterCytoscapeDataForExport(cytoscapeData, 'cabling');
+
+                // Use flat export API
+                const textprotoContent = await this.apiClient.exportFlatCablingDescriptor(filteredData);
+
+                // Create and download file
+                const customFileName = this.getCustomFileName();
+                const filename = customFileName
+                    ? `${customFileName}_cabling_descriptor.textproto`
+                    : 'cabling_descriptor.textproto';
+                const blob = new Blob([textprotoContent], { type: 'text/plain' });
+                this.downloadFile(blob, filename);
+
+                this.statusManager.show('CablingDescriptor exported successfully!', 'success');
+
+            } catch (error) {
+                console.error('Export error:', error);
+                this.notificationManager.show(`Export failed: ${error.message}`, 'error');
+            } finally {
+                if (exportBtn) {
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
+                }
+            }
+            return;
+        }
+
+        // For hierarchy mode, validate graph templates
         // Validate: Must have exactly one top-level root template
         const topLevelGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
             const parent = node.parent();

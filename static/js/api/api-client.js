@@ -216,6 +216,22 @@ export class ApiClient {
     }
     
     /**
+     * Export flat cabling descriptor (extracted_topology template)
+     * Used for CSV imports in location mode where there's no hierarchical structure
+     * @param {Object} cytoscapeData - Cytoscape visualization data
+     * @returns {Promise<string>} Textproto content
+     */
+    async exportFlatCablingDescriptor(cytoscapeData) {
+        const response = await this.request(API_ENDPOINTS.EXPORT_FLAT_CABLING, {
+            method: 'POST',
+            body: cytoscapeData
+        });
+        
+        // Response is text, not JSON
+        return response.data;
+    }
+    
+    /**
      * Export deployment descriptor
      * @param {Object} cytoscapeData - Cytoscape visualization data
      * @returns {Promise<string>} Textproto content

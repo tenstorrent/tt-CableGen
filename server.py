@@ -216,6 +216,42 @@ def export_cabling_descriptor():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/export_flat_cabling_descriptor", methods=["POST"])
+def export_flat_cabling_descriptor_route():
+    """Export CablingDescriptor using flat structure (extracted_topology template)
+    
+    This is used for CSV imports in location mode where there's no hierarchical structure.
+    Creates a single "extracted_topology" template with all shelves as direct children.
+    """
+    if not EXPORT_AVAILABLE:
+        return jsonify({"success": False, "error": "Export functionality not available. Missing dependencies."}), 500
+
+    try:
+        # Get cytoscape data from request
+        cytoscape_data = request.get_json()
+        if not cytoscape_data or "elements" not in cytoscape_data:
+            return jsonify({"success": False, "error": "Invalid cytoscape data"}), 400
+
+        # Debug: Check if edges are present
+        elements = cytoscape_data.get("elements", [])
+        nodes = [el for el in elements if "source" not in el.get("data", {})]
+        edges = [el for el in elements if "source" in el.get("data", {})]
+        print(f"[EXPORT_FLAT_CABLING] Received {len(nodes)} nodes and {len(edges)} edges")
+        
+        # Generate textproto content using flat export (extracted_topology template)
+        textproto_content = export_flat_cabling_descriptor(cytoscape_data)
+
+        # Return as plain text for download
+        return Response(
+            textproto_content,
+            mimetype="text/plain",
+            headers={"Content-Disposition": "attachment; filename=cabling_descriptor.textproto"},
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/export_deployment_descriptor", methods=["POST"])
 def export_deployment_descriptor():
     """Export DeploymentDescriptor from cytoscape visualization data"""
