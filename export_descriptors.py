@@ -91,8 +91,7 @@ class CytoscapeDataParser:
             host_id = node_data.get("host_index") or node_data.get("host_id")
             
             if host_id is not None:
-                # We have host_id from node data - extract type and tray/port from node_id if needed
-                node_type = node_data.get("type", "")
+                # We have host_id from node data - extract tray/port from node_id if needed
                 host_id_str = str(host_id)
                 
                 # Try to extract tray/port from descriptor format: {host_id}:t{tray}:p{port}

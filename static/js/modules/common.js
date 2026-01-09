@@ -4576,7 +4576,6 @@ export class CommonModule {
 
         // Process root graphs first (they contain nested shelves in hierarchy mode)
         sortedRootGraphs.forEach((rootGraph, rootIndex) => {
-            const rootLabel = rootGraph.data('label') || rootGraph.id();
             const startIndex = nextHostIndex;
             const nextIndexForRoot = dfsTraverse(rootGraph, startIndex, 0);
             nextHostIndex = nextIndexForRoot;
@@ -4584,8 +4583,6 @@ export class CommonModule {
 
         // Process top-level shelves (children of canvas, not in any graph)
         sortedRootShelves.forEach((rootShelf, shelfIndex) => {
-            const shelfLabel = rootShelf.data('label') || rootShelf.id();
-            const oldHostIndex = rootShelf.data('host_index');
             const newHostIndex = nextHostIndex;
             nextHostIndex++;
 
