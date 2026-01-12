@@ -613,6 +613,26 @@ initializeNodeConfigs();
 // Setup file upload drag-and-drop handlers
 setupFileUploadDragAndDrop();
 
+// Check for URL parameters and auto-load external files
+// Wait for DOM to be ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        // Small delay to ensure all modules are initialized
+        setTimeout(() => {
+            fileManagementModule.checkAndLoadUrlParameter().catch(err => {
+                console.error('Error checking URL parameters:', err);
+            });
+        }, 100);
+    });
+} else {
+    // DOM already loaded
+    setTimeout(() => {
+        fileManagementModule.checkAndLoadUrlParameter().catch(err => {
+            console.error('Error checking URL parameters:', err);
+        });
+    }, 100);
+}
+
 // Helper function to safely attach event listeners
 function attachEventListener(selector, event, handler) {
     const element = document.getElementById(selector);
