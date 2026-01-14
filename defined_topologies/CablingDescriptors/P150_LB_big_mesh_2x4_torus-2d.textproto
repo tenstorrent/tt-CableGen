@@ -1,0 +1,217 @@
+graph_templates {
+  key: "p150_2x4"
+  value {
+    children {
+      name: "node_0"
+      node_ref {
+        node_descriptor: "P150_LB"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 1
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 5
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 6
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 3
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 7
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 8
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 1
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 2
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 2
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 3
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 3
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 4
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 5
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 6
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 6
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 7
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 7
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 8
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 5
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 6
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 7
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 8
+            port_id: 2
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 4
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "node_0"
+            tray_id: 8
+            port_id: 3
+          }
+          port_b {
+            path: "node_0"
+            tray_id: 5
+            port_id: 4
+          }
+        }
+      }
+    }
+  }
+}
+root_instance {
+  template_name: "p150_2x4"
+  child_mappings {
+    key: "node_0"
+    value {
+      host_id: 0
+    }
+  }
+}
