@@ -724,10 +724,10 @@ export class UIDisplayModule {
         }
 
         // Reset to default values (set before showing modal to avoid empty flash)
-        hallNamesInput.value = '';
-        aisleNamesInput.value = '';
+        hallNamesInput.value = 'DataHall';
+        aisleNamesInput.value = 'A';
         rackNumbersInput.value = '1-10';
-        shelfUnitNumbersInput.value = '1-42';
+        shelfUnitNumbersInput.value = '24,18,12,6';
 
         // Update capacity display
         this.updateTotalCapacity();

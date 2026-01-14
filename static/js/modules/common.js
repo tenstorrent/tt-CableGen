@@ -610,10 +610,10 @@ export class CommonModule {
                 selector: '.aisle',
                 style: {
                     'shape': 'round-rectangle',
-                    'background-color': '#4da6ff',
-                    'background-opacity': 0.7,
+                    'background-color': '#a0a0a0',
+                    'background-opacity': 0.5,
                     'border-width': 5,
-                    'border-color': '#0066cc',
+                    'border-color': '#555555',
                     'border-opacity': 1.0,
                     'border-style': 'solid',
                     'label': 'data(label)',
@@ -628,7 +628,7 @@ export class CommonModule {
                     'text-background-opacity': 1.0,
                     'text-background-padding': 8,
                     'text-border-width': 2,
-                    'text-border-color': '#0066cc',
+                    'text-border-color': '#555555',
                     'padding': 40,
                     'z-index': 1
                 }
@@ -663,15 +663,15 @@ export class CommonModule {
                 }
             },
 
-            // Aisle styles - second-level containers with bright blue theme
+            // Aisle styles - second-level containers with grey theme
             {
                 selector: 'node[type="aisle"]',
                 style: {
                     'shape': 'round-rectangle',
-                    'background-color': '#4da6ff',
-                    'background-opacity': 0.7,
+                    'background-color': '#a0a0a0',
+                    'background-opacity': 0.5,
                     'border-width': 5,
-                    'border-color': '#0066cc',
+                    'border-color': '#555555',
                     'border-opacity': 1.0,
                     'border-style': 'solid',
                     'label': 'data(label)',
@@ -686,7 +686,7 @@ export class CommonModule {
                     'text-background-opacity': 1.0,
                     'text-background-padding': 8,
                     'text-border-width': 2,
-                    'text-border-color': '#0066cc',
+                    'text-border-color': '#555555',
                     'padding': 40,
                     'z-index': 0
                 }
@@ -1231,7 +1231,7 @@ export class CommonModule {
             const value = parseFloat(slider.value);
             // Show "Flat" when value is 0, otherwise show multiplier
             valueDisplay.textContent = value === 0 ? 'Flat' : `${value.toFixed(1)}x`;
-            
+
             // Reapply curve styles with new multiplier
             if (this.state && this.state.cy) {
                 this.forceApplyCurveStyles();
@@ -4337,7 +4337,7 @@ export class CommonModule {
 
             this.state.editing.selectedConnection = edge;
             edge.addClass('selected-connection');
-            this.showNodeInfo(node, evt.renderedPosition || evt.position);
+            this.showConnectionInfo(edge, evt.renderedPosition || evt.position);
         } else {
             // Port has no connection - just show info
             if (this.state.editing.selectedConnection) {
