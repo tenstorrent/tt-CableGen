@@ -440,6 +440,7 @@ function addCytoscapeEventHandlers() { return commonModule.addCytoscapeEventHand
 function addConnectionTypeEventHandlers() {
     locationModule.addConnectionTypeEventHandlers();
     commonModule.addNodeFilterHandler();
+    commonModule.addCurveMagnitudeSliderHandler();
     hierarchyModule.addTemplateFilterHandler();
 }
 function applyConnectionTypeFilter() { return commonModule.applyConnectionTypeFilter(); }

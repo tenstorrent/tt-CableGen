@@ -56,11 +56,26 @@ def index():
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
 
-        return render_template("index.html", node_configs=node_configs)
+        # Generate cache-busting version based on main JS file modification time
+        # This ensures browsers fetch new versions when files are updated
+        try:
+            main_js_path = os.path.join("static", "js", "visualizer.js")
+            if os.path.exists(main_js_path):
+                file_mtime = int(os.path.getmtime(main_js_path))
+                cache_version = str(file_mtime)
+            else:
+                # Fallback to current timestamp if file doesn't exist
+                cache_version = str(int(time.time()))
+        except Exception:
+            # Fallback to current timestamp on any error
+            cache_version = str(int(time.time()))
+
+        return render_template("index.html", node_configs=node_configs, cache_version=cache_version)
 
     except Exception as e:
         # Fallback to template without configs if there's an error
-        return render_template("index.html", node_configs={})
+        cache_version = str(int(time.time()))
+        return render_template("index.html", node_configs={}, cache_version=cache_version)
 
 
 def normalize_github_url(url):
@@ -944,13 +959,24 @@ def generate_cabling_guide():
 @app.route("/favicon.ico")
 def favicon():
     """Serve favicon"""
-    return send_from_directory("static/img", "favicon.ico")
+    response = send_from_directory("static/img", "favicon.ico")
+    # Add cache headers - allow caching but require revalidation
+    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.public = True
+    response.cache_control.must_revalidate = True
+    return response
 
 
 @app.route("/static/<path:filename>")
 def static_files(filename):
     """Serve static files if needed"""
-    return send_from_directory("static", filename)
+    response = send_from_directory("static", filename)
+    # Add cache headers - allow caching but require revalidation
+    # This ensures browsers check for updates regularly
+    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.public = True
+    response.cache_control.must_revalidate = True
+    return response
 
 
 @app.route("/api/node_configs", methods=["GET"])
