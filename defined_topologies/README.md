@@ -62,7 +62,12 @@ This section contains all defined BH topology configurations, including systems 
 | 4 Galaxies | 16x8 | X-Torus | [cabling_guide_BH_16x8_torus-x.csv](CablingGuides/cabling_guide_BH_16x8_torus-x.csv) | [BH_GALAXY_big_mesh_16x8_torus-x.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-x.textproto) |
 | 4 Galaxies | 16x8 | Y-Torus | [cabling_guide_BH_16x8_torus-y.csv](CablingGuides/cabling_guide_BH_16x8_torus-y.csv) | [BH_GALAXY_big_mesh_16x8_torus-y.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-y.textproto) |
 | 4 Galaxies | 16x8 | 2D-Torus | [cabling_guide_BH_16x8_torus-2d.csv](CablingGuides/cabling_guide_BH_16x8_torus-2d.csv) | [BH_GALAXY_big_mesh_16x8_torus-2d.textproto](CablingDescriptors/BH_GALAXY_big_mesh_16x8_torus-2d.textproto) |
-| 1 P150_LB | 4x2 | Mesh | - | - |
+| 1 P150_LB | 2x4 | Mesh | - | [P150_LB_big_mesh_2x4_mesh.textproto](CablingDescriptors/P150_LB_big_mesh_2x4_mesh.textproto) |
+| 1 P150_LB | 2x4 | 2D-Torus | - | [P150_LB_big_mesh_2x4_torus-2d.textproto](CablingDescriptors/P150_LB_big_mesh_2x4_torus-2d.textproto) |
+| 2 P150_LB | 4x4 | Mesh | - | [P150_LB_big_mesh_4x4_mesh.textproto](CablingDescriptors/P150_LB_big_mesh_4x4_mesh.textproto) |
+| 2 P150_LB | 4x4 | 2D-Torus | - | [P150_LB_big_mesh_4x4_torus-2d.textproto](CablingDescriptors/P150_LB_big_mesh_4x4_torus-2d.textproto) |
+| 4 P150_LB | 8x4 | Mesh | - | [P150_LB_big_mesh_8x4_mesh.textproto](CablingDescriptors/P150_LB_big_mesh_8x4_mesh.textproto) |
+| 4 P150_LB | 8x4 | 2D-Torus | - | [P150_LB_big_mesh_8x4_torus-2d.textproto](CablingDescriptors/P150_LB_big_mesh_8x4_torus-2d.textproto) |
 
 
 ---
