@@ -200,8 +200,14 @@ export class ExportModule {
             return;
         }
 
-        // If session started in location mode, use flat export (extracted_topology template)
-        if (this.state.data.initialMode === 'location') {
+        // Check if we have saved hierarchy state (from switching hierarchy -> location)
+        // If available, use hierarchical export even if initialMode was 'location'
+        const hasSavedHierarchyState = this.state.data.hierarchyModeState && 
+            this.state.data.hierarchyModeState.elements &&
+            this.state.mode === 'location';
+
+        // If session started in location mode AND no saved hierarchy state, use flat export
+        if (this.state.data.initialMode === 'location' && !hasSavedHierarchyState) {
             // Use flat export - no validation needed, creates extracted_topology template automatically
             const exportBtn = document.getElementById('exportCablingBtn');
             const originalText = exportBtn ? exportBtn.textContent : 'Export';
@@ -256,30 +262,33 @@ export class ExportModule {
         }
 
         // For hierarchy mode, validate graph templates
-        // Validate: Must have exactly one top-level root template
-        const topLevelGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
-            const parent = node.parent();
-            return parent.length === 0;
-        });
+        // If we have saved hierarchy state, skip validation (graph nodes aren't in current view)
+        if (!hasSavedHierarchyState) {
+            // Validate: Must have exactly one top-level root template
+            const topLevelGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0;
+            });
 
-        if (topLevelGraphs.length === 0) {
-            this.notificationManager.show('❌ Cannot export CablingDescriptor: No root template found. Please create a graph template that contains all nodes and connections.', 'error');
-            return;
-        }
+            if (topLevelGraphs.length === 0) {
+                this.notificationManager.show('❌ Cannot export CablingDescriptor: No root template found. Please create a graph template that contains all nodes and connections.', 'error');
+                return;
+            }
 
-        if (topLevelGraphs.length > 1) {
-            const templateNames = topLevelGraphs.map(n => n.data('template_name') || n.data('label')).join(', ');
-            this.notificationManager.show(`❌ Cannot export CablingDescriptor: Multiple root templates found (${templateNames}). A singular root template containing all nodes and connections is required for CablingDescriptor export.`, 'error');
-            return;
-        }
+            if (topLevelGraphs.length > 1) {
+                const templateNames = topLevelGraphs.map(n => n.data('template_name') || n.data('label')).join(', ');
+                this.notificationManager.show(`❌ Cannot export CablingDescriptor: Multiple root templates found (${templateNames}). A singular root template containing all nodes and connections is required for CablingDescriptor export.`, 'error');
+                return;
+            }
 
-        // Validate: Root template must not be empty (must have children)
-        const rootGraph = topLevelGraphs[0];
-        const rootChildren = rootGraph.children();
-        if (rootChildren.length === 0) {
-            const templateName = rootGraph.data('template_name') || rootGraph.data('label');
-            this.notificationManager.show(`❌ Cannot export CablingDescriptor: Root template "${templateName}" is empty. Root templates must contain at least one child node or graph reference.`, 'error');
-            return;
+            // Validate: Root template must not be empty (must have children)
+            const rootGraph = topLevelGraphs[0];
+            const rootChildren = rootGraph.children();
+            if (rootChildren.length === 0) {
+                const templateName = rootGraph.data('template_name') || rootGraph.data('label');
+                this.notificationManager.show(`❌ Cannot export CablingDescriptor: Root template "${templateName}" is empty. Root templates must contain at least one child node or graph reference.`, 'error');
+                return;
+            }
         }
 
         const exportBtn = document.getElementById('exportCablingBtn');
@@ -292,16 +301,29 @@ export class ExportModule {
             }
             this.statusManager.show('Generating CablingDescriptor...', 'info');
 
-            // Get current cytoscape data with full metadata (including graph_templates)
+            // Use saved hierarchy state if available (contains graph structure), otherwise use current data
+            let rawElements;
+            let rawMetadata;
+            
+            if (hasSavedHierarchyState) {
+                // Use saved hierarchy state for export (contains full graph structure)
+                console.log('[exportCablingDescriptor] Using saved hierarchyModeState for export');
+                rawElements = this.state.data.hierarchyModeState.elements;
+                rawMetadata = this.state.data.hierarchyModeState.metadata || 
+                    (this.state.data.currentData && this.state.data.currentData.metadata) || {};
+            } else {
+                // Use current cytoscape data
+                rawElements = this.state.cy.elements().jsons();
+                rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                    ? this.state.data.currentData.metadata
+                    : {};
+            }
+
             // Sanitize elements to remove circular references
-            const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
 
             // Sanitize metadata to remove circular references (but preserve structure)
             // This prevents "[Circular Reference]" strings from ending up in path arrays
-            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
-                ? this.state.data.currentData.metadata
-                : {};
             const metadataCircularRefs = [];
             const sanitizedMetadata = this.sanitizeForJSON(rawMetadata, new WeakSet(), 'metadata', metadataCircularRefs);
 
