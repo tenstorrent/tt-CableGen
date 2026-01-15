@@ -73,7 +73,7 @@ graph_templates {
   }
 }
 
-# Cluster template (4 superpods)
+# Cluster template (4 pods)
 graph_templates {
   key: "n300_lb_superpod"
   value {
@@ -93,7 +93,7 @@ graph_templates {
       name: "pod_4"
       graph_ref { graph_template: "n300_lb_pod" }
     }
-    # Inter-superpod connections
+    # Inter-pod connections
     internal_connections {
       key: "QSFP_DD"
       value {
@@ -126,7 +126,7 @@ graph_templates {
   }
 }
 
-# Root instance with concrete host mappings
+# Root instance with concrete host mappings (4 pods)
 root_instance {
   template_name: "n300_lb_superpod"
   child_mappings {
