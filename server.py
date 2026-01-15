@@ -14,7 +14,6 @@ import json
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response
 import traceback
 from urllib.parse import urlparse
-import re
 
 # Add the parent directory to sys.path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
