@@ -283,6 +283,7 @@ def load_external_file():
             try:
                 os.unlink(tmp_file_path)
             except OSError:
+                # Best-effort cleanup: it's safe to ignore failures when removing the temp file
                 pass
         
     except Exception as e:
