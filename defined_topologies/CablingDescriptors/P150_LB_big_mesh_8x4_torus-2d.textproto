@@ -138,15 +138,15 @@ graph_templates {
   key: "2x"
   value {
     children {
-      name: "p150_2x4_0"
+      name: "1x_p150_lb_0"
       graph_ref {
-        graph_template: "p150_2x4"
+        graph_template: "1x_p150_lb"
       }
     }
     children {
-      name: "p150_2x4_1"
+      name: "1x_p150_lb_1"
       graph_ref {
-        graph_template: "p150_2x4"
+        graph_template: "1x_p150_lb"
       }
     }
     internal_connections {
@@ -154,13 +154,13 @@ graph_templates {
       value {
         connections {
           port_a {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 5
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 1
             port_id: 1
@@ -168,13 +168,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 6
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 2
             port_id: 1
@@ -182,13 +182,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 7
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 3
             port_id: 1
@@ -196,13 +196,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 8
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 4
             port_id: 1
@@ -210,13 +210,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 5
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 1
             port_id: 1
@@ -224,13 +224,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 6
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 2
             port_id: 1
@@ -238,13 +238,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 7
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 3
             port_id: 1
@@ -252,13 +252,13 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "p150_2x4_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 8
             port_id: 2
           }
           port_b {
-            path: "p150_2x4_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 4
             port_id: 1
@@ -272,15 +272,15 @@ graph_templates {
   key: "4x"
   value {
     children {
-      name: "4x4_0"
+      name: "2x_0"
       graph_ref {
-        graph_template: "4x4"
+        graph_template: "2x"
       }
     }
     children {
-      name: "4x4_1"
+      name: "2x_1"
       graph_ref {
-        graph_template: "4x4"
+        graph_template: "2x"
       }
     }
     internal_connections {
@@ -288,15 +288,15 @@ graph_templates {
       value {
         connections {
           port_a {
-            path: "4x4_0"
-            path: "p150_2x4_0"
+            path: "2x_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 4
             port_id: 3
           }
           port_b {
-            path: "4x4_1"
-            path: "p150_2x4_0"
+            path: "2x_1"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 1
             port_id: 4
@@ -304,15 +304,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_0"
-            path: "p150_2x4_0"
+            path: "2x_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 8
             port_id: 3
           }
           port_b {
-            path: "4x4_1"
-            path: "p150_2x4_0"
+            path: "2x_1"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 5
             port_id: 4
@@ -320,15 +320,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_0"
-            path: "p150_2x4_1"
+            path: "2x_0"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 4
             port_id: 3
           }
           port_b {
-            path: "4x4_1"
-            path: "p150_2x4_1"
+            path: "2x_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 1
             port_id: 4
@@ -336,15 +336,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_0"
-            path: "p150_2x4_1"
+            path: "2x_0"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 8
             port_id: 3
           }
           port_b {
-            path: "4x4_1"
-            path: "p150_2x4_1"
+            path: "2x_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 5
             port_id: 4
@@ -352,15 +352,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_1"
-            path: "p150_2x4_0"
+            path: "2x_1"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 4
             port_id: 3
           }
           port_b {
-            path: "4x4_0"
-            path: "p150_2x4_0"
+            path: "2x_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 1
             port_id: 4
@@ -368,15 +368,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_1"
-            path: "p150_2x4_0"
+            path: "2x_1"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 8
             port_id: 3
           }
           port_b {
-            path: "4x4_0"
-            path: "p150_2x4_0"
+            path: "2x_0"
+            path: "1x_p150_lb_0"
             path: "node_0"
             tray_id: 5
             port_id: 4
@@ -384,15 +384,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_1"
-            path: "p150_2x4_1"
+            path: "2x_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 4
             port_id: 3
           }
           port_b {
-            path: "4x4_0"
-            path: "p150_2x4_1"
+            path: "2x_0"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 1
             port_id: 4
@@ -400,15 +400,15 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "4x4_1"
-            path: "p150_2x4_1"
+            path: "2x_1"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 8
             port_id: 3
           }
           port_b {
-            path: "4x4_0"
-            path: "p150_2x4_1"
+            path: "2x_0"
+            path: "1x_p150_lb_1"
             path: "node_0"
             tray_id: 5
             port_id: 4
@@ -421,12 +421,12 @@ graph_templates {
 root_instance {
   template_name: "4x"
   child_mappings {
-    key: "4x4_0"
+    key: "2x_0"
     value {
       sub_instance {
         template_name: "2x"
         child_mappings {
-          key: "p150_2x4_0"
+          key: "1x_p150_lb_0"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -440,7 +440,7 @@ root_instance {
           }
         }
         child_mappings {
-          key: "p150_2x4_1"
+          key: "1x_p150_lb_1"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -457,12 +457,12 @@ root_instance {
     }
   }
   child_mappings {
-    key: "4x4_1"
+    key: "2x_1"
     value {
       sub_instance {
         template_name: "2x"
         child_mappings {
-          key: "p150_2x4_0"
+          key: "1x_p150_lb_0"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -476,7 +476,7 @@ root_instance {
           }
         }
         child_mappings {
-          key: "p150_2x4_1"
+          key: "1x_p150_lb_1"
           value {
             sub_instance {
               template_name: "1x_p150_lb"

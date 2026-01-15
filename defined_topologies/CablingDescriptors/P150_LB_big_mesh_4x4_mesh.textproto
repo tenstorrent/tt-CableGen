@@ -212,56 +212,31 @@ graph_templates {
     }
   }
 }
-graph_templates {
-  key: "4x"
-  value {
-    children {
-      name: "2x_0"
-      graph_ref {
-        graph_template: "2x"
-      }
-    }
-    children {
-      name: "2x_1"
-      graph_ref {
-        graph_template: "2x"
+root_instance {
+  template_name: "2x"
+  child_mappings {
+    key: "1x_p150_lb_0"
+    value {
+      sub_instance {
+        template_name: "1x_p150_lb"
+        child_mappings {
+          key: "node_0"
+          value {
+            host_id: 0
+          }
+        }
       }
     }
   }
-}
-root_instance {
-  template_name: "4x"
   child_mappings {
-    key: "2x_0"
+    key: "1x_p150_lb_1"
     value {
       sub_instance {
-        template_name: "2x"
+        template_name: "1x_p150_lb"
         child_mappings {
-          key: "1x_p150_lb_0"
+          key: "node_0"
           value {
-            sub_instance {
-              template_name: "1x_p150_lb"
-              child_mappings {
-                key: "node_0"
-                value {
-                  host_id: 0
-                }
-              }
-            }
-          }
-        }
-        child_mappings {
-          key: "1x_p150_lb_1"
-          value {
-            sub_instance {
-              template_name: "1x_p150_lb"
-              child_mappings {
-                key: "node_0"
-                value {
-                  host_id: 1
-                }
-              }
-            }
+            host_id: 1
           }
         }
       }
