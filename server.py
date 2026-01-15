@@ -13,6 +13,7 @@ import threading
 import json
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response
 import traceback
+from urllib.parse import urlparse
 
 # Add the parent directory to sys.path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -54,11 +55,241 @@ def index():
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
 
-        return render_template("index.html", node_configs=node_configs)
+        # Generate cache-busting version based on main JS file modification time
+        # This ensures browsers fetch new versions when files are updated
+        try:
+            main_js_path = os.path.join("static", "js", "visualizer.js")
+            if os.path.exists(main_js_path):
+                file_mtime = int(os.path.getmtime(main_js_path))
+                cache_version = str(file_mtime)
+            else:
+                # Fallback to current timestamp if file doesn't exist
+                cache_version = str(int(time.time()))
+        except Exception:
+            # Fallback to current timestamp on any error
+            cache_version = str(int(time.time()))
+
+        return render_template("index.html", node_configs=node_configs, cache_version=cache_version)
 
     except Exception as e:
         # Fallback to template without configs if there's an error
-        return render_template("index.html", node_configs={})
+        cache_version = str(int(time.time()))
+        return render_template("index.html", node_configs={}, cache_version=cache_version)
+
+
+def normalize_github_url(url):
+    """
+    Normalize GitHub URLs to raw.githubusercontent.com format for direct file access.
+    
+    Handles various GitHub URL formats:
+    - https://github.com/user/repo/blob/branch/path/file.textproto
+    - https://raw.githubusercontent.com/user/repo/branch/path/file.textproto
+    - https://github.com/user/repo/raw/branch/path/file.textproto
+    """
+    parsed = urlparse(url)
+    
+    # Already a raw URL
+    if 'raw.githubusercontent.com' in parsed.netloc:
+        return url
+    
+    # GitHub blob URL: github.com/user/repo/blob/branch/path/file
+    if 'github.com' in parsed.netloc and '/blob/' in parsed.path:
+        # Extract: user/repo/branch/path/file
+        path_parts = parsed.path.split('/')
+        try:
+            blob_index = path_parts.index('blob')
+            user = path_parts[blob_index - 2]
+            repo = path_parts[blob_index - 1]
+            branch = path_parts[blob_index + 1]
+            file_path = '/'.join(path_parts[blob_index + 2:])
+            
+            # Reconstruct as raw URL
+            normalized = f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{file_path}"
+            return normalized
+        except (ValueError, IndexError):
+            pass
+    
+    # GitHub raw URL (old format): github.com/user/repo/raw/branch/path/file
+    if 'github.com' in parsed.netloc and '/raw/' in parsed.path:
+        path_parts = parsed.path.split('/')
+        try:
+            raw_index = path_parts.index('raw')
+            user = path_parts[raw_index - 2]
+            repo = path_parts[raw_index - 1]
+            branch = path_parts[raw_index + 1]
+            file_path = '/'.join(path_parts[raw_index + 2:])
+            
+            normalized = f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{file_path}"
+            return normalized
+        except (ValueError, IndexError):
+            pass
+    
+    # Return original URL if we can't normalize it
+    return url
+
+
+def extract_filename_from_url(url):
+    """Extract filename from URL"""
+    parsed = urlparse(url)
+    path = parsed.path
+    filename = os.path.basename(path)
+    
+    # If no filename in path, try to get from query params or use default
+    if not filename or '.' not in filename:
+        # Check if it's a textproto or csv based on content-type or default
+        if url.endswith('.textproto') or url.endswith('.csv'):
+            return os.path.basename(url.split('?')[0])
+        return 'downloaded_file.textproto'
+    
+    return filename
+
+
+@app.route("/load_external_file", methods=["GET"])
+def load_external_file():
+    """Load file from external URL (GitHub, etc.) and process it
+    
+    Query parameters:
+    - url: External URL to fetch (required)
+    - filename: Optional filename override
+    
+    Returns: Same format as /upload_csv (visualization data)
+    """
+    try:
+        file_url = request.args.get('url')
+        if not file_url:
+            return jsonify({"success": False, "error": "No URL provided. Use ?url=<file_url>"}), 400
+        
+        # Validate URL scheme
+        parsed = urlparse(file_url)
+        if parsed.scheme not in ['http', 'https']:
+            return jsonify({"success": False, "error": "URL must use http or https protocol"}), 400
+        
+        # Normalize GitHub URLs
+        normalized_url = normalize_github_url(file_url)
+        
+        # Extract filename
+        filename = request.args.get('filename') or extract_filename_from_url(normalized_url)
+        
+        # Validate file extension
+        if not (filename.lower().endswith(".csv") or filename.lower().endswith(".textproto")):
+            return jsonify({"success": False, "error": "File must be a CSV or textproto file"}), 400
+        
+        is_textproto = filename.lower().endswith(".textproto")
+        
+        # Fetch file from external URL
+        try:
+            import requests
+        except ImportError:
+            return jsonify({"success": False, "error": "requests library not available. Please install: pip install requests"}), 500
+        
+        try:
+            # Fetch with timeout and follow redirects
+            response = requests.get(
+                normalized_url,
+                timeout=30,
+                allow_redirects=True,
+                headers={'User-Agent': 'TT-CableGen/1.0'}  # Some servers require User-Agent
+            )
+            response.raise_for_status()
+            
+            # Check content type if available
+            content_type = response.headers.get('Content-Type', '').lower()
+            if 'html' in content_type and 'github.com' in normalized_url:
+                # GitHub might return HTML for some URLs, try to detect
+                if '<!DOCTYPE html>' in response.text[:200] or '<html' in response.text[:200]:
+                    return jsonify({
+                        "success": False,
+                        "error": "URL returned HTML instead of file content. Make sure you're using a raw file URL (raw.githubusercontent.com) or the file is publicly accessible."
+                    }), 400
+            
+            file_content = response.content
+            
+        except requests.exceptions.Timeout:
+            return jsonify({"success": False, "error": "Request timed out. The file may be too large or the server is slow."}), 500
+        except requests.exceptions.RequestException as e:
+            return jsonify({"success": False, "error": f"Failed to fetch file: {str(e)}"}), 500
+        
+        # Save to temporary file
+        prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
+        suffix = ".textproto" if is_textproto else ".csv"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=suffix, delete=False, prefix=prefix) as tmp_file:
+            tmp_file.write(file_content)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Create visualizer instance
+            visualizer = NetworkCablingCytoscapeVisualizer()
+            
+            if is_textproto:
+                # Parse cabling descriptor textproto
+                visualizer.file_format = "descriptor"
+                
+                try:
+                    if not visualizer.parse_cabling_descriptor(tmp_file_path):
+                        return jsonify({"success": False, "error": "Failed to parse cabling descriptor"})
+                except ValueError as e:
+                    return jsonify({"success": False, "error": str(e)})
+                except Exception as e:
+                    return jsonify({"success": False, "error": f"Error parsing cabling descriptor: {str(e)}"})
+                
+                # Get node types from hierarchy and initialize configs
+                if visualizer.graph_hierarchy:
+                    node_types = set(node['node_type'] for node in visualizer.graph_hierarchy)
+                    
+                    if node_types:
+                        first_node_type = list(node_types)[0]
+                        config = visualizer._node_descriptor_to_config(first_node_type)
+                        visualizer.shelf_unit_type = visualizer._node_descriptor_to_shelf_type(first_node_type)
+                        visualizer.current_config = config
+                    else:
+                        visualizer.shelf_unit_type = "wh_galaxy"
+                        visualizer.current_config = visualizer.shelf_unit_configs["wh_galaxy"]
+                    
+                    visualizer.set_shelf_unit_type(visualizer.shelf_unit_type)
+                    connection_count = len(visualizer.descriptor_connections) if visualizer.descriptor_connections else 0
+                else:
+                    connection_count = 0
+            else:
+                # Parse CSV file
+                connections = visualizer.parse_csv(tmp_file_path)
+                
+                if not connections:
+                    return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+                
+                connection_count = len(connections)
+            
+            # Generate visualization data
+            visualization_data = visualizer.generate_visualization_data()
+            visualization_data["metadata"]["connection_count"] = connection_count
+            
+            # Check for unknown node types
+            unknown_types = visualizer.get_unknown_node_types()
+            if unknown_types:
+                visualization_data["metadata"]["unknown_node_types"] = unknown_types
+            
+            file_type = "cabling descriptor" if is_textproto else "CSV"
+            message = f"Successfully loaded {filename} from {parsed.netloc} ({file_type}) with {connection_count} {'nodes' if is_textproto else 'connections'}"
+            
+            return jsonify({
+                "success": True,
+                "data": visualization_data,
+                "message": message,
+                "unknown_types": unknown_types,
+                "file_type": "textproto" if is_textproto else "csv",
+            })
+        
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_file_path)
+            except OSError:
+                # Best-effort cleanup: it's safe to ignore failures when removing the temp file
+                pass
+        
+    except Exception as e:
+        error_msg = f"Error loading external file: {str(e)}"
+        traceback.print_exc()
+        return jsonify({"success": False, "error": error_msg}), 500
 
 
 @app.route("/upload_csv", methods=["POST"])
@@ -728,13 +959,24 @@ def generate_cabling_guide():
 @app.route("/favicon.ico")
 def favicon():
     """Serve favicon"""
-    return send_from_directory("static/img", "favicon.ico")
+    response = send_from_directory("static/img", "favicon.ico")
+    # Add cache headers - allow caching but require revalidation
+    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.public = True
+    response.cache_control.must_revalidate = True
+    return response
 
 
 @app.route("/static/<path:filename>")
 def static_files(filename):
     """Serve static files if needed"""
-    return send_from_directory("static", filename)
+    response = send_from_directory("static", filename)
+    # Add cache headers - allow caching but require revalidation
+    # This ensures browsers check for updates regularly
+    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.public = True
+    response.cache_control.must_revalidate = True
+    return response
 
 
 @app.route("/api/node_configs", methods=["GET"])

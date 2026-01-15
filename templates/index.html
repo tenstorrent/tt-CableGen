@@ -1014,7 +1014,7 @@
                 </div>
 
                 <div class="collapsible-header" data-section="connectionRangeFilter">
-                    <h3 style="margin: 0; color: #333;">Connection Filters</h3>
+                    <h3 style="margin: 0; color: #333;">Connection Options </h3>
                     <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>
                 </div>
                 <div class="collapsible-content collapsed" id="connectionRangeFilter">
@@ -1086,6 +1086,23 @@
                             </select>
                             <div style="font-size: 11px; color: #666; margin-top: 3px;">
                                 Select a template to show only its connections
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="curveMagnitudeSlider"
+                                style="display: block; margin-bottom: 5px; font-weight: bold; color: #333333;">Cross-Host
+                                Curve Magnitude:</label>
+                            <input type="range" id="curveMagnitudeSlider" min="0" max="4.0" step="0.1" value="1.0"
+                                style="width: 100%; height: 6px; border-radius: 3px; background: #ddd; outline: none; cursor: pointer;">
+                            <div
+                                style="display: flex; justify-content: space-between; font-size: 11px; color: #666; margin-top: 3px;">
+                                <span>Flat (0x)</span>
+                                <span id="curveMagnitudeValue" style="font-weight: bold; color: #333;">1.0x</span>
+                                <span>High (4.0x)</span>
+                            </div>
+                            <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                                Adjust curve strength for cross-host connections
                             </div>
                         </div>
 
@@ -1482,12 +1499,12 @@
                         <div class="form-group">
                             <label for="hallNames">Hall Names (optional):</label>
                             <textarea id="hallNames" rows="2" class="form-input form-textarea"
-                                placeholder="e.g., Building-A, West-Wing (leave empty to omit)"></textarea>
-                            <small>Comma-separated list or one per line. Leave empty to omit hall level.</small>
+                                placeholder='e.g., Building-A, West-Wing. Default: "DataHall". Clear to omit hall level.'>DataHall</textarea>
+                            <small>Comma-separated list or one per line. Default: "DataHall". Clear this field to omit the hall level.</small>
                         </div>
                         <div class="form-group">
                             <label for="aisleNames">Aisle Names (optional):</label>
-                            <input type="text" id="aisleNames" class="form-input" value=""
+                            <input type="text" id="aisleNames" class="form-input" value="A"
                                 placeholder="e.g., A, B, C (leave empty to omit)">
                             <small>Comma-separated list or number (e.g., 5 for A-E). Leave empty to omit aisle
                                 level.</small>
@@ -1500,7 +1517,7 @@
                         </div>
                         <div class="form-group">
                             <label for="shelfUnitNumbers">Shelf U Numbers:</label>
-                            <input type="text" id="shelfUnitNumbers" class="form-input" value="1-42"
+                            <input type="text" id="shelfUnitNumbers" class="form-input" value="24,18,12,6"
                                 placeholder="e.g., 1-42 or 1,2,3,5,10">
                             <small>Range (e.g., 1-42) or comma-separated (e.g., 1, 2, 3, 5, 10)</small>
                         </div>
@@ -1545,7 +1562,7 @@
         // This ensures JavaScript always uses the same configs as Python
         window.SERVER_NODE_CONFIGS = {{ node_configs | tojson }};
     </script>
-    <script type="module" src="{{ url_for('static', filename='js/visualizer.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/visualizer.js', v=cache_version) }}"></script>
     <!-- All inline script functions have been moved to visualizer.js (Phase 10.5) -->
 </body>
 

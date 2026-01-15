@@ -201,6 +201,25 @@ export class ApiClient {
     }
     
     /**
+     * Load file from external URL (GitHub, etc.)
+     * @param {string} url - External URL to fetch
+     * @param {string} [filename] - Optional filename override
+     * @returns {Promise<Object>} Upload response with visualization data
+     */
+    async loadExternalFile(url, filename = null) {
+        const params = new URLSearchParams({ url });
+        if (filename) {
+            params.append('filename', filename);
+        }
+        
+        const response = await this.request(`${API_ENDPOINTS.LOAD_EXTERNAL_FILE}?${params.toString()}`, {
+            method: 'GET'
+        });
+        
+        return response.data;
+    }
+    
+    /**
      * Export cabling descriptor
      * @param {Object} cytoscapeData - Cytoscape visualization data
      * @returns {Promise<string>} Textproto content

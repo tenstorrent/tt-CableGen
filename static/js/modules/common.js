@@ -55,7 +55,7 @@ export class CommonModule {
         const trayHeight = 60;
         const traySpacing = 10;
         const portWidth = 45;
-        const portSpacing = 5;
+        const portSpacing = 30; // Increased for better visual separation between ports
 
         // Sort trays by number
         const sortedTrays = trays.sort((a, b) => {
@@ -610,10 +610,10 @@ export class CommonModule {
                 selector: '.aisle',
                 style: {
                     'shape': 'round-rectangle',
-                    'background-color': '#4da6ff',
-                    'background-opacity': 0.7,
+                    'background-color': '#a0a0a0',
+                    'background-opacity': 0.5,
                     'border-width': 5,
-                    'border-color': '#0066cc',
+                    'border-color': '#555555',
                     'border-opacity': 1.0,
                     'border-style': 'solid',
                     'label': 'data(label)',
@@ -628,7 +628,7 @@ export class CommonModule {
                     'text-background-opacity': 1.0,
                     'text-background-padding': 8,
                     'text-border-width': 2,
-                    'text-border-color': '#0066cc',
+                    'text-border-color': '#555555',
                     'padding': 40,
                     'z-index': 1
                 }
@@ -663,15 +663,15 @@ export class CommonModule {
                 }
             },
 
-            // Aisle styles - second-level containers with bright blue theme
+            // Aisle styles - second-level containers with grey theme
             {
                 selector: 'node[type="aisle"]',
                 style: {
                     'shape': 'round-rectangle',
-                    'background-color': '#4da6ff',
-                    'background-opacity': 0.7,
+                    'background-color': '#a0a0a0',
+                    'background-opacity': 0.5,
                     'border-width': 5,
-                    'border-color': '#0066cc',
+                    'border-color': '#555555',
                     'border-opacity': 1.0,
                     'border-style': 'solid',
                     'label': 'data(label)',
@@ -686,7 +686,7 @@ export class CommonModule {
                     'text-background-opacity': 1.0,
                     'text-background-padding': 8,
                     'text-border-width': 2,
-                    'text-border-color': '#0066cc',
+                    'text-border-color': '#555555',
                     'padding': 40,
                     'z-index': 0
                 }
@@ -1215,6 +1215,38 @@ export class CommonModule {
     }
 
     /**
+     * Add event handler for curve magnitude slider
+     * Controls the curve strength for cross-host connections
+     */
+    addCurveMagnitudeSliderHandler() {
+        const slider = document.getElementById('curveMagnitudeSlider');
+        const valueDisplay = document.getElementById('curveMagnitudeValue');
+
+        if (!slider || !valueDisplay) {
+            return;
+        }
+
+        // Update display value and apply curve styles when slider changes
+        const updateSlider = () => {
+            const value = parseFloat(slider.value);
+            // Show "Flat" when value is 0, otherwise show multiplier
+            valueDisplay.textContent = value === 0 ? 'Flat' : `${value.toFixed(1)}x`;
+
+            // Reapply curve styles with new multiplier
+            if (this.state && this.state.cy) {
+                this.forceApplyCurveStyles();
+            }
+        };
+
+        // Update on input (while dragging) and on change (when released)
+        slider.addEventListener('input', updateSlider);
+        slider.addEventListener('change', updateSlider);
+
+        // Initialize display value
+        updateSlider();
+    }
+
+    /**
      * Add event handler for node filter dropdown
      * This filter is available in both location and hierarchy modes
      */
@@ -1580,12 +1612,12 @@ export class CommonModule {
         // We filter all edges (including rerouted) for visibility, but only count visible original edges
         allEdges.forEach((edge) => {
             const isRerouted = edge.data('isRerouted');
-            
+
             // Skip rerouted edges from counting (they're visual duplicates of hidden original edges)
             // Skip original edges that are hidden due to collapse (they're replaced by rerouted edges)
             const isHiddenByCollapse = !isRerouted && originalEdgesHiddenByCollapse.has(edge.id());
             const shouldCount = !isRerouted && !isHiddenByCollapse;
-            
+
             // Check template filter (hierarchy mode only) - use hierarchy module helper
             if (this.state.mode === 'hierarchy' && window.hierarchyModule) {
                 if (!window.hierarchyModule.shouldShowConnectionByTemplate(edge)) {
@@ -2844,6 +2876,10 @@ export class CommonModule {
         let _crossShelfCount = 0;
         let _crossGraphCount = 0;
 
+        // First pass: collect cross-host connections and calculate their distances
+        // to determine dynamic min/max thresholds
+        const crossHostConnections = [];
+
         edges.forEach((edge, _index) => {
             let sourceNode, targetNode;
             let _isSameTemplate = false;
@@ -2938,6 +2974,27 @@ export class CommonModule {
                 }
             }
 
+            // Check if this is a cross-host connection
+            const isCrossHost = this._checkCrossHost(sourceNode, targetNode);
+
+            // Collect cross-host connections for distance calculation
+            if (isCrossHost && !isSameShelf) {
+                const sourcePos = sourceNode.position();
+                const targetPos = targetNode.position();
+                const dx = targetPos.x - sourcePos.x;
+                const dy = targetPos.y - sourcePos.y;
+                const straightDistance = Math.sqrt(dx * dx + dy * dy);
+
+                crossHostConnections.push({
+                    edge,
+                    sourceNode,
+                    targetNode,
+                    distance: straightDistance,
+                    isRerouted,
+                    isCrossGraph
+                });
+            }
+
             if (isSameShelf) {
                 _sameShelfCount++;
                 curveStyle = 'unbundled-bezier';
@@ -2951,6 +3008,9 @@ export class CommonModule {
                     'control-point-distance': controlPointDistance,  // Distance from straight line (reduced)
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
+            } else if (isCrossHost) {
+                // Skip cross-host connections in first pass - will be handled in second pass
+                // with dynamic min/max thresholds
             } else {
                 _crossShelfCount++;
                 curveStyle = 'bezier';
@@ -2969,6 +3029,48 @@ export class CommonModule {
             // Apply style directly to edge - this overrides stylesheet rules
             edge.style(styleProps);
         });
+
+        // Second pass: Apply dynamic distance-based curve scaling to cross-host connections
+        if (crossHostConnections.length > 0) {
+            // Calculate min and max distances across all cross-host connections
+            const distances = crossHostConnections.map(conn => conn.distance);
+            const minDistance = Math.min(...distances);
+            const maxDistance = Math.max(...distances);
+            const distanceRange = maxDistance - minDistance;
+
+            // Get curve magnitude multiplier from slider (default to 1.0 if not set)
+            const curveMagnitudeMultiplier = parseFloat(
+                document.getElementById('curveMagnitudeSlider')?.value || '1.0'
+            );
+
+            // Curve magnitude range (keep the same scale, scaled by multiplier)
+            const minCurveDistance = controlPointStepSize * 1.0 * curveMagnitudeMultiplier;  // Minimum curve for closest ports
+            const maxCurveDistance = controlPointStepSize * 2.0 * curveMagnitudeMultiplier;  // Maximum curve for farthest ports
+            const curveRange = maxCurveDistance - minCurveDistance;
+
+            // Apply styles to cross-host connections with dynamic scaling
+            crossHostConnections.forEach(conn => {
+                _crossShelfCount++;
+                const curveStyle = 'unbundled-bezier';
+
+                // Normalize distance to [0, 1] based on actual min/max
+                // Handle edge case where all connections have same distance
+                const normalizedDistance = distanceRange > 0
+                    ? (conn.distance - minDistance) / distanceRange
+                    : 0.5; // Default to middle if all distances are the same
+
+                // Scale curve magnitude based on normalized distance
+                const controlPointDistance = minCurveDistance + (normalizedDistance * curveRange);
+
+                const styleProps = {
+                    'curve-style': curveStyle,
+                    'control-point-distance': controlPointDistance,  // Scaled based on relative port distance
+                    'control-point-weight': 0.5  // Position along edge (0.5 = middle)
+                };
+
+                conn.edge.style(styleProps);
+            });
+        }
 
         this.state.cy.endBatch();
 
@@ -3008,6 +3110,57 @@ export class CommonModule {
 
         // Both must be shelf nodes and have the same ID
         return isSourceShelf && isTargetShelf && sourceShelf.id() === targetShelf.id();
+    }
+
+    /**
+     * Check if two port nodes are on different hosts (cross-host connection)
+     * @param {Object} sourceNode - Source port node
+     * @param {Object} targetNode - Target port node
+     * @returns {boolean} True if both nodes are on different hosts
+     * @private
+     */
+    _checkCrossHost(sourceNode, targetNode) {
+        if (!sourceNode || !sourceNode.length || !targetNode || !targetNode.length) {
+            return false;
+        }
+
+        // Get parent 2 levels up (port -> tray -> shelf)
+        const sourceShelf = this.getParentAtLevel(sourceNode, 2);
+        const targetShelf = this.getParentAtLevel(targetNode, 2);
+
+        // Verify that both nodes are actually shelf nodes
+        if (!sourceShelf || !sourceShelf.length || !targetShelf || !targetShelf.length) {
+            return false;
+        }
+
+        const sourceShelfType = sourceShelf.data('type');
+        const targetShelfType = targetShelf.data('type');
+        const isSourceShelf = sourceShelfType === 'shelf' || sourceShelfType === 'node';
+        const isTargetShelf = targetShelfType === 'shelf' || targetShelfType === 'node';
+
+        if (!isSourceShelf || !isTargetShelf) {
+            return false;
+        }
+
+        // Check if they're on different hosts by comparing hostnames or host_index
+        // First try hostname (more reliable)
+        const sourceHostname = sourceShelf.data('hostname');
+        const targetHostname = targetShelf.data('hostname');
+
+        if (sourceHostname && targetHostname) {
+            return sourceHostname !== targetHostname;
+        }
+
+        // Fallback to host_index if hostname not available
+        const sourceHostIndex = sourceShelf.data('host_index');
+        const targetHostIndex = targetShelf.data('host_index');
+
+        if (sourceHostIndex !== undefined && targetHostIndex !== undefined) {
+            return sourceHostIndex !== targetHostIndex;
+        }
+
+        // If we can't determine host, assume different hosts if different shelf IDs
+        return sourceShelf.id() !== targetShelf.id();
     }
 
     /**
@@ -3162,19 +3315,19 @@ export class CommonModule {
                 // Fallback to buildTemplatePath
                 pathArray = this.buildTemplatePath(shelfNode);
             }
-            
+
             // Process each path segment to remove (host_X) patterns for cleaner display
             const cleanPathArray = pathArray.map(pathLabel => {
                 // Remove (host_X) pattern from each segment
                 return pathLabel.replace(/\s*\(host_\d+\)\s*/gi, '').trim();
             }).filter(label => label); // Remove empty strings
-            
+
             // Build the main path string
             let mainPath = '';
             if (cleanPathArray.length > 0) {
                 mainPath = cleanPathArray.join(' > ');
             }
-            
+
             // Add host_id in parentheses at the end (without tray/port info)
             if (hostIndex !== undefined && hostIndex !== null) {
                 if (mainPath) {
@@ -3189,7 +3342,7 @@ export class CommonModule {
             // In location mode, construct the label using all available location info
             // Format matches CSV: {Hall}{Aisle}{Rack}U{ShelfU}-{Tray}-{Port}
             // Example: "SC_Floor_5A01U32-2-1" = SC_Floor_5 (Hall) + A (Aisle) + 01 (Rack) + U32 (Shelf U) + -2-1 (Tray-Port)
-            
+
             // Check if we have all required location data (hall and aisle can be empty strings, so check explicitly)
             const hasHall = hall !== undefined && hall !== null && String(hall).trim() !== '';
             const hasAisle = aisle !== undefined && aisle !== null && String(aisle).trim() !== '';
@@ -4184,7 +4337,7 @@ export class CommonModule {
 
             this.state.editing.selectedConnection = edge;
             edge.addClass('selected-connection');
-            this.showNodeInfo(node, evt.renderedPosition || evt.position);
+            this.showConnectionInfo(edge, evt.renderedPosition || evt.position);
         } else {
             // Port has no connection - just show info
             if (this.state.editing.selectedConnection) {
