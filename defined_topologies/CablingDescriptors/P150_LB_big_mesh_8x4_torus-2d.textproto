@@ -1,168 +1,4 @@
 graph_templates {
-  key: "4x4"
-  value {
-    children {
-      name: "1x_p150_lb_0"
-      graph_ref {
-        graph_template: "1x_p150_lb"
-      }
-    }
-    children {
-      name: "1x_p150_lb_1"
-      graph_ref {
-        graph_template: "1x_p150_lb"
-      }
-    }
-    internal_connections {
-      key: "QSFP_DD"
-      value {
-        connections {
-          port_a {
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 5
-            port_id: 2
-          }
-          port_b {
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 1
-            port_id: 1
-          }
-        }
-        connections {
-          port_a {
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 6
-            port_id: 2
-          }
-          port_b {
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 2
-            port_id: 1
-          }
-        }
-        connections {
-          port_a {
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 7
-            port_id: 2
-          }
-          port_b {
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 3
-            port_id: 1
-          }
-        }
-        connections {
-          port_a {
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 8
-            port_id: 2
-          }
-          port_b {
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 4
-            port_id: 1
-          }
-        }
-      }
-    }
-  }
-}
-graph_templates {
-  key: "8x4"
-  value {
-    children {
-      name: "4x4_0"
-      graph_ref {
-        graph_template: "4x4"
-      }
-    }
-    children {
-      name: "4x4_1"
-      graph_ref {
-        graph_template: "4x4"
-      }
-    }
-    internal_connections {
-      key: "QSFP_DD"
-      value {
-        connections {
-          port_a {
-            path: "4x4_0"
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 4
-            port_id: 3
-          }
-          port_b {
-            path: "4x4_1"
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 1
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "4x4_0"
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 8
-            port_id: 3
-          }
-          port_b {
-            path: "4x4_1"
-            path: "1x_p150_lb_0"
-            path: "node_0"
-            tray_id: 5
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "4x4_0"
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 4
-            port_id: 3
-          }
-          port_b {
-            path: "4x4_1"
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 1
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "4x4_0"
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 8
-            port_id: 3
-          }
-          port_b {
-            path: "4x4_1"
-            path: "1x_p150_lb_1"
-            path: "node_0"
-            tray_id: 5
-            port_id: 4
-          }
-        }
-      }
-    }
-  }
-}
-graph_templates {
   key: "1x_p150_lb"
   value {
     children {
@@ -298,15 +134,299 @@ graph_templates {
     }
   }
 }
+graph_templates {
+  key: "2x"
+  value {
+    children {
+      name: "p150_2x4_0"
+      graph_ref {
+        graph_template: "p150_2x4"
+      }
+    }
+    children {
+      name: "p150_2x4_1"
+      graph_ref {
+        graph_template: "p150_2x4"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 5
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 6
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 7
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 8
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 4
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 5
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 6
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 7
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 8
+            port_id: 2
+          }
+          port_b {
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 4
+            port_id: 1
+          }
+        }
+      }
+    }
+  }
+}
+graph_templates {
+  key: "4x"
+  value {
+    children {
+      name: "4x4_0"
+      graph_ref {
+        graph_template: "4x4"
+      }
+    }
+    children {
+      name: "4x4_1"
+      graph_ref {
+        graph_template: "4x4"
+      }
+    }
+    internal_connections {
+      key: "QSFP_DD"
+      value {
+        connections {
+          port_a {
+            path: "4x4_0"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_1"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_0"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 8
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_1"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 5
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_0"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_1"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_0"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 8
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_1"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 5
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_1"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_0"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_1"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 8
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_0"
+            path: "p150_2x4_0"
+            path: "node_0"
+            tray_id: 5
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_1"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_0"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "4x4_1"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 8
+            port_id: 3
+          }
+          port_b {
+            path: "4x4_0"
+            path: "p150_2x4_1"
+            path: "node_0"
+            tray_id: 5
+            port_id: 4
+          }
+        }
+      }
+    }
+  }
+}
 root_instance {
-  template_name: "8x4"
+  template_name: "4x"
   child_mappings {
     key: "4x4_0"
     value {
       sub_instance {
-        template_name: "4x4"
+        template_name: "2x"
         child_mappings {
-          key: "1x_p150_lb_0"
+          key: "p150_2x4_0"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -320,7 +440,7 @@ root_instance {
           }
         }
         child_mappings {
-          key: "1x_p150_lb_1"
+          key: "p150_2x4_1"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -340,9 +460,9 @@ root_instance {
     key: "4x4_1"
     value {
       sub_instance {
-        template_name: "4x4"
+        template_name: "2x"
         child_mappings {
-          key: "1x_p150_lb_0"
+          key: "p150_2x4_0"
           value {
             sub_instance {
               template_name: "1x_p150_lb"
@@ -356,7 +476,7 @@ root_instance {
           }
         }
         child_mappings {
-          key: "1x_p150_lb_1"
+          key: "p150_2x4_1"
           value {
             sub_instance {
               template_name: "1x_p150_lb"

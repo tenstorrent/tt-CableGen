@@ -1,5 +1,5 @@
 graph_templates {
-  key: "p150_2x4"
+  key: "1x_p150_lb"
   value {
     children {
       name: "node_0"
@@ -135,7 +135,7 @@ graph_templates {
   }
 }
 root_instance {
-  template_name: "p150_2x4"
+  template_name: "1x_p150_lb"
   child_mappings {
     key: "node_0"
     value {
