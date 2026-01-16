@@ -1624,7 +1624,7 @@ export class CommonModule {
                     edge.hide();
                     // Only count visible original edges that aren't hidden by collapse
                     if (shouldCount) {
-                        hiddenCount++;
+                        _hiddenCount++;
                     }
                     return;
                 }
@@ -1652,7 +1652,7 @@ export class CommonModule {
                     edge.hide();
                     // Only count visible original edges that aren't hidden by collapse
                     if (shouldCount) {
-                        hiddenCount++;
+                        _hiddenCount++;
                     }
                     return;
                 }
@@ -1686,7 +1686,7 @@ export class CommonModule {
                         edge.hide();
                         // Only count visible original edges that aren't hidden by collapse
                         if (shouldCount) {
-                            hiddenCount++;
+                            _hiddenCount++;
                         }
                         return;
                     }
@@ -1722,7 +1722,7 @@ export class CommonModule {
                 edge.hide();
                 // Only count visible original edges that aren't hidden by collapse
                 if (shouldCount) {
-                    hiddenCount++;
+                    _hiddenCount++;
                 }
             }
         });
@@ -4810,7 +4810,7 @@ export class CommonModule {
         });
 
         // Process top-level shelves (children of canvas, not in any graph)
-        sortedRootShelves.forEach((rootShelf, shelfIndex) => {
+        sortedRootShelves.forEach((rootShelf, _shelfIndex) => {
             const newHostIndex = nextHostIndex;
             nextHostIndex++;
 
