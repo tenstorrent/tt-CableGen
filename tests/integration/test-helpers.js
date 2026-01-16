@@ -11,13 +11,13 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-// Get test data directory path
-const TEST_DATA_DIR = path.join(process.cwd(), 'tests', 'integration', 'test-data');
+// Get test data directory path - use defined_topologies folder
+const TEST_DATA_DIR = path.join(process.cwd(), 'defined_topologies');
 const PROJECT_ROOT = process.cwd();
 
 /**
- * Load a test data file from the test-data directory
- * @param {string} filename - Name of the test file
+ * Load a test data file from the defined_topologies directory
+ * @param {string} filename - Name of the test file (relative to defined_topologies)
  * @returns {string} File contents
  */
 export function loadTestDataFile(filename) {
@@ -31,7 +31,7 @@ export function loadTestDataFile(filename) {
 /**
  * Get all test data files matching an extension
  * @param {string} extension - File extension (e.g., '.csv', '.textproto')
- * @param {string} subdirectory - Optional subdirectory to search (e.g., 'cabling-guides', 'deployment-descriptors')
+ * @param {string} subdirectory - Optional subdirectory to search (e.g., 'CablingGuides', 'CablingDescriptors', 'DeploymentDescriptors')
  * @returns {string[]} Array of filenames (with full paths relative to TEST_DATA_DIR)
  */
 export function getTestDataFiles(extension, subdirectory = null) {
@@ -688,7 +688,7 @@ except Exception as e:
  * @returns {Object} Deployment data in format expected by updateShelfLocations
  */
 export function parseDeploymentDescriptor(filePath) {
-    const deploymentDir = path.join(TEST_DATA_DIR, 'deployment-descriptors');
+    const deploymentDir = path.join(TEST_DATA_DIR, 'DeploymentDescriptors');
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(deploymentDir, filePath);
     const content = fs.readFileSync(absPath, 'utf-8');
 
@@ -812,6 +812,7 @@ export function parseDeploymentDescriptorFromContent(textprotoContent) {
  * @returns {string} File contents
  */
 export function loadExpectedOutput(filePath) {
+    // Note: expected-outputs may not exist in defined_topologies
     const expectedDir = path.join(TEST_DATA_DIR, 'expected-outputs');
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(expectedDir, filePath);
     if (!fs.existsSync(absPath)) {

@@ -23,8 +23,8 @@ sys.path.insert(0, str(project_root))
 # Import Flask app
 from server import app
 
-# Test data directory
-TEST_DATA_DIR = Path(__file__).parent / 'test-data'
+# Test data directory - use defined_topologies folder
+TEST_DATA_DIR = Path(__file__).parent.parent.parent / 'defined_topologies'
 
 
 @pytest.fixture
@@ -350,7 +350,7 @@ class TestCablingGuideExport:
     def test_with_cabling_guide_csv(self, client):
         """Test CablingGuide generation using CSV test data from cabling-guides directory"""
         # Look for CSV test data files
-        cabling_guides_dir = TEST_DATA_DIR / 'cabling-guides'
+        cabling_guides_dir = TEST_DATA_DIR / 'CablingGuides'
         if not cabling_guides_dir.exists():
             pytest.skip("Cabling guides test data directory not found")
         
@@ -421,18 +421,8 @@ class TestCablingGuideExport:
                 csv_lines = [l for l in data['cabling_guide_content'].split('\n') if l.strip()]
                 print(f"Generated CSV: {len(csv_lines)} lines (including header)")
                 
-                # Compare with expected output if available
-                expected_file = TEST_DATA_DIR / 'expected-outputs' / f"{input_prefix}_expected.csv"
-                if expected_file.exists():
-                    expected_content = expected_file.read_text()
-                    expected_lines = [l for l in expected_content.split('\n') if l.strip()]
-                    print(f"Expected CSV: {len(expected_lines)} lines")
-                    
-                    # Basic comparison
-                    if len(csv_lines) == len(expected_lines):
-                        print("✅ Line count matches expected output")
-                    else:
-                        print(f"⚠️  Line count mismatch: got {len(csv_lines)}, expected {len(expected_lines)}")
+                # Note: Expected output comparison skipped for defined_topologies
+                # (expected-outputs directory doesn't exist in defined_topologies)
     
     @pytest.mark.skipif(
         not os.environ.get('TT_METAL_HOME') or 

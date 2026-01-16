@@ -1,5 +1,5 @@
 graph_templates {
-  key: "n300_lb_pod"
+  key: "n300_lb_mesh"
   value {
     children {
       name: "n300_lb"
@@ -22,124 +22,124 @@ graph_templates {
 }
 
 graph_templates {
-  key: "n300_lb_superpod"
+  key: "n300_lb_pod"
   value {
     children {
-      name: "node1"
-      graph_ref { graph_template: "n300_lb_pod" }
+      name: "mesh_1"
+      graph_ref { graph_template: "n300_lb_mesh" }
     }
     children {
-      name: "node2"
-      graph_ref { graph_template: "n300_lb_pod" }
+      name: "mesh_2"
+      graph_ref { graph_template: "n300_lb_mesh" }
     }
     children {
-      name: "node3"
-      graph_ref { graph_template: "n300_lb_pod" }
+      name: "mesh_3"
+      graph_ref { graph_template: "n300_lb_mesh" }
     }
     children {
-      name: "node4"
-      graph_ref { graph_template: "n300_lb_pod" }
+      name: "mesh_4"
+      graph_ref { graph_template: "n300_lb_mesh" }
     }
     # Internal superpod connections
     internal_connections {
       key: "QSFP_DD"
       value {
         connections {
-          port_a { path: ["node1", "n300_lb"] tray_id: 1 port_id: 2 }
-          port_b { path: ["node4", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_a { path: ["mesh_1", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_b { path: ["mesh_4", "n300_lb"] tray_id: 1 port_id: 2 }
         }
         connections {
-          port_a { path: ["node1", "n300_lb"] tray_id: 3 port_id: 1 }
-          port_b { path: ["node2", "n300_lb"] tray_id: 3 port_id: 1 }
+          port_a { path: ["mesh_1", "n300_lb"] tray_id: 3 port_id: 1 }
+          port_b { path: ["mesh_2", "n300_lb"] tray_id: 3 port_id: 1 }
         }
         connections {
-          port_a { path: ["node1", "n300_lb"] tray_id: 4 port_id: 2 }
-          port_b { path: ["node3", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_a { path: ["mesh_1", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_b { path: ["mesh_3", "n300_lb"] tray_id: 4 port_id: 2 }
         }
         connections {
-          port_a { path: ["node2", "n300_lb"] tray_id: 2 port_id: 1 }
-          port_b { path: ["node3", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_a { path: ["mesh_2", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_b { path: ["mesh_3", "n300_lb"] tray_id: 2 port_id: 1 }
         }
         connections {
-          port_a { path: ["node2", "n300_lb"] tray_id: 4 port_id: 2 }
-          port_b { path: ["node4", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_a { path: ["mesh_2", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_b { path: ["mesh_4", "n300_lb"] tray_id: 2 port_id: 1 }
         }
         connections {
-          port_a { path: ["node3", "n300_lb"] tray_id: 3 port_id: 1 }
-          port_b { path: ["node4", "n300_lb"] tray_id: 3 port_id: 1 }
+          port_a { path: ["mesh_3", "n300_lb"] tray_id: 3 port_id: 1 }
+          port_b { path: ["mesh_4", "n300_lb"] tray_id: 3 port_id: 1 }
         }
       }
     }
   }
 }
 
-# Cluster template (4 superpods)
+# Cluster template (4 pods)
 graph_templates {
-  key: "n300_lb_cluster"
+  key: "n300_lb_superpod"
   value {
     children {
-      name: "superpod1"
-      graph_ref { graph_template: "n300_lb_superpod" }
+      name: "pod_1"
+      graph_ref { graph_template: "n300_lb_pod" }
     }
     children {
-      name: "superpod2"
-      graph_ref { graph_template: "n300_lb_superpod" }
+      name: "pod_2"
+      graph_ref { graph_template: "n300_lb_pod" }
     }
     children {
-      name: "superpod3"
-      graph_ref { graph_template: "n300_lb_superpod" }
+      name: "pod_3"
+      graph_ref { graph_template: "n300_lb_pod" }
     }
     children {
-      name: "superpod4"
-      graph_ref { graph_template: "n300_lb_superpod" }
+      name: "pod_4"
+      graph_ref { graph_template: "n300_lb_pod" }
     }
-    # Inter-superpod connections
+    # Inter-pod connections
     internal_connections {
       key: "QSFP_DD"
       value {
         connections {
-          port_a { path: ["superpod1", "node1", "n300_lb"] tray_id: 2 port_id: 1 }
-          port_b { path: ["superpod3", "node1", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_a { path: ["pod_1", "mesh_1", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_b { path: ["pod_3", "mesh_1", "n300_lb"] tray_id: 2 port_id: 1 }
         }
         connections {
-          port_a { path: ["superpod1", "node3", "n300_lb"] tray_id: 1 port_id: 2 }
-          port_b { path: ["superpod2", "node2", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_a { path: ["pod_1", "mesh_3", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_b { path: ["pod_2", "mesh_2", "n300_lb"] tray_id: 1 port_id: 2 }
         }
         connections {
-          port_a { path: ["superpod1", "node4", "n300_lb"] tray_id: 4 port_id: 2 }
-          port_b { path: ["superpod4", "node1", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_a { path: ["pod_1", "mesh_4", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_b { path: ["pod_4", "mesh_1", "n300_lb"] tray_id: 2 port_id: 1 }
         }
         connections {
-          port_a { path: ["superpod3", "node3", "n300_lb"] tray_id: 1 port_id: 2 }
-          port_b { path: ["superpod4", "node2", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_a { path: ["pod_3", "mesh_3", "n300_lb"] tray_id: 1 port_id: 2 }
+          port_b { path: ["pod_4", "mesh_2", "n300_lb"] tray_id: 1 port_id: 2 }
         }
         connections {
-          port_a { path: ["superpod3", "node4", "n300_lb"] tray_id: 4 port_id: 2 }
-          port_b { path: ["superpod2", "node1", "n300_lb"] tray_id: 2 port_id: 1 }
+          port_a { path: ["pod_3", "mesh_4", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_b { path: ["pod_2", "mesh_1", "n300_lb"] tray_id: 2 port_id: 1 }
         }
         connections {
-          port_a { path: ["superpod2", "node4", "n300_lb"] tray_id: 4 port_id: 2 }
-          port_b { path: ["superpod4", "node4", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_a { path: ["pod_2", "mesh_4", "n300_lb"] tray_id: 4 port_id: 2 }
+          port_b { path: ["pod_4", "mesh_4", "n300_lb"] tray_id: 4 port_id: 2 }
         }
       }
     }
   }
 }
 
-# Root instance with concrete host mappings
+# Root instance with concrete host mappings (4 pods)
 root_instance {
-  template_name: "n300_lb_cluster"
+  template_name: "n300_lb_superpod"
   child_mappings {
-    key: "superpod1"
+    key: "pod_1"
     value {
       sub_instance {
-        template_name: "n300_lb_superpod"
+        template_name: "n300_lb_pod"
 
         child_mappings {
-          key: "node1"
+          key: "mesh_1"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 0 }
@@ -148,10 +148,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node2"
+          key: "mesh_2"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 1 }
@@ -160,10 +160,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node3"
+          key: "mesh_3"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 2 }
@@ -172,10 +172,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node4"
+          key: "mesh_4"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 3 }
@@ -187,16 +187,16 @@ root_instance {
     }
   }
   child_mappings {
-    key: "superpod2"
+    key: "pod_2"
     value {
       sub_instance {
-        template_name: "n300_lb_superpod"
+        template_name: "n300_lb_pod"
 
         child_mappings {
-          key: "node1"
+          key: "mesh_1"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 4 }
@@ -205,10 +205,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node2"
+          key: "mesh_2"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 5 }
@@ -217,10 +217,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node3"
+          key: "mesh_3"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 6 }
@@ -229,10 +229,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node4"
+          key: "mesh_4"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 7 }
@@ -244,16 +244,15 @@ root_instance {
     }
   }
   child_mappings {
-    key: "superpod3"
+    key: "pod_3"
     value {
       sub_instance {
-        template_name: "n300_lb_superpod"
-
+        template_name: "n300_lb_pod"
         child_mappings {
-          key: "node1"
+          key: "mesh_1"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 8 }
@@ -262,10 +261,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node2"
+          key: "mesh_2"
             value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 9 }
@@ -274,10 +273,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node3"
+          key: "mesh_3"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 10 }
@@ -286,10 +285,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node4"
+          key: "mesh_4"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 11 }
@@ -301,16 +300,16 @@ root_instance {
     }
   }
   child_mappings {
-    key: "superpod4"
+    key: "pod_4"
     value {
       sub_instance {
-        template_name: "n300_lb_superpod"
+        template_name: "n300_lb_pod"
 
         child_mappings {
-          key: "node1"
+          key: "mesh_1"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 12 }
@@ -319,10 +318,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node2"
+          key: "mesh_2"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 13 }
@@ -331,10 +330,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node3"
+          key: "mesh_3"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 14 }
@@ -343,10 +342,10 @@ root_instance {
           }
         }
         child_mappings {
-          key: "node4"
+          key: "mesh_4"
           value {
             sub_instance {
-              template_name: "n300_lb_pod"
+              template_name: "n300_lb_mesh"
               child_mappings {
                 key: "n300_lb"
                 value { host_id: 15 }
