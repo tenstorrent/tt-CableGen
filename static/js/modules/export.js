@@ -103,6 +103,7 @@ export class ExportModule {
             }
             return sanitized;
         } finally {
+            // Empty finally block - no cleanup needed
         }
     }
 

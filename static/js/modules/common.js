@@ -1590,8 +1590,8 @@ export class CommonModule {
         const allEdges = this.state.cy.edges();
         // Note: Rerouted edges are duplicates created when nodes are collapsed
         // We filter all edges for visibility, but only count visible original edges (not rerouted ones, not hidden collapsed ones)
-        let visibleCount = 0;
-        let hiddenCount = 0;
+        let _visibleCount = 0;
+        let _hiddenCount = 0;
 
         // Check which original edges are hidden due to collapse (before we reset visibility)
         // An original edge is hidden by collapse if there's a rerouted edge pointing to it
@@ -1716,7 +1716,7 @@ export class CommonModule {
                 edge.show();
                 // Only count visible original edges that aren't hidden by collapse
                 if (shouldCount) {
-                    visibleCount++;
+                    _visibleCount++;
                 }
             } else {
                 edge.hide();
@@ -4803,7 +4803,7 @@ export class CommonModule {
         });
 
         // Process root graphs first (they contain nested shelves in hierarchy mode)
-        sortedRootGraphs.forEach((rootGraph, rootIndex) => {
+        sortedRootGraphs.forEach((rootGraph, _rootIndex) => {
             const startIndex = nextHostIndex;
             const nextIndexForRoot = dfsTraverse(rootGraph, startIndex, 0);
             nextHostIndex = nextIndexForRoot;
@@ -4848,7 +4848,7 @@ export class CommonModule {
 
         // Process nested shelves (children of racks in location mode)
         // These ensure uniqueness in location mode where shelves are organized under racks
-        sortedNestedShelves.forEach((nestedShelf, shelfIndex) => {
+        sortedNestedShelves.forEach((nestedShelf, _shelfIndex) => {
             const shelfLabel = nestedShelf.data('label') || nestedShelf.id();
             const parentLabel = nestedShelf.parent().length > 0 ? nestedShelf.parent().data('label') || nestedShelf.parent().id() : 'canvas';
             const oldHostIndex = nestedShelf.data('host_index');
