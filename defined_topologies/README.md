@@ -84,6 +84,6 @@ This section contains all defined BH topology configurations, including systems 
 
 ## File Locations
 
-- **Cabling Guides**: CSV files containing cable connection information (located in `CablingGuides/` subdirectory)
+- **Cabling Guides**: CSV files containing cable connection and node deployment information (located in `CablingGuides/` subdirectory)
 - **Cabling Descriptors**: TextProto files defining the cluster topology structure (located in `CablingDescriptors/` subdirectory)
 

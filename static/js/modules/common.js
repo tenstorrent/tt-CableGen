@@ -2870,6 +2870,12 @@ export class CommonModule {
         // This prevents step-size from changing when viewport changes (zoom, pan, layout)
         const controlPointStepSize = 40; // Fixed value for consistent curve appearance
 
+        // Get curve magnitude multiplier from slider (default to 1.0 if not set)
+        // This multiplier affects ALL bezier curves, not just cross-host
+        const curveMagnitudeMultiplier = parseFloat(
+            document.getElementById('curveMagnitudeSlider')?.value || '1.0'
+        );
+
         this.state.cy.startBatch();
 
         let _sameShelfCount = 0;
@@ -2977,6 +2983,19 @@ export class CommonModule {
             // Check if this is a cross-host connection
             const isCrossHost = this._checkCrossHost(sourceNode, targetNode);
 
+            // Apply heuristic: if endpoints share port OR tray number, use normal curve
+            // If both port AND tray are different, default to flat (multiply by 0)
+            // When slider > 1.0, apply offset to initially flat curves: (slider - 1.0)
+            const sharePortOrTray = this._endpointsSharePortOrTray(sourceNode, targetNode);
+            let effectiveMultiplier;
+            if (sharePortOrTray) {
+                // Endpoints share port/tray: use slider value as normal
+                effectiveMultiplier = curveMagnitudeMultiplier;
+            } else {
+                // Endpoints don't share port/tray: flat when slider <= 1.0, offset when slider > 1.0
+                effectiveMultiplier = Math.max(0, curveMagnitudeMultiplier - 1.0);
+            }
+
             // Collect cross-host connections for distance calculation
             if (isCrossHost && !isSameShelf) {
                 const sourcePos = sourceNode.position();
@@ -2991,7 +3010,8 @@ export class CommonModule {
                     targetNode,
                     distance: straightDistance,
                     isRerouted,
-                    isCrossGraph
+                    isCrossGraph,
+                    sharePortOrTray  // Store heuristic result for second pass
                 });
             }
 
@@ -3002,10 +3022,12 @@ export class CommonModule {
                 // control-point-distance controls how far control points are from the straight line
                 // control-point-weight controls the relative position along the edge
                 // Reduced distance for subtler curves on same-shelf connections
-                const controlPointDistance = Math.max(10, controlPointStepSize * 0.4); // Reduced magnitude for subtler curves
+                // Apply slider multiplier and heuristic to all curves
+                const baseControlPointDistance = Math.max(10, controlPointStepSize * 0.4); // Reduced magnitude for subtler curves
+                const controlPointDistance = baseControlPointDistance * effectiveMultiplier;
                 styleProps = {
                     'curve-style': curveStyle,
-                    'control-point-distance': controlPointDistance,  // Distance from straight line (reduced)
+                    'control-point-distance': controlPointDistance,  // Distance from straight line (scaled by slider and heuristic)
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
             } else if (isCrossHost) {
@@ -3015,10 +3037,12 @@ export class CommonModule {
                 _crossShelfCount++;
                 curveStyle = 'bezier';
                 // Reduce magnitude for cross-graph connections (between different graph nodes)
-                const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
+                // Apply slider multiplier and heuristic to all curves
+                const baseStepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
+                const stepSize = baseStepSize * effectiveMultiplier;
                 styleProps = {
                     'curve-style': curveStyle,
-                    'control-point-step-size': stepSize
+                    'control-point-step-size': stepSize  // Scaled by slider multiplier and heuristic
                 };
                 const _connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
                 if (isCrossGraph) {
@@ -3053,18 +3077,40 @@ export class CommonModule {
                 _crossShelfCount++;
                 const curveStyle = 'unbundled-bezier';
 
+                // Apply heuristic: if endpoints share port OR tray number, use normal curve
+                // If both port AND tray are different, default to flat (multiply by 0)
+                // When slider > 1.0, apply offset to initially flat curves: (slider - 1.0)
+                const sharePortOrTray = conn.sharePortOrTray !== undefined 
+                    ? conn.sharePortOrTray 
+                    : this._endpointsSharePortOrTray(conn.sourceNode, conn.targetNode);
+                
+                // Calculate effective multiplier for this connection
+                let effectiveMultiplier;
+                if (sharePortOrTray) {
+                    // Endpoints share port/tray: use slider value as normal
+                    effectiveMultiplier = curveMagnitudeMultiplier;
+                } else {
+                    // Endpoints don't share port/tray: flat when slider <= 1.0, offset when slider > 1.0
+                    effectiveMultiplier = Math.max(0, curveMagnitudeMultiplier - 1.0);
+                }
+
                 // Normalize distance to [0, 1] based on actual min/max
                 // Handle edge case where all connections have same distance
                 const normalizedDistance = distanceRange > 0
                     ? (conn.distance - minDistance) / distanceRange
                     : 0.5; // Default to middle if all distances are the same
 
+                // Calculate base curve distances using effective multiplier instead of slider
+                const effectiveMinCurveDistance = controlPointStepSize * 1.0 * effectiveMultiplier;
+                const effectiveMaxCurveDistance = controlPointStepSize * 2.0 * effectiveMultiplier;
+                const effectiveCurveRange = effectiveMaxCurveDistance - effectiveMinCurveDistance;
+                
                 // Scale curve magnitude based on normalized distance
-                const controlPointDistance = minCurveDistance + (normalizedDistance * curveRange);
+                const controlPointDistance = effectiveMinCurveDistance + (normalizedDistance * effectiveCurveRange);
 
                 const styleProps = {
                     'curve-style': curveStyle,
-                    'control-point-distance': controlPointDistance,  // Scaled based on relative port distance
+                    'control-point-distance': controlPointDistance,  // Scaled based on relative port distance and heuristic
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
 
@@ -3110,6 +3156,35 @@ export class CommonModule {
 
         // Both must be shelf nodes and have the same ID
         return isSourceShelf && isTargetShelf && sourceShelf.id() === targetShelf.id();
+    }
+
+    /**
+     * Check if endpoints share port number or tray number
+     * @param {Object} sourceNode - Source port node
+     * @param {Object} targetNode - Target port node
+     * @returns {boolean} True if endpoints share port number OR tray number
+     * @private
+     */
+    _endpointsSharePortOrTray(sourceNode, targetNode) {
+        if (!sourceNode || !sourceNode.length || !targetNode || !targetNode.length) {
+            return false;
+        }
+
+        // Get port numbers from node data
+        const sourcePortNum = sourceNode.data('port');
+        const targetPortNum = targetNode.data('port');
+
+        // Get tray numbers from node data
+        const sourceTrayNum = sourceNode.data('tray');
+        const targetTrayNum = targetNode.data('tray');
+
+        // If either port numbers match OR tray numbers match, return true
+        const portsMatch = sourcePortNum !== undefined && targetPortNum !== undefined && 
+                          sourcePortNum === targetPortNum;
+        const traysMatch = sourceTrayNum !== undefined && targetTrayNum !== undefined && 
+                          sourceTrayNum === targetTrayNum;
+
+        return portsMatch || traysMatch;
     }
 
     /**
