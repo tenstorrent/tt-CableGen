@@ -18,10 +18,6 @@ on:
       - master
       - develop
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   test:
     name: Run NPM Jest Tests in Docker Container
@@ -48,7 +44,12 @@ jobs:
       - name: Run npm tests in container
         run: |
           docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
+            -v ${{ github.workspace }}/package.json:/workspace/package.json:ro \
+            -v ${{ github.workspace }}/package-lock.json:/workspace/package-lock.json:ro \
+            -v ${{ github.workspace }}/jest.config.cjs:/workspace/jest.config.cjs:ro \
+            -v ${{ github.workspace }}/.babelrc:/workspace/.babelrc:ro \
+            -v ${{ github.workspace }}/static:/workspace/static:ro \
+            -v ${{ github.workspace }}/tests:/workspace/tests:ro \
             -w /workspace \
             cablegen-test:local \
             /bin/bash -c "npm ci && npm test"
