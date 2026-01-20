@@ -13,7 +13,7 @@ docker pull ghcr.io/tenstorrent/tt-cablegen:main
 
 Available tags:
 - `main`, `master`, `develop` - Latest build from respective branches
-- `v*` - Semantic version tags (e.g., `v1.0.0`, `v1.0`, `v1`)
+- `v*` - Semantic version tags (e.g., `v1.0.0`)
 - `sha-<commit>` - Specific commit builds
 
 ## Architecture
