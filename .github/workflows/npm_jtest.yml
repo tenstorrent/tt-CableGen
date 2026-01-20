@@ -22,6 +22,8 @@ jobs:
   test:
     name: Run NPM Jest Tests in Docker Container
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout code
