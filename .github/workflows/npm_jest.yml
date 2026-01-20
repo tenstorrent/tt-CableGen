@@ -19,32 +19,11 @@ on:
       - develop
 
 jobs:
-  test:
-    name: Run NPM Jest Tests in Docker Container
-    runs-on: ubuntu-latest
+  npm-jest-tests:
+    name: Run NPM Jest Tests
+    uses: ./.github/workflows/build-test-container.yml
+    with:
+      branch: ${{ github.event.inputs.branch || github.ref }}
+      test-command: "cd /app && npm ci && npm test"
     permissions:
       contents: read
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-      
-      - name: Build Docker container using Makefile
-        run: make build-local
-      
-      - name: Start Docker container
-        run: make up-local
-      
-      - name: Wait for container to be ready
-        run: |
-          timeout 120 bash -c 'until docker compose -f docker-compose.local.yml ps | grep -q "healthy"; do sleep 2; done'
-      
-      - name: Run npm tests in container
-        run: |
-          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && npm ci && npm test"
-      
-      - name: Stop Docker container
-        if: always()
-        run: make down-local
