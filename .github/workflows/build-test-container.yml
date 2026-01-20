@@ -3,11 +3,6 @@ name: Run Tests in Docker Container
 on:
   workflow_call:
     inputs:
-      branch:
-        description: 'Branch to test'
-        required: false
-        type: string
-        default: ''
       test-command:
         description: 'Test command to run in container'
         required: true
@@ -23,8 +18,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch || github.ref }}
       
       - name: Build Docker container using Makefile
         run: make build-local
