@@ -29,27 +29,16 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build Docker container using Makefile
+        run: make build-local
       
-      - name: Build Docker image for testing
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          load: true
-          tags: cablegen-test:local
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Start Docker container
+        run: make up-local
       
       - name: Run npm tests in container
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/package.json:/workspace/package.json:ro \
-            -v ${{ github.workspace }}/package-lock.json:/workspace/package-lock.json:ro \
-            -v ${{ github.workspace }}/jest.config.cjs:/workspace/jest.config.cjs:ro \
-            -v ${{ github.workspace }}/.babelrc:/workspace/.babelrc:ro \
-            -v ${{ github.workspace }}/static:/workspace/static:ro \
-            -v ${{ github.workspace }}/tests:/workspace/tests:ro \
-            -w /workspace \
-            cablegen-test:local \
-            /bin/bash -c "npm ci && npm test"
+          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && npm ci && npm test"
+      
+      - name: Stop Docker container
+        if: always()
+        run: make down-local
