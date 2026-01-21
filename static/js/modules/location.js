@@ -71,7 +71,7 @@ export class LocationModule {
         // Update all shelf labels to use location mode format after location data is updated
         if (updatedCount > 0) {
             this.updateAllShelfLabels();
-            
+
             // Recolor connections after location updates (in location mode)
             const mode = this.state.mode;
             if (mode === 'location') {
@@ -117,7 +117,7 @@ export class LocationModule {
 
         const sourceHostId = sourceShelf.data('host_id') ?? sourceShelf.data('host_index');
         const targetHostId = targetShelf.data('host_id') ?? targetShelf.data('host_index');
-        
+
         // Normalize rack numbers for proper comparison (handle both numeric and string values)
         const normalizeRackNum = (rackNum) => {
             if (rackNum === undefined || rackNum === null) return null;
@@ -127,39 +127,39 @@ export class LocationModule {
 
         const sourceRack = normalizeRackNum(sourceShelf.data('rack_num') ?? sourceShelf.data('rack'));
         const targetRack = normalizeRackNum(targetShelf.data('rack_num') ?? targetShelf.data('rack'));
-        
+
         const sourceAisle = (sourceShelf.data('aisle') ?? '').toString().trim();
         const targetAisle = (targetShelf.data('aisle') ?? '').toString().trim();
-        
+
         const sourceHall = (sourceShelf.data('hall') ?? '').toString().trim();
         const targetHall = (targetShelf.data('hall') ?? '').toString().trim();
 
         // Same host (most specific)
-        if (sourceHostId !== undefined && targetHostId !== undefined && 
+        if (sourceHostId !== undefined && targetHostId !== undefined &&
             sourceHostId === targetHostId) {
             return 'same_host_id';
         }
-        
+
         // For "same rack", we need rack, aisle, AND hall to all match
         // Same rack, different host (but same aisle and hall)
         const racksMatch = sourceRack !== null && targetRack !== null && sourceRack === targetRack;
         const aislesMatch = sourceAisle !== '' && targetAisle !== '' && sourceAisle === targetAisle;
         const hallsMatch = sourceHall !== '' && targetHall !== '' && sourceHall === targetHall;
-        
+
         if (racksMatch && aislesMatch && hallsMatch) {
             return 'same_rack';
         }
-        
+
         // Same aisle, different rack (but same hall)
         if (aislesMatch && hallsMatch) {
             return 'same_aisle';
         }
-        
+
         // Same hall, different aisle
         if (hallsMatch) {
             return 'same_hall';
         }
-        
+
         // Different halls (most general)
         return 'different_hall';
     }
@@ -582,12 +582,12 @@ export class LocationModule {
                             this.updateAllShelfLabels();
 
                             this.common.forceApplyCurveStyles();
-                            
+
                             // Fit the view to show all nodes with padding before showing container
                             this.state.cy.fit(null, 50);
                             this.state.cy.center();
                             this.state.cy.forceRender();
-                            
+
                             // Show container after layout, coloring, and zoom complete
                             const cyContainer = document.getElementById('cy');
                             if (cyContainer) {
@@ -601,12 +601,12 @@ export class LocationModule {
                         // If layout didn't run (no location nodes), fit and show container after coloring
                         this.recolorConnections();
                         this.updateAllShelfLabels();
-                        
+
                         // Fit the view to show all nodes with padding before showing container
                         this.state.cy.fit(null, 50);
                         this.state.cy.center();
                         this.state.cy.forceRender();
-                        
+
                         const cyContainer = document.getElementById('cy');
                         if (cyContainer) {
                             cyContainer.style.visibility = 'visible';
@@ -617,12 +617,12 @@ export class LocationModule {
                     // Show container even if layout fails, after coloring and fit
                     this.recolorConnections();
                     this.updateAllShelfLabels();
-                    
+
                     // Fit the view to show all nodes with padding before showing container
                     this.state.cy.fit(null, 50);
                     this.state.cy.center();
                     this.state.cy.forceRender();
-                    
+
                     const cyContainer = document.getElementById('cy');
                     if (cyContainer) {
                         cyContainer.style.visibility = 'visible';
@@ -632,12 +632,12 @@ export class LocationModule {
                 // No location nodes - show container after coloring and fit
                 this.recolorConnections();
                 this.updateAllShelfLabels();
-                
+
                 // Fit the view to show all nodes with padding before showing container
                 this.state.cy.fit(null, 50);
                 this.state.cy.center();
                 this.state.cy.forceRender();
-                
+
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer) {
                     cyContainer.style.visibility = 'visible';
@@ -917,7 +917,7 @@ export class LocationModule {
                             const shelfU = shelfData.shelf_u;
                             const hostIndex = shelfInfo.data.host_index;
                             const hostname = shelfInfo.data.hostname || shelfInfo.data.child_name;
-                            
+
                             let displayLabel;
                             if (shelfU !== undefined && shelfU !== null && shelfU !== '') {
                                 // Format: Shelf {shelf_u} ({host_index}: hostname) or Shelf {shelf_u} ({host_index})
@@ -983,7 +983,7 @@ export class LocationModule {
                 const shelfU = shelfData.shelf_u;
                 const hostIndex = shelfInfo.data.host_index;
                 const hostname = shelfInfo.data.hostname || shelfInfo.data.child_name;
-                
+
                 let displayLabel;
                 if (shelfU !== undefined && shelfU !== null && shelfU !== '') {
                     // Format: Shelf {shelf_u} ({host_index}: hostname) or Shelf {shelf_u} ({host_index})
@@ -1640,7 +1640,7 @@ export class LocationModule {
         // Block node creation in location mode if session started in hierarchy mode
         if (this.state.data.initialMode === 'hierarchy') {
             const errorMsg = 'Cannot add nodes in location mode. This session started in hierarchy mode (from descriptor import or empty topology canvas). ' +
-                           'Node additions are only allowed in hierarchy mode. Please switch to hierarchy mode to add nodes.';
+                'Node additions are only allowed in hierarchy mode. Please switch to hierarchy mode to add nodes.';
             alert(errorMsg);
             console.error('[Location.addNode] Blocked: Session started in hierarchy mode');
             if (window.showExportStatus && typeof window.showExportStatus === 'function') {
@@ -1762,7 +1762,7 @@ export class LocationModule {
                 }
                 return;
             }
-            
+
             // Use location mode format: "Shelf {shelf_u} ({host_index}: hostname)"
             if (shelfU > 0) {
                 nodeLabel = `Shelf ${shelfU} (${hostIndex}: ${hostname})`;
@@ -1847,7 +1847,7 @@ export class LocationModule {
         const addedShelf = this.state.cy.getElementById(shelfId);
         if (addedShelf && addedShelf.length > 0) {
             this.common.arrangeTraysAndPorts(addedShelf);
-            
+
             // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
             // This handles connections like QSFP connections in DEFAULT variants and torus connections
             this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
@@ -2072,7 +2072,7 @@ export class LocationModule {
 
         // In location mode, format label as: "Shelf {shelf_u} ({host_index}: hostname)"
         const currentHostIndex = node.data('host_index') ?? node.data('host_id');
-        
+
         if (currentShelfU !== undefined && currentShelfU !== null && currentShelfU !== '') {
             if (currentHostIndex !== undefined && currentHostIndex !== null) {
                 if (currentHostname) {
@@ -2113,7 +2113,7 @@ export class LocationModule {
             if (newRackNode) {
                 // Move the shelf node to the new rack
                 node.move({ parent: newRackNode.id() });
-                
+
                 // Recalculate host_indices after node move (treating canvas as root)
                 // This ensures unique, consecutive host_index values across all shelf nodes
                 if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
@@ -2429,7 +2429,7 @@ export class LocationModule {
                 // Not showing halls - move aisle to top level
                 node.move({ parent: null });
             }
-            
+
             // Recalculate host_indices after node move (treating canvas as root)
             // This ensures unique, consecutive host_index values across all shelf nodes
             if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
@@ -2553,7 +2553,7 @@ export class LocationModule {
             } else {
                 node.move({ parent: null });
             }
-            
+
             // Recalculate host_indices after node move (treating canvas as root)
             // This ensures unique, consecutive host_index values across all shelf nodes
             if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {

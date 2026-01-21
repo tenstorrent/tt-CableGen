@@ -224,13 +224,25 @@ function main() {
     
     const testDataDir = path.join(process.cwd(), 'tests', 'integration', 'test-data');
     
-    // Get all test files
+    // Get all test files from cabling-guides and cabling-descriptors subdirectories
     const testFiles = [];
-    if (fs.existsSync(testDataDir)) {
-        const files = fs.readdirSync(testDataDir);
+    const csvDir = path.join(testDataDir, 'cabling-guides');
+    const textprotoDir = path.join(testDataDir, 'cabling-descriptors');
+    
+    if (fs.existsSync(csvDir)) {
+        const files = fs.readdirSync(csvDir);
         files.forEach(file => {
-            if (file.endsWith('.textproto') || file.endsWith('.csv')) {
-                testFiles.push(file);
+            if (file.endsWith('.csv')) {
+                testFiles.push(path.join('cabling-guides', file));
+            }
+        });
+    }
+    
+    if (fs.existsSync(textprotoDir)) {
+        const files = fs.readdirSync(textprotoDir);
+        files.forEach(file => {
+            if (file.endsWith('.textproto')) {
+                testFiles.push(path.join('cabling-descriptors', file));
             }
         });
     }

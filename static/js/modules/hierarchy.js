@@ -932,7 +932,7 @@ export class HierarchyModule {
         }
 
         // First pass: position nodes temporarily to get accurate dimensions
-        sortedTopLevel.forEach((node, index) => {
+        sortedTopLevel.forEach((node, _index) => {
             // Temporary position for bounding box calculation
             node.position({ 
                 x: LAYOUT_CONSTANTS.TOP_LEVEL_START_X, 
@@ -1992,7 +1992,7 @@ export class HierarchyModule {
      * @param {string} nodeType - Node type (e.g., 'WH_GALAXY', 'N300_LB', etc., may include variations like '_DEFAULT', '_X_TORUS')
      * @param {HTMLSelectElement} nodeTypeSelect - Node type select element (for UI updates)
      */
-    addNode(nodeType, nodeTypeSelect) {
+    addNode(nodeType, _nodeTypeSelect) {
         // Logical mode: add to selected parent graph node, or as top-level node
         // getNodeConfig normalizes internally for config lookup, but we preserve the full nodeType
         // (including variations like _DEFAULT, _X_TORUS, etc.) for storage in shelf_node_type

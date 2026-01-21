@@ -234,7 +234,7 @@ export class UIDisplayModule {
                 { level: 'different_hall', label: 'Different halls', color: CONNECTION_COLORS.DIFFERENT_HALL }
             ];
 
-            hierarchyLevels.forEach(({ level, label, color }) => {
+            hierarchyLevels.forEach(({ level: _level, label, color }) => {
                 legendHTML += `
                     <div style="display: flex; align-items: center; margin: 6px 0;">
                         <div style="width: 20px; height: 3px; background-color: ${color}; margin-right: 10px; border-radius: 2px;"></div>
