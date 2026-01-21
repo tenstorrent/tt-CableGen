@@ -30,7 +30,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
-          fetch-depth: 0  # Fetch full history to enable git diff comparisons
+          fetch-depth: 2  # Fetch enough history for diff
+      
+      - name: Fetch base branch for PR comparisons
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
       
       - name: Build Docker container using Makefile
         run: make build-local
