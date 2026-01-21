@@ -21,8 +21,8 @@ sys.path.insert(0, str(project_root))
 
 from import_cabling import NetworkCablingCytoscapeVisualizer
 
-# Test data directory - use defined_topologies folder
-DEFINED_TOPOLOGIES_DIR = Path(__file__).parent.parent.parent / 'defined_topologies'
+# Test data directory - use test-data folder
+DEFINED_TOPOLOGIES_DIR = Path(__file__).parent / 'test-data'
 
 
 class TestInputParsing:
@@ -34,7 +34,14 @@ class TestInputParsing:
 
     def _get_test_file(self, subdir, filename):
         """Get path to a test data file"""
-        file_path = DEFINED_TOPOLOGIES_DIR / subdir / filename
+        # Map subdir names to test-data folder structure
+        subdir_map = {
+            'CablingDescriptors': 'cabling-descriptors',
+            'CablingGuides': 'cabling-guides',
+            'DeploymentDescriptors': 'deployment-descriptors'
+        }
+        mapped_subdir = subdir_map.get(subdir, subdir.lower().replace('_', '-'))
+        file_path = DEFINED_TOPOLOGIES_DIR / mapped_subdir / filename
         if not file_path.exists():
             pytest.skip(f"Test data file not found: {file_path}")
         return str(file_path)
@@ -63,8 +70,8 @@ class TestInputParsing:
         print(f"✅ Successfully parsed CSV file: {len(connections)} connections found")
 
     def test_csv_parsing_all_files(self):
-        """Test parsing all CSV files in defined_topologies/CablingGuides"""
-        cabling_guides_dir = DEFINED_TOPOLOGIES_DIR / 'CablingGuides'
+        """Test parsing all CSV files in test-data/cabling-guides"""
+        cabling_guides_dir = DEFINED_TOPOLOGIES_DIR / 'cabling-guides'
         if not cabling_guides_dir.exists():
             pytest.skip("Cabling guides directory not found")
         
@@ -129,8 +136,8 @@ class TestInputParsing:
         print(f"✅ Successfully parsed textproto file: {len(self.visualizer.graph_hierarchy)} nodes in hierarchy")
 
     def test_textproto_parsing_all_files(self):
-        """Test parsing all textproto files in defined_topologies/CablingDescriptors"""
-        cabling_descriptors_dir = DEFINED_TOPOLOGIES_DIR / 'CablingDescriptors'
+        """Test parsing all textproto files in test-data/cabling-descriptors"""
+        cabling_descriptors_dir = DEFINED_TOPOLOGIES_DIR / 'cabling-descriptors'
         if not cabling_descriptors_dir.exists():
             pytest.skip("Cabling descriptors directory not found")
         

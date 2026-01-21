@@ -50,6 +50,10 @@ jobs:
         run: |
           docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && npm test"
       
+      - name: Run descriptor files validity check
+        run: |
+          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && pip install pytest && pytest tests/integration/test_input_parsing.py -v"
+      
       # Add additional test types here as needed
       # - name: Run Linting
       #   run: |
