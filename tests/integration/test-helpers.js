@@ -11,13 +11,13 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-// Get test data directory path - use defined_topologies folder
-const TEST_DATA_DIR = path.join(process.cwd(), 'defined_topologies');
+// Get test data directory path - use test-data folder
+const TEST_DATA_DIR = path.join(process.cwd(), 'tests', 'integration', 'test-data');
 const PROJECT_ROOT = process.cwd();
 
 /**
- * Load a test data file from the defined_topologies directory
- * @param {string} filename - Name of the test file (relative to defined_topologies)
+ * Load a test data file from the test-data directory
+ * @param {string} filename - Name of the test file (relative to test-data)
  * @returns {string} File contents
  */
 export function loadTestDataFile(filename) {
@@ -31,7 +31,7 @@ export function loadTestDataFile(filename) {
 /**
  * Get all test data files matching an extension
  * @param {string} extension - File extension (e.g., '.csv', '.textproto')
- * @param {string} subdirectory - Optional subdirectory to search (e.g., 'CablingGuides', 'CablingDescriptors', 'DeploymentDescriptors')
+ * @param {string} subdirectory - Optional subdirectory to search (e.g., 'cabling-guides', 'cabling-descriptors', 'deployment-descriptors')
  * @returns {string[]} Array of filenames (with full paths relative to TEST_DATA_DIR)
  */
 export function getTestDataFiles(extension, subdirectory = null) {
@@ -133,7 +133,7 @@ print(json.dumps(visualization_data))`;
 
         // Extract JSON from output (in case there's any leading text)
         const trimmed = result.trim();
-        
+
         // Find the first { or [ which indicates start of JSON
         const braceIndex = trimmed.indexOf('{');
         const bracketIndex = trimmed.indexOf('[');
@@ -141,61 +141,61 @@ print(json.dumps(visualization_data))`;
             braceIndex !== -1 ? braceIndex : Infinity,
             bracketIndex !== -1 ? bracketIndex : Infinity
         );
-        
+
         if (jsonStart === Infinity) {
             // Show more context in error message
             const preview = trimmed.length > 500 ? trimmed.substring(0, 500) + '...' : trimmed;
             throw new Error(`No JSON found in Python output. First 500 chars: ${preview}`);
         }
-        
+
         // Log what we're skipping for debugging
         if (jsonStart > 0) {
             const skipped = trimmed.substring(0, jsonStart);
             console.warn(`Skipping ${jsonStart} characters before JSON: "${skipped}"`);
         }
-        
+
         const jsonStr = trimmed.substring(jsonStart);
-        
+
         // Try to find the end of JSON (last } or ])
         let jsonEnd = jsonStr.length;
         let braceCount = 0;
         let bracketCount = 0;
         let inString = false;
         let escapeNext = false;
-        
+
         for (let i = 0; i < jsonStr.length; i++) {
             const char = jsonStr[i];
-            
+
             if (escapeNext) {
                 escapeNext = false;
                 continue;
             }
-            
+
             if (char === '\\') {
                 escapeNext = true;
                 continue;
             }
-            
+
             if (char === '"') {
                 inString = !inString;
                 continue;
             }
-            
+
             if (!inString) {
                 if (char === '{') braceCount++;
                 if (char === '}') braceCount--;
                 if (char === '[') bracketCount++;
                 if (char === ']') bracketCount--;
-                
+
                 if (braceCount === 0 && bracketCount === 0 && (char === '}' || char === ']')) {
                     jsonEnd = i + 1;
                     break;
                 }
             }
         }
-        
+
         const finalJsonStr = jsonStr.substring(0, jsonEnd);
-        
+
         try {
             return JSON.parse(finalJsonStr);
         } catch (parseError) {
@@ -688,7 +688,7 @@ except Exception as e:
  * @returns {Object} Deployment data in format expected by updateShelfLocations
  */
 export function parseDeploymentDescriptor(filePath) {
-    const deploymentDir = path.join(TEST_DATA_DIR, 'DeploymentDescriptors');
+    const deploymentDir = path.join(TEST_DATA_DIR, 'deployment-descriptors');
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(deploymentDir, filePath);
     const content = fs.readFileSync(absPath, 'utf-8');
 
@@ -812,7 +812,7 @@ export function parseDeploymentDescriptorFromContent(textprotoContent) {
  * @returns {string} File contents
  */
 export function loadExpectedOutput(filePath) {
-    // Note: expected-outputs may not exist in defined_topologies
+    // Note: expected-outputs directory in test-data
     const expectedDir = path.join(TEST_DATA_DIR, 'expected-outputs');
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(expectedDir, filePath);
     if (!fs.existsSync(absPath)) {

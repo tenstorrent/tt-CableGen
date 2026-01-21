@@ -222,18 +222,18 @@ function main() {
     console.log('Payload Size Test - Measuring impact of filtering cytoscape data');
     console.log('='.repeat(80));
     
-    const testDataDir = path.join(process.cwd(), 'defined_topologies');
+    const testDataDir = path.join(process.cwd(), 'tests', 'integration', 'test-data');
     
-    // Get all test files from CablingGuides and CablingDescriptors subdirectories
+    // Get all test files from cabling-guides and cabling-descriptors subdirectories
     const testFiles = [];
-    const csvDir = path.join(testDataDir, 'CablingGuides');
-    const textprotoDir = path.join(testDataDir, 'CablingDescriptors');
+    const csvDir = path.join(testDataDir, 'cabling-guides');
+    const textprotoDir = path.join(testDataDir, 'cabling-descriptors');
     
     if (fs.existsSync(csvDir)) {
         const files = fs.readdirSync(csvDir);
         files.forEach(file => {
             if (file.endsWith('.csv')) {
-                testFiles.push(path.join('CablingGuides', file));
+                testFiles.push(path.join('cabling-guides', file));
             }
         });
     }
@@ -242,13 +242,13 @@ function main() {
         const files = fs.readdirSync(textprotoDir);
         files.forEach(file => {
             if (file.endsWith('.textproto')) {
-                testFiles.push(path.join('CablingDescriptors', file));
+                testFiles.push(path.join('cabling-descriptors', file));
             }
         });
     }
     
     if (testFiles.length === 0) {
-        console.error('No test files found in defined_topologies directory');
+        console.error('No test files found in test-data directory');
         process.exit(1);
     }
     
