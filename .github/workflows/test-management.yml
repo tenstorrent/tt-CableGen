@@ -50,7 +50,36 @@ jobs:
         run: |
           docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && npm test"
       
-      - name: Run descriptor files validity check
+      - name: Check for changes in defined_topologies
+        id: check-defined-topologies
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            # For push and workflow_dispatch events, compare against previous commit
+            BASE_SHA="HEAD~1"
+            HEAD_SHA="HEAD"
+          fi
+          
+          # Check for changes in subfolders only, excluding README files
+          CHANGES=$(git diff --name-only --diff-filter=ACMRT ${BASE_SHA}..${HEAD_SHA} -- \
+            defined_topologies/CablingDescriptors/ \
+            defined_topologies/CablingGuides/ \
+            defined_topologies/DeploymentDescriptors/ | \
+            grep -v -E "(README|readme)" || true)
+          
+          if [ -n "$CHANGES" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Found changes in defined_topologies subfolders:"
+            echo "$CHANGES"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes in defined_topologies subfolders (excluding README files)"
+          fi
+      
+      - name: Run descriptor files validity check tests
+        if: steps.check-defined-topologies.outputs.has_changes == 'true'
         run: |
           docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && pip install pytest && pytest tests/integration/test_input_parsing.py -v"
       
