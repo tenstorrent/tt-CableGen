@@ -3,8 +3,8 @@ name: Run Tests in Docker Container
 on:
   workflow_call:
     inputs:
-      test-command:
-        description: 'Test command to run in container'
+      test-commands:
+        description: 'Test commands to run in container (one per line or comma-separated)'
         required: true
         type: string
 
@@ -31,8 +31,8 @@ jobs:
       
       - name: Run tests in container
         run: |
-          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "${{ inputs.test-command }}"
+          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "${{ inputs.test-commands }}"
       
-      - name: Stop Docker container
+      - name: Clean up Docker resources
         if: always()
-        run: make down-local
+        run: make clean-local
