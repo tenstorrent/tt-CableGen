@@ -3070,7 +3070,7 @@ export class CommonModule {
             // Curve magnitude range (keep the same scale, scaled by multiplier)
             const minCurveDistance = controlPointStepSize * 1.0 * curveMagnitudeMultiplier;  // Minimum curve for closest ports
             const maxCurveDistance = controlPointStepSize * 2.0 * curveMagnitudeMultiplier;  // Maximum curve for farthest ports
-            const curveRange = maxCurveDistance - minCurveDistance;
+            const _curveRange = maxCurveDistance - minCurveDistance;
 
             // Apply styles to cross-host connections with dynamic scaling
             crossHostConnections.forEach(conn => {
