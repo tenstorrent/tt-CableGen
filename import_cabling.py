@@ -185,6 +185,7 @@ class NetworkCablingCytoscapeVisualizer:
         self.connections = []
         self.rack_units = {}  # rack_num -> set of shelf_u values
         self.shelf_units = {}  # hostname -> node_type for 8-column format
+        self.seen_hostnames = set()  # Track all hostnames seen for uniqueness validation
         self.shelf_unit_type = shelf_unit_type.lower() if shelf_unit_type else None
         self.file_format = None  # Will be detected: 'hierarchical', 'hostname_based', 'minimal', or 'descriptor'
         self.mixed_node_types = {}  # For 20-column format with mixed types
@@ -2038,17 +2039,37 @@ class NetworkCablingCytoscapeVisualizer:
     def _track_hostname_location(self, source_data, dest_data):
         """Track location information for hostname-based format"""
         if "hostname" in source_data and source_data.get("hostname"):
+            hostname = source_data["hostname"]
+            # Validate hostname uniqueness
+            if hostname in self.seen_hostnames:
+                raise ValueError(
+                    f"Duplicate hostname '{hostname}' found in CSV data. "
+                    f"Hostnames must be unique across all shelves. "
+                    f"Duplicate found in source data: {source_data}"
+                )
+            self.seen_hostnames.add(hostname)
+            
             # Only set node_type if it's actually present in the CSV data
             # If not present, it will use shelf_unit_type when creating the shelf
             node_type = source_data.get("node_type")
             if node_type:
-                self.shelf_units[source_data["hostname"]] = self.normalize_node_type(node_type)
+                self.shelf_units[hostname] = self.normalize_node_type(node_type)
         if "hostname" in dest_data and dest_data.get("hostname"):
+            hostname = dest_data["hostname"]
+            # Validate hostname uniqueness
+            if hostname in self.seen_hostnames:
+                raise ValueError(
+                    f"Duplicate hostname '{hostname}' found in CSV data. "
+                    f"Hostnames must be unique across all shelves. "
+                    f"Duplicate found in destination data: {dest_data}"
+                )
+            self.seen_hostnames.add(hostname)
+            
             # Only set node_type if it's actually present in the CSV data
             # If not present, it will use shelf_unit_type when creating the shelf
             node_type = dest_data.get("node_type")
             if node_type:
-                self.shelf_units[dest_data["hostname"]] = self.normalize_node_type(node_type)
+                self.shelf_units[hostname] = self.normalize_node_type(node_type)
 
     def generate_node_id(self, node_type, *args):
         """Generate consistent node IDs for cytoscape elements
@@ -2882,6 +2903,16 @@ class NetworkCablingCytoscapeVisualizer:
                         
                         # Build mapping from hostname to host_index for port ID generation
                         if hostname:
+                            # Validate hostname uniqueness
+                            if hostname in self.hostname_to_host_index:
+                                existing_location = self._get_shelf_location_by_hostname(hostname)
+                                current_location = f"Hall {hall}, Aisle {aisle}, Rack {rack_num}, Shelf {shelf_u}"
+                                raise ValueError(
+                                    f"Duplicate hostname '{hostname}' found. "
+                                    f"Hostnames must be unique across all shelves.\n"
+                                    f"  Existing location: {existing_location}\n"
+                                    f"  Duplicate location: {current_location}"
+                                )
                             self.hostname_to_host_index[hostname] = host_index_counter
                         
                         shelf_label = f"{hostname}" if hostname else f"Shelf {shelf_u}"
@@ -2913,6 +2944,31 @@ class NetworkCablingCytoscapeVisualizer:
                         self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter)
                         host_index_counter += 1
 
+    def _get_shelf_location_by_hostname(self, hostname):
+        """Get location information for a shelf by hostname for error messages.
+        
+        Args:
+            hostname: The hostname to look up
+            
+        Returns:
+            String describing the location, or "Unknown location" if not found
+        """
+        # Search through node_locations for matching hostname
+        for shelf_key, location_info in self.node_locations.items():
+            if location_info.get("hostname") == hostname:
+                hall = location_info.get("hall", "")
+                aisle = location_info.get("aisle", "")
+                rack_num = location_info.get("rack_num", "")
+                shelf_u = location_info.get("shelf_u", "")
+                return f"Hall {hall}, Aisle {aisle}, Rack {rack_num}, Shelf {shelf_u}"
+        
+        # If not found in node_locations, check if we can infer from hostname_to_host_index
+        # This is a fallback - we don't have location info stored there
+        if hostname in self.hostname_to_host_index:
+            return f"Host index {self.hostname_to_host_index[hostname]}"
+        
+        return "Unknown location"
+    
     def _update_connections_with_hostname(self, hall, aisle, rack_num, shelf_u, hostname):
         """Update connections to include hostname for matching location.
         
@@ -2943,6 +2999,22 @@ class NetworkCablingCytoscapeVisualizer:
         
         # Get sorted hostnames for consistent ordering
         hostnames = sorted(self.shelf_units.keys())
+        
+        # Validate hostname uniqueness (check for duplicates in original data)
+        # Note: self.shelf_units is a dict, so duplicate keys would have been overwritten
+        # But we should still validate that all provided hostnames are unique
+        seen_hostnames = set()
+        duplicate_hostnames = []
+        for hostname in hostnames:
+            if hostname in seen_hostnames:
+                duplicate_hostnames.append(hostname)
+            seen_hostnames.add(hostname)
+        
+        if duplicate_hostnames:
+            raise ValueError(
+                f"Duplicate hostnames found in CSV data. Hostnames must be unique across all shelves.\n"
+                f"  Duplicate hostnames: {', '.join(set(duplicate_hostnames))}"
+            )
 
         # Calculate shelf positions using template
         shelf_positions = []

@@ -3101,12 +3101,12 @@ export class CommonModule {
                     : 0.5; // Default to middle if all distances are the same
 
                 // Calculate base curve distances using effective multiplier instead of slider
-                const effectiveMinCurveDistance = controlPointStepSize * 1.0 * effectiveMultiplier;
-                const effectiveMaxCurveDistance = controlPointStepSize * 2.0 * effectiveMultiplier;
+                const effectiveMinCurveDistance = controlPointStepSize * 1 * effectiveMultiplier;
+                const effectiveMaxCurveDistance = controlPointStepSize * 3.0 * effectiveMultiplier;
                 const effectiveCurveRange = effectiveMaxCurveDistance - effectiveMinCurveDistance;
 
-                // Scale curve magnitude based on normalized distance (inverted: closer ports get stronger curves)
-                const controlPointDistance = effectiveMinCurveDistance + ((1 - normalizedDistance) * effectiveCurveRange);
+                // Scale curve magnitude based on normalized distance (farther ports get stronger curves)
+                const controlPointDistance = effectiveMinCurveDistance + (normalizedDistance * effectiveCurveRange);
 
                 const styleProps = {
                     'curve-style': curveStyle,
