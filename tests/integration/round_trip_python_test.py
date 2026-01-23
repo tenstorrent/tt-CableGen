@@ -8,7 +8,7 @@ These tests use the actual Python import/export functions to verify:
 3. Re-import exported data
 4. Verify consistency
 
-Test data files should be placed in tests/integration/test-data/
+Test data files should be in the defined_topologies folder
 
 Run with: 
   python -m pytest tests/integration/round_trip_python_test.py
@@ -34,8 +34,8 @@ from import_cabling import NetworkCablingCytoscapeVisualizer
 from export_descriptors import export_cabling_descriptor_for_visualizer, export_deployment_descriptor_for_visualizer
 
 
-# Test data directory
-TEST_DATA_DIR = Path(__file__).parent / 'test-data'
+# Test data directory - use defined_topologies folder
+TEST_DATA_DIR = Path(__file__).parent.parent.parent / 'defined_topologies'
 
 
 @pytest.fixture(scope="class")
@@ -77,8 +77,9 @@ class TestRoundTrip:
         self.visualizer = NetworkCablingCytoscapeVisualizer()
         self.temp_dir = tempfile.mkdtemp(prefix='cablegen_test_')
         
-        # Ensure test-data directory exists
-        TEST_DATA_DIR.mkdir(exist_ok=True)
+        # Ensure defined_topologies directory exists
+        if not TEST_DATA_DIR.exists():
+            raise FileNotFoundError(f"defined_topologies directory not found: {TEST_DATA_DIR}")
     
     def teardown_method(self):
         """Clean up test fixtures"""
@@ -139,7 +140,19 @@ class TestRoundTrip:
     
     def _find_test_file(self, extension):
         """Find a test file with the given extension"""
-        test_files = list(TEST_DATA_DIR.glob(f'*.{extension}'))
+        # Search in CablingGuides for CSV, CablingDescriptors for textproto
+        if extension == 'csv':
+            search_dirs = [TEST_DATA_DIR / 'CablingGuides']
+        elif extension == 'textproto':
+            search_dirs = [TEST_DATA_DIR / 'CablingDescriptors']
+        else:
+            search_dirs = [TEST_DATA_DIR]
+        
+        test_files = []
+        for search_dir in search_dirs:
+            if search_dir.exists():
+                test_files.extend(list(search_dir.glob(f'*.{extension}')))
+        
         if not test_files:
             raise FileNotFoundError(
                 f"No {extension} files found in {TEST_DATA_DIR}\n"
@@ -223,7 +236,7 @@ class TestRoundTrip:
         Args:
             csv_file: Optional path to CSV file. If not provided, will use first .csv file found in test-data/
         """
-        # Step 1: Use provided CSV file or find one in test-data
+        # Step 1: Use provided CSV file or find one in defined_topologies/CablingGuides
         if csv_file is None:
             csv_file = self._find_test_file('csv')
         elif not os.path.isabs(csv_file):
@@ -326,7 +339,7 @@ class TestRoundTrip:
         Args:
             textproto_file: Optional path to textproto file. If not provided, will use first .textproto file found in test-data/
         """
-        # Step 1: Use provided textproto file or find one in test-data
+        # Step 1: Use provided textproto file or find one in defined_topologies/CablingDescriptors
         if textproto_file is None:
             input_file = self._find_test_file('textproto')
         elif not os.path.isabs(textproto_file):
@@ -429,7 +442,7 @@ class TestRoundTrip:
         Args:
             csv_file: Optional path to CSV file. If not provided, will use first .csv file found in test-data/
         """
-        # Step 1: Use provided CSV file or find one in test-data
+        # Step 1: Use provided CSV file or find one in defined_topologies/CablingGuides
         if csv_file is None:
             csv_file = self._find_test_file('csv')
         elif not os.path.isabs(csv_file):
@@ -543,7 +556,7 @@ class TestRoundTrip:
         Args:
             textproto_file: Optional path to textproto file. If not provided, will use first .textproto file found in test-data/
         """
-        # Step 1: Use provided textproto file or find one in test-data
+        # Step 1: Use provided textproto file or find one in defined_topologies/CablingDescriptors
         if textproto_file is None:
             input_file = self._find_test_file('textproto')
         elif not os.path.isabs(textproto_file):
@@ -633,7 +646,7 @@ def run_tests(test_all=False, debug=False):
     """Run all tests
     
     Args:
-        test_all: If True, run tests on all CSV/textproto files in test-data directory
+        test_all: If True, run tests on all CSV/textproto files in defined_topologies directory
         debug: If True, save exported files to debug directory for inspection
     """
     test_instance = TestRoundTrip(debug=debug)
@@ -750,7 +763,7 @@ Examples:
     parser.add_argument(
         '--all',
         action='store_true',
-        help='Run tests on all CSV and textproto files in test-data directory'
+        help='Run tests on all CSV and textproto files in defined_topologies directory'
     )
     parser.add_argument(
         '--debug',

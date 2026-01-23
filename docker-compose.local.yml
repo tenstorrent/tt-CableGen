@@ -23,6 +23,10 @@ services:
       - ./package-lock.json:/app/package-lock.json
       - ./jest.config.cjs:/app/jest.config.cjs
       - ./.babelrc:/app/.babelrc
+      # Mount defined_topologies subfolders to test-data directory for tests
+      - ./defined_topologies/CablingDescriptors:/app/tests/integration/test-data/cabling-descriptors
+      - ./defined_topologies/CablingGuides:/app/tests/integration/test-data/cabling-guides
+      - ./defined_topologies/DeploymentDescriptors:/app/tests/integration/test-data/deployment-descriptors
     networks:
       - cablegen-local-network
     healthcheck:
