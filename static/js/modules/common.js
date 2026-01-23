@@ -3021,9 +3021,9 @@ export class CommonModule {
                 // Ensure unbundled-bezier has visible but subtle curvature
                 // control-point-distance controls how far control points are from the straight line
                 // control-point-weight controls the relative position along the edge
-                // Reduced distance for subtler curves on same-shelf connections
+                // Increased distance for stronger curves on same-shelf connections
                 // Apply slider multiplier and heuristic to all curves
-                const baseControlPointDistance = Math.max(10, controlPointStepSize * 0.4); // Reduced magnitude for subtler curves
+                const baseControlPointDistance = Math.max(10, controlPointStepSize * 0.9); // Increased magnitude for stronger curves
                 const controlPointDistance = baseControlPointDistance * effectiveMultiplier;
                 styleProps = {
                     'curve-style': curveStyle,
@@ -3080,10 +3080,10 @@ export class CommonModule {
                 // Apply heuristic: if endpoints share port OR tray number, use normal curve
                 // If both port AND tray are different, default to flat (multiply by 0)
                 // When slider > 1.0, apply offset to initially flat curves: (slider - 1.0)
-                const sharePortOrTray = conn.sharePortOrTray !== undefined 
-                    ? conn.sharePortOrTray 
+                const sharePortOrTray = conn.sharePortOrTray !== undefined
+                    ? conn.sharePortOrTray
                     : this._endpointsSharePortOrTray(conn.sourceNode, conn.targetNode);
-                
+
                 // Calculate effective multiplier for this connection
                 let effectiveMultiplier;
                 if (sharePortOrTray) {
@@ -3104,9 +3104,9 @@ export class CommonModule {
                 const effectiveMinCurveDistance = controlPointStepSize * 1.0 * effectiveMultiplier;
                 const effectiveMaxCurveDistance = controlPointStepSize * 2.0 * effectiveMultiplier;
                 const effectiveCurveRange = effectiveMaxCurveDistance - effectiveMinCurveDistance;
-                
-                // Scale curve magnitude based on normalized distance
-                const controlPointDistance = effectiveMinCurveDistance + (normalizedDistance * effectiveCurveRange);
+
+                // Scale curve magnitude based on normalized distance (inverted: closer ports get stronger curves)
+                const controlPointDistance = effectiveMinCurveDistance + ((1 - normalizedDistance) * effectiveCurveRange);
 
                 const styleProps = {
                     'curve-style': curveStyle,
@@ -3179,10 +3179,10 @@ export class CommonModule {
         const targetTrayNum = targetNode.data('tray');
 
         // If either port numbers match OR tray numbers match, return true
-        const portsMatch = sourcePortNum !== undefined && targetPortNum !== undefined && 
-                          sourcePortNum === targetPortNum;
-        const traysMatch = sourceTrayNum !== undefined && targetTrayNum !== undefined && 
-                          sourceTrayNum === targetTrayNum;
+        const portsMatch = sourcePortNum !== undefined && targetPortNum !== undefined &&
+            sourcePortNum === targetPortNum;
+        const traysMatch = sourceTrayNum !== undefined && targetTrayNum !== undefined &&
+            sourceTrayNum === targetTrayNum;
 
         return portsMatch || traysMatch;
     }
