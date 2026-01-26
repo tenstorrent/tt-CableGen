@@ -614,6 +614,20 @@ initializeNodeConfigs();
 // Setup file upload drag-and-drop handlers
 setupFileUploadDragAndDrop();
 
+// Setup global drag-and-drop handlers for initial site start
+// This allows dragging files anywhere on the window before initialization
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            fileManagementModule.setupGlobalDragAndDrop();
+        }, 100);
+    });
+} else {
+    setTimeout(() => {
+        fileManagementModule.setupGlobalDragAndDrop();
+    }, 100);
+}
+
 // Check for URL parameters and auto-load external files
 // Wait for DOM to be ready
 if (document.readyState === 'loading') {
@@ -849,6 +863,10 @@ function hideInitializationShowControls() {
     if (initSection) initSection.style.display = 'none';
     const controlSections = document.getElementById('controlSections');
     if (controlSections) controlSections.style.display = 'block';
+    // Remove global drag-and-drop handlers after initialization
+    if (fileManagementModule && typeof fileManagementModule.removeGlobalDragAndDrop === 'function') {
+        fileManagementModule.removeGlobalDragAndDrop();
+    }
 }
 
 async function uploadFileGeneric(file, mode) {

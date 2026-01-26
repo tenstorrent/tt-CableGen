@@ -11,6 +11,194 @@ export class FileManagementModule {
     }
 
     /**
+     * Check if visualization has been initialized
+     * @returns {boolean}
+     */
+    isInitialized() {
+        const initSection = document.getElementById('initializationSection');
+        return !initSection || initSection.style.display === 'none' || this.state.cy !== null;
+    }
+
+    /**
+     * Determine view mode based on file extension
+     * @param {string} fileName - File name
+     * @returns {string|null} - 'location' for CSV, 'hierarchy' for textproto, null for unknown
+     */
+    determineModeFromFile(fileName) {
+        const lowerName = fileName.toLowerCase();
+        if (lowerName.endsWith('.csv')) {
+            return 'location';
+        } else if (lowerName.endsWith('.textproto')) {
+            return 'hierarchy';
+        }
+        return null;
+    }
+
+    /**
+     * Handle file drop from global drag and drop
+     * @param {File} file - Dropped file
+     */
+    async handleGlobalFileDrop(file) {
+        // Only handle if not initialized
+        if (this.isInitialized()) {
+            return;
+        }
+
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.csv') && !fileName.endsWith('.textproto')) {
+            this.notificationManager.error('Please drop a CSV or textproto file.');
+            return;
+        }
+
+        // Determine mode from file extension
+        const mode = this.determineModeFromFile(fileName);
+        if (!mode) {
+            this.notificationManager.error('Unsupported file type. Please use CSV or textproto files.');
+            return;
+        }
+
+        // Set the appropriate mode
+        if (window.setVisualizationMode) {
+            window.setVisualizationMode(mode);
+        }
+
+        // Switch to the appropriate tab
+        if (mode === 'location') {
+            window.switchTab?.('location');
+        } else {
+            window.switchTab?.('topology');
+        }
+
+        // Set the file in the appropriate input
+        const fileInput = mode === 'location' 
+            ? document.getElementById('csvFileLocation')
+            : document.getElementById('csvFileTopology');
+        
+        if (fileInput) {
+            // Create a new FileList-like object
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            
+            // Trigger upload
+            await this.uploadFile();
+        } else {
+            this.notificationManager.error('Could not find file input element.');
+        }
+    }
+
+    /**
+     * Setup global drag-and-drop handlers for the entire window
+     * These handlers only work before initialization
+     */
+    setupGlobalDragAndDrop() {
+        // Store handlers so we can remove them later
+        this.globalDragOverHandler = (e) => {
+            // Only handle if not initialized
+            if (this.isInitialized()) {
+                return;
+            }
+
+            // Don't interfere with existing upload sections
+            const uploadSectionLocation = document.getElementById('uploadSectionLocation');
+            const uploadSectionTopology = document.getElementById('uploadSectionTopology');
+            const target = e.target;
+            if ((uploadSectionLocation && uploadSectionLocation.contains(target)) ||
+                (uploadSectionTopology && uploadSectionTopology.contains(target))) {
+                return;
+            }
+
+            // Check if dragging files
+            if (e.dataTransfer.types.includes('Files')) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Add visual feedback to the visualizer area
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    cyContainer.style.border = '3px dashed #007bff';
+                    cyContainer.style.backgroundColor = '#e3f2fd';
+                }
+            }
+        };
+
+        this.globalDragLeaveHandler = (e) => {
+            // Only handle if not initialized
+            if (this.isInitialized()) {
+                return;
+            }
+
+            // Don't interfere with existing upload sections
+            const uploadSectionLocation = document.getElementById('uploadSectionLocation');
+            const uploadSectionTopology = document.getElementById('uploadSectionTopology');
+            const target = e.target;
+            if ((uploadSectionLocation && uploadSectionLocation.contains(target)) ||
+                (uploadSectionTopology && uploadSectionTopology.contains(target))) {
+                return;
+            }
+
+            // Only remove visual feedback if we're leaving the document (not just moving between elements)
+            if (!e.relatedTarget || !document.contains(e.relatedTarget)) {
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    cyContainer.style.border = '';
+                    cyContainer.style.backgroundColor = '';
+                }
+            }
+        };
+
+        this.globalDropHandler = async (e) => {
+            // Only handle if not initialized
+            if (this.isInitialized()) {
+                return;
+            }
+
+            // Don't interfere with existing upload sections
+            const uploadSectionLocation = document.getElementById('uploadSectionLocation');
+            const uploadSectionTopology = document.getElementById('uploadSectionTopology');
+            const target = e.target;
+            if ((uploadSectionLocation && uploadSectionLocation.contains(target)) ||
+                (uploadSectionTopology && uploadSectionTopology.contains(target))) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Remove visual feedback
+            const cyContainer = document.getElementById('cy');
+            if (cyContainer) {
+                cyContainer.style.border = '';
+                cyContainer.style.backgroundColor = '';
+            }
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                await this.handleGlobalFileDrop(files[0]);
+            }
+        };
+
+        // Add event listeners with capture phase to catch events before they reach upload sections
+        document.addEventListener('dragover', this.globalDragOverHandler, true);
+        document.addEventListener('dragleave', this.globalDragLeaveHandler, true);
+        document.addEventListener('drop', this.globalDropHandler, true);
+    }
+
+    /**
+     * Remove global drag-and-drop handlers
+     */
+    removeGlobalDragAndDrop() {
+        if (this.globalDragOverHandler) {
+            document.removeEventListener('dragover', this.globalDragOverHandler, true);
+        }
+        if (this.globalDragLeaveHandler) {
+            document.removeEventListener('dragleave', this.globalDragLeaveHandler, true);
+        }
+        if (this.globalDropHandler) {
+            document.removeEventListener('drop', this.globalDropHandler, true);
+        }
+    }
+
+    /**
      * Setup drag-and-drop handlers for file upload sections
      */
     setupDragAndDrop() {
@@ -131,6 +319,9 @@ export class FileManagementModule {
                 if (controlSections) {
                     controlSections.style.display = 'block';
                 }
+
+                // Remove global drag-and-drop handlers after initialization
+                this.removeGlobalDragAndDrop();
 
                 // Check for unknown node types and show warning
                 if (result.unknown_types && result.unknown_types.length > 0) {
@@ -278,6 +469,9 @@ export class FileManagementModule {
                 if (controlSections) {
                     controlSections.style.display = 'block';
                 }
+
+                // Remove global drag-and-drop handlers after initialization
+                this.removeGlobalDragAndDrop();
 
                 // Check for unknown node types and show warning
                 if (result.unknown_types && result.unknown_types.length > 0) {

@@ -112,25 +112,32 @@
             margin-bottom: 0;
             border-bottom: 2px solid #dee2e6;
             gap: 0;
+            background-color: #f8f9fa;
+            border-radius: 8px 8px 0 0;
         }
 
         .tab-button {
             flex: 1;
-            padding: 12px 20px;
-            background-color: #e9ecef;
-            color: #495057;
+            padding: 14px 20px;
+            background-color: transparent;
+            color: #6c757d;
             border: none;
             cursor: pointer;
             font-size: 14px;
-            font-weight: bold;
-            transition: all 0.3s ease;
+            font-weight: 600;
+            transition: all 0.2s ease;
             border-top-left-radius: 8px;
             border-top-right-radius: 8px;
             border-bottom: 3px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
         .tab-button:hover {
-            background-color: #dee2e6;
+            background-color: #e9ecef;
+            color: #495057;
         }
 
         .tab-button.active {
@@ -164,11 +171,12 @@
 
         .mode-badge {
             display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: bold;
-            margin-left: 8px;
+            padding: 3px 9px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
         }
 
         .mode-badge.csv-mode {
@@ -301,13 +309,25 @@
             padding: 10px 0;
             border-bottom: 1px solid #007bff;
             margin-bottom: 10px;
+            transition: background-color 0.2s ease, padding 0.2s ease, margin 0.2s ease;
         }
 
         .collapsible-header:hover {
             background-color: #f8f9fa;
             border-radius: 4px;
-            padding: 10px;
-            margin: 0 -10px 10px -10px;
+        }
+
+        /* Nested collapsible headers (subsections) should have different hover styling */
+        .collapsible-content .collapsible-header {
+            padding: 8px 0;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .collapsible-content .collapsible-header:hover {
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            padding: 8px 5px;
         }
 
         .collapsible-content {
@@ -741,30 +761,29 @@
 
                 <!-- Summary Blurb Section -->
                 <div id="initializationSummary"
-                    style="background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333; min-height: 60px;">
-                    <p style="margin: 0; color: #666;"> Use this visualization tool to plan out
-                        multi-host system connectivity for Tenstorrent boxes. If you're more interested in the logical
-                        topology of the system, use the Topology tab. If you're more interested in the physical layout,
-                        racking, and arrangement of the system, use the Location/Deployment tab.
-                        <br><br>
+                    style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 18px; margin: 20px 0; font-size: 14px; color: #495057; line-height: 1.6;">
+                    <p style="margin: 0 0 12px 0; color: #495057;">
+                        Use this visualization tool to plan out multi-host system connectivity for Tenstorrent boxes. 
+                        If you're more interested in the logical hierarchy of the system, use the <strong>Logical Hierarchy</strong> tab. 
+                        If you're more interested in the physical layout, racking, and arrangement of the system, use the <strong>Physical Deployment</strong> tab.
                     </p>
 
-                    <p style="margin: 0; color: #666;">Note: It is easier to work on stamping out
-                        hierarchies and templates in Topology mode, and then
-                        translate that into Location/Deployment tab for visualization and rack planning. Working from a
-                        cabling guide (starting in Location/Deployment mode) and trying to stamp out hierarchies and
-                        templates (by switching modes to topology mode) is more difficult.
+                    <p style="margin: 0; color: #6c757d; font-size: 13px; padding-top: 12px; border-top: 1px solid #e9ecef;">
+                        <strong>Note:</strong> It is easier to work on stamping out hierarchies and templates in <strong>Logical Hierarchy</strong> mode, 
+                        and then translate that into <strong>Physical Deployment</strong> tab for visualization and rack planning. 
+                        Working from a cabling guide (starting in <strong>Physical Deployment</strong> mode) and trying to stamp out hierarchies 
+                        and templates (by switching modes to <strong>Logical Hierarchy</strong> mode) is more difficult.
                     </p>
                 </div>
 
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
                     <button class="tab-button" id="locationTab">
-                        📍 Location/Deployment
+                        📍 Physical Deployment
                         <span class="mode-badge csv-mode">CSV</span>
                     </button>
                     <button class="tab-button" id="topologyTab">
-                        🔗 Topology
+                        🔗 Logical Hierarchy
                         <span class="mode-badge textproto-mode">Textproto</span>
                     </button>
                 </div>
@@ -813,7 +832,7 @@
                     </p>
                 </div>
 
-                <!-- Location/Deployment Tab Content -->
+                <!-- Physical Deployment Tab Content -->
                 <div class="tab-content" id="locationTabContent">
                     <div class="upload-section" id="uploadSectionLocation">
                         <div>📁 Drag & drop your CSV file here</div>
@@ -848,7 +867,7 @@
                     </div>
                 </div>
 
-                <!-- Topology Tab Content -->
+                <!-- Logical Hierarchy Tab Content -->
                 <div class="tab-content" id="topologyTabContent">
                     <div class="upload-section" id="uploadSectionTopology">
                         <div>📁 Drag & drop your textproto file here</div>
@@ -1160,9 +1179,12 @@
                         </div>
                     </div>
 
-                    <div id="addNodeSection"
-                        style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
-                        <h4 style="margin-bottom: 10px; color: #333;">Add New Node</h4>
+                    <div id="addNodeSection" style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
+                        <div class="collapsible-header" data-section="addNodeSubsection" style="cursor: pointer; padding: 8px 0; margin-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                            <h4 style="margin: 0; color: #333; display: inline-block;">Add New Node</h4>
+                            <span class="collapsible-arrow collapsed" id="addNodeSubsection-arrow" style="float: right; margin-top: 4px;">▶</span>
+                        </div>
+                        <div class="collapsible-content collapsed" id="addNodeSubsection">
 
                         <div style="margin-bottom: 10px;">
                             <label for="nodeTypeSelect"
@@ -1289,7 +1311,7 @@
                         <!-- Logical view message (only shown in logical view) -->
                         <div id="nodeLogicalMessage"
                             style="display: none; margin-bottom: 10px; padding: 10px; background-color: #e7f3ff; border-radius: 4px; font-size: 13px; color: #0066cc;">
-                            <strong>Logical Topology Mode:</strong><br>
+                            <strong>Logical Hierarchy Mode:</strong><br>
                             Node will be auto-named (node_0, node_1, etc.) and added to:<br>
                             • Selected graph container (if one is selected)<br>
                             • Synthetic root (if no container is selected)<br>
@@ -1303,11 +1325,16 @@
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
                             Upload a visualization first to enable node creation
                         </div>
+                        </div>
                     </div>
 
                     <div id="addGraphSection"
                         style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
-                        <h4 style="margin-bottom: 10px; color: #333;">Add Graph Template Instance</h4>
+                        <div class="collapsible-header" data-section="addGraphSubsection" style="cursor: pointer; padding: 8px 0; margin-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                            <h4 style="margin: 0; color: #333; display: inline-block;">Add Graph Template Instance</h4>
+                            <span class="collapsible-arrow collapsed" id="addGraphSubsection-arrow" style="float: right; margin-top: 4px;">▶</span>
+                        </div>
+                        <div class="collapsible-content collapsed" id="addGraphSubsection">
 
                         <div style="margin-bottom: 10px;">
                             <label for="graphTemplateSelect"
@@ -1352,11 +1379,16 @@
                         <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
                             Load a textproto with graph templates to enable
                         </div>
+                        </div>
+                    </div>
 
-                        <!-- New Template Creation Section -->
-                        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
-                            <h5 style="margin-bottom: 10px; color: #333;">Create New Template</h5>
-
+                    <div id="createTemplateSection"
+                        style="margin-bottom: 20px; border-top: 1px solid #ddd; padding-top: 15px; display: none;">
+                        <div class="collapsible-header" data-section="createTemplateSubsection" style="cursor: pointer; padding: 8px 0; margin-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                            <h4 style="margin: 0; color: #333; display: inline-block;">Create New Template</h4>
+                            <span class="collapsible-arrow collapsed" id="createTemplateSubsection-arrow" style="float: right; margin-top: 4px;">▶</span>
+                        </div>
+                        <div class="collapsible-content collapsed" id="createTemplateSubsection">
                             <div style="margin-bottom: 10px;">
                                 <label for="newTemplateNameInput"
                                     style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">New
@@ -1446,7 +1478,7 @@
         <div id="cy">
             <div class="loading-overlay" id="cyLoading">
                 <div>🚀 Ready to visualize your network cabling!</div>
-                <div style="font-size: 14px; color: #999; margin-top: 10px;">Select a tab and upload a file or create an
+                <div style="font-size: 14px; color: #999; margin-top: 10px;">Drag and drop a file anywhere, or select a tab and upload a file or create an
                     empty canvas to get started</div>
             </div>
         </div>

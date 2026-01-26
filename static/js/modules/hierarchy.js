@@ -4123,8 +4123,14 @@ export class HierarchyModule {
             }
         }
 
-        // Step 2: Add to target template definition
-        if (this.state.data.availableGraphTemplates[targetTemplateName]) {
+        // Step 2: Add to target template definition (or root-instance)
+        if (targetTemplateName === null) {
+            // Moving to root-instance: update metadata to indicate root-level addition
+            if (this.state.data.currentData && this.state.data.currentData.metadata) {
+                this.state.data.currentData.metadata.hasTopLevelAdditions = true;
+                console.log(`[moveNodeToTemplate] Node "${childName}" moved to root-instance`);
+            }
+        } else if (this.state.data.availableGraphTemplates[targetTemplateName]) {
             const targetTemplate = this.state.data.availableGraphTemplates[targetTemplateName];
             if (!targetTemplate.children) {
                 targetTemplate.children = [];
@@ -4136,8 +4142,8 @@ export class HierarchyModule {
             });
         }
 
-        // Also add to state.data.currentData.metadata.graph_templates
-        if (this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.graph_templates) {
+        // Also add to state.data.currentData.metadata.graph_templates (if not root-instance)
+        if (targetTemplateName !== null && this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.graph_templates) {
             const metaTargetTemplate = this.state.data.currentData.metadata.graph_templates[targetTemplateName];
             if (metaTargetTemplate) {
                 if (!metaTargetTemplate.children) {
@@ -4168,16 +4174,47 @@ export class HierarchyModule {
                     childNode.remove(); // This will also remove all descendants (trays, ports)
                 });
             });
+        } else {
+            // Handle root-level shelf node: remove the specific node being moved (or all matching root-level instances)
+            // First try to remove the specific node if it's still in Cytoscape
+            const nodeToRemove = this.state.cy.getElementById(node.id());
+            if (nodeToRemove && nodeToRemove.length > 0) {
+                const parent = nodeToRemove.parent();
+                if (parent.length === 0) { // Ensure it's still root-level
+                    console.log(`Removing root-level shelf node "${nodeToRemove.data('label')}" (ID: ${nodeToRemove.id()})`);
+                    nodeToRemove.remove(); // This will also remove all descendants (trays, ports)
+                }
+            } else {
+                // Fallback: remove all root-level shelf nodes with matching child_name
+                const rootLevelNodesToRemove = this.state.cy.nodes().filter(n => {
+                    const parent = n.parent();
+                    return parent.length === 0 && // No parent (root level)
+                        n.data('type') === 'shelf' &&
+                        n.data('child_name') === childName;
+                });
+
+                rootLevelNodesToRemove.forEach(rootNode => {
+                    console.log(`Removing root-level shelf node "${rootNode.data('label')}" (ID: ${rootNode.id()})`);
+                    rootNode.remove(); // This will also remove all descendants (trays, ports)
+                });
+            }
         }
 
         // Mark hierarchy structure as changed (forces re-import of deployment descriptor)
         this.state.data.hierarchyStructureChanged = true;
         console.log('[Hierarchy.moveNodeToTemplate] Hierarchy structure changed - deployment descriptor needs re-import');
 
-        // Step 4: Add to all instances of target template
-        const targetInstances = this.state.cy.nodes().filter(n =>
-            n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
-        );
+        // Step 4: Add to all instances of target template (or root-instance)
+        let targetInstances = [];
+        if (targetTemplateName === null) {
+            // Moving to root-instance: create root-level node
+            // No parent instances to iterate over, we'll create directly at root
+            targetInstances = [null]; // Use null to indicate root-level
+        } else {
+            targetInstances = this.state.cy.nodes().filter(n =>
+                n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
+            );
+        }
 
         targetInstances.forEach(targetInstance => {
             // Create the node in this instance
@@ -4189,16 +4226,15 @@ export class HierarchyModule {
             }
 
             const hostIndex = this.state.data.globalHostCounter++;
-            // Use same ID pattern as template instantiation: ${graphId}_${child.name}
-            const shelfId = `${targetInstance.id()}_${childName}`;
+            // Use same ID pattern as template instantiation: ${graphId}_${child.name} or just ${childName} for root
+            const shelfId = targetInstance ? `${targetInstance.id()}_${childName}` : childName;
             const shelfLabel = `${childName} (host_${hostIndex})`;
 
             // Add shelf node - preserve full node type (including variations) in shelf_node_type
-            this.state.cy.add({
+            const shelfNodeData = {
                 group: 'nodes',
                 data: {
                     id: shelfId,
-                    parent: targetInstance.id(),
                     label: shelfLabel,
                     type: 'shelf',
                     host_index: hostIndex,
@@ -4207,7 +4243,14 @@ export class HierarchyModule {
                 },
                 classes: 'shelf',
                 position: { x: 0, y: 0 }
-            });
+            };
+
+            // Only set parent if not moving to root-instance
+            if (targetInstance) {
+                shelfNodeData.data.parent = targetInstance.id();
+            }
+
+            this.state.cy.add(shelfNodeData);
 
             // Create trays and ports using nodeFactory - use full node type (normalizes internally)
             const location = childName ? { hostname: childName } : {};
@@ -4298,8 +4341,18 @@ export class HierarchyModule {
             }
         }
 
-        // Step 2: Add to target template definition
-        if (this.state.data.availableGraphTemplates[targetTemplateName]) {
+        // Step 2: Add to target template definition (or root-instance)
+        if (targetTemplateName === null) {
+            // Moving to root-instance: update metadata to indicate root-level addition
+            if (this.state.data.currentData && this.state.data.currentData.metadata) {
+                this.state.data.currentData.metadata.hasTopLevelAdditions = true;
+                // Update initialRootTemplate if needed
+                if (!this.state.data.currentData.metadata.initialRootTemplate) {
+                    this.state.data.currentData.metadata.initialRootTemplate = graphTemplateName;
+                }
+                console.log(`[moveGraphInstanceToTemplate] Graph instance "${childName}" (template: ${graphTemplateName}) moved to root-instance`);
+            }
+        } else if (this.state.data.availableGraphTemplates[targetTemplateName]) {
             const targetTemplate = this.state.data.availableGraphTemplates[targetTemplateName];
             if (!targetTemplate.children) {
                 targetTemplate.children = [];
@@ -4322,8 +4375,8 @@ export class HierarchyModule {
             }
         }
 
-        // Also add to state.data.currentData.metadata.graph_templates
-        if (this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.graph_templates) {
+        // Also add to state.data.currentData.metadata.graph_templates (if not root-instance)
+        if (targetTemplateName !== null && this.state.data.currentData && this.state.data.currentData.metadata && this.state.data.currentData.metadata.graph_templates) {
             const metaTargetTemplate = this.state.data.currentData.metadata.graph_templates[targetTemplateName];
             if (metaTargetTemplate) {
                 if (!metaTargetTemplate.children) {
@@ -4410,13 +4463,19 @@ export class HierarchyModule {
             }
         }
 
-        // Step 4: Add to all instances of target template  
-        const targetInstances = this.state.cy.nodes().filter(n =>
-            n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
-        );
-
-        console.log(`[moveGraphInstanceToTemplate] Found ${targetInstances.length} target instance(s) of template "${targetTemplateName}"`);
-        console.log(`[moveGraphInstanceToTemplate] Moving template "${graphTemplateName}" (child name: "${childName}") into target template "${targetTemplateName}"`);
+        // Step 4: Add to all instances of target template (or root-instance)
+        let targetInstances = [];
+        if (targetTemplateName === null) {
+            // Moving to root-instance: create root-level graph instance
+            targetInstances = [null]; // Use null to indicate root-level
+            console.log(`[moveGraphInstanceToTemplate] Moving template "${graphTemplateName}" (child name: "${childName}") to root-instance`);
+        } else {
+            targetInstances = this.state.cy.nodes().filter(n =>
+                n.data('template_name') === targetTemplateName && n.data('type') === 'graph'
+            );
+            console.log(`[moveGraphInstanceToTemplate] Found ${targetInstances.length} target instance(s) of template "${targetTemplateName}"`);
+            console.log(`[moveGraphInstanceToTemplate] Moving template "${graphTemplateName}" (child name: "${childName}") into target template "${targetTemplateName}"`);
+        }
         
         // Log the structure of the template being moved to verify nested children are preserved
         const graphTemplate = this.state.data.availableGraphTemplates[graphTemplateName];
@@ -4428,11 +4487,13 @@ export class HierarchyModule {
             graphTemplate.children.filter(c => c.type === 'graph').map(c => `${c.name} (${c.graph_template})`) : [];
         console.log(`[moveGraphInstanceToTemplate] Template "${graphTemplateName}" contains ${childTemplatesInMovedTemplate.length} child template(s): [${childTemplatesInMovedTemplate.join(', ')}]`);
         
-        // Log the current structure of the target template
-        const targetTemplate = this.state.data.availableGraphTemplates[targetTemplateName];
-        const childTemplatesInTarget = targetTemplate && targetTemplate.children ? 
-            targetTemplate.children.filter(c => c.type === 'graph').map(c => `${c.name} (${c.graph_template})`) : [];
-        console.log(`[moveGraphInstanceToTemplate] Target template "${targetTemplateName}" currently contains ${childTemplatesInTarget.length} child template(s): [${childTemplatesInTarget.join(', ')}]`);
+        // Log the current structure of the target template (if not root-instance)
+        if (targetTemplateName !== null) {
+            const targetTemplate = this.state.data.availableGraphTemplates[targetTemplateName];
+            const childTemplatesInTarget = targetTemplate && targetTemplate.children ? 
+                targetTemplate.children.filter(c => c.type === 'graph').map(c => `${c.name} (${c.graph_template})`) : [];
+            console.log(`[moveGraphInstanceToTemplate] Target template "${targetTemplateName}" currently contains ${childTemplatesInTarget.length} child template(s): [${childTemplatesInTarget.join(', ')}]`);
+        }
 
         // Collect all nodes and deferred connections first, then process connections once
         // This prevents duplicate connections when multiple target instances exist
@@ -4445,9 +4506,12 @@ export class HierarchyModule {
             const edgesToAdd = [];
             const deferredConnections = [];
 
-            const childGraphId = `${targetInstance.id()}_${childName}`;
+            // For root-instance, use childName as the ID; otherwise use parent ID prefix
+            const childGraphId = targetInstance ? `${targetInstance.id()}_${childName}` : childName;
             const childGraphLabel = childName;
-            const parentDepth = targetInstance.data('depth') || 0;
+            // For root-instance, depth should be 0; otherwise depth is parent's depth + 1
+            const parentDepth = targetInstance ? (targetInstance.data('depth') || 0) : -1;
+            const parentId = targetInstance ? targetInstance.id() : null;
 
             // Instantiate the template recursively
             this.instantiateTemplate(
@@ -4456,7 +4520,7 @@ export class HierarchyModule {
                 childGraphId,
                 childGraphLabel,
                 'graph',
-                targetInstance.id(),
+                parentId,
                 0,
                 0,
                 nodesToAdd,
@@ -4653,12 +4717,24 @@ export class HierarchyModule {
         // Clear and rebuild dropdown
         select.innerHTML = '<option value="">-- Select Target Template --</option>';
 
+        // Add root-instance option (always available unless node is already at root)
+        const currentParent = node.parent();
+        const isAlreadyAtRoot = currentParent.length === 0;
+        if (!isAlreadyAtRoot) {
+            const rootOption = document.createElement('option');
+            rootOption.value = '__ROOT_INSTANCE__';
+            rootOption.textContent = 'root-instance (root level)';
+            select.appendChild(rootOption);
+        }
+
         if (validTemplates.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = '(No valid targets available)';
-            option.disabled = true;
-            select.appendChild(option);
+            if (isAlreadyAtRoot) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = '(No valid targets available)';
+                option.disabled = true;
+                select.appendChild(option);
+            }
         } else {
             validTemplates.forEach(templateInfo => {
                 const option = document.createElement('option');
@@ -4953,7 +5029,10 @@ export class HierarchyModule {
             this.calculateLayout();
 
             if (window.showExportStatus && typeof window.showExportStatus === 'function') {
-                window.showExportStatus(`Successfully moved "${nodeLabel}" to template "${targetTemplateName}"`, 'success');
+                const successMessage = isMovingToRoot 
+                    ? `Successfully moved "${nodeLabel}" to root-instance`
+                    : `Successfully moved "${nodeLabel}" to template "${targetTemplateName}"`;
+                window.showExportStatus(successMessage, 'success');
             }
 
         } catch (error) {
