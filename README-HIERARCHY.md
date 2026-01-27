@@ -63,7 +63,7 @@ Graph Template Instance (top level)
 ### 4. Node Management
 
 - **Add Graph Template Instances**: Create new instances from available templates
-- **Add Shelf Nodes**: Create individual shelf nodes (with trays and ports)i
+- **Add Shelf Nodes**: Create individual shelf nodes (with trays and ports)
 
 ## Common Usage Patterns
 
@@ -114,6 +114,12 @@ When you create a connection between two ports, the system automatically determi
 - **Lower-level templates** (closer to shelf nodes): Connections are specific to individual instances
 - **Higher-level templates** (closer to root): Connections apply to all instances of that template, creating a reusable connection pattern
 
+<p align="center">
+  <img src="static/img/hierarchy_connection_ex.png" alt="Connection Placement Modal" width="300">
+  <br>
+  <em>Example: Connection Placement Modal example showing connection options for adding a connection to the image at the top of the page</em>
+</p>
+
 **Example**: If you have a topology with a "superpod" template containing multiple "pod" templates, and each pod contains shelf nodes:
 - Placing a connection at the "pod" level creates the connection in all pod instances within that superpod, and any other "pod" instances.
 - Placing a connection at the "superpod" level creates one connection at the superpod level.
@@ -128,6 +134,12 @@ Right-click any node to edit its properties. This feature requires **Cabling Edi
 - **Move to Different Template**: Move the shelf node to a different graph template instance. Useful for reorganizing nodes within your topology structure.
 
 **Graph Template Instances:**
+<p align="center">
+  <img src="static/img/hierarchy_node_edit_ex.png" alt="Graph Instance Properties Modal" width="300">
+  <br>
+  <em>Example: Graph Instance Node Edit Dialog box showing the options for renaming and moving the graph instance</em>
+</p>
+
 - **Rename Template**: Change the template name for a graph instance. This updates the template name for this instance and can help clarify the purpose of different graph instances.
 - **Move to Different Template**: Move the entire graph instance (and all its children) to a different template. Useful for restructuring your topology hierarchy.
 - **Add A New Template**: Add a new graph template instance. This will create a new named template you can place in the hierarchy.
@@ -135,6 +147,11 @@ Right-click any node to edit its properties. This feature requires **Cabling Edi
 **Note**: Template operations affect all instances of the template. Use these features to refine your topology design as you iterate on the layout.
 
 ### Switching to Location Mode
+<p align="center">
+  <img src="static/img/hierarchy_phys_layout_ex.png" alt="Location Mode Toggle" width="300">
+  <br>
+  <em>Example: Physical Layout Modal example showing the options for configuring the physical layout</em>
+</p>
 
 1. Click the mode toggle button
 2. If nodes don't have physical locations, a modal will appear

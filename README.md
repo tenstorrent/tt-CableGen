@@ -35,8 +35,8 @@ Select a predefined topology from the [Defined Topologies](defined_topologies/RE
 
 ## Supported Hardware
 
-- **Wormhole**: WH_GALAXY variants, N300_LB, N300_QB
-- **Blackhole**: BH_GALAXY variants, P150_LB, P150_QB variants
+- **Wormhole**: WH_GALAXY, N300_LB, N300_QB
+- **Blackhole**: BH_GALAXY, P150_LB, P150_QB
 
 ## Basic Usage
 
@@ -47,10 +47,11 @@ Select a predefined topology from the [Defined Topologies](defined_topologies/RE
 
 ### Editing
 
-- **Add nodes**: Use "Add New Node" panel to create shelf nodes
-- **Create connections**: Enable edit mode → click source port → click destination port
-- **Edit nodes**: Double-click any shelf node
-- **Delete**: Select item + press Delete/Backspace
+- **Enable Edit Mode**: Click the "Enable Cabling Editing" button under the "Cabling Editor" section to enable edit mode.
+- **Add nodes**: Use "Add New Node" panel to create shelf nodes.
+- **Create connections**: Enable edit mode → click source port → click destination port.
+- **Edit nodes**: Double-click any shelf node to edit the node properties.
+- **Delete**: Select item + press Delete/Backspace.
 
 ### Exporting
 
@@ -70,7 +71,7 @@ See [README-COMPOSE.md](README-COMPOSE.md) for containerized deployment options.
 
 The visualizer has 2 distinct modes which expose different information but there are common flows/functionality between them. 
 
-1. Panning: Clicking and dragging on the blank background will allow the user to move around the visualized topologies.
+1. Panning/Dragging: Clicking and dragging on the blank background will allow the user to move around the visualized topologies. Clicking on a node and dragging will move the node. In both modes, clicking the "Reset Layout" button will reset the layout to calculated default positions.
 2. Node/Connection Info: In both modes clicking on the a connected port will show the connection info panel with details about the connection and the endpoints. 
 3. Connection Creation: In both modes clicking on an unconnected port will allow the user to create a connection to another unconnected port.
 4. Element Deletion: In both modes, selcting an element and clicking the delete button (or pressing Backspace/Delete) will delete the element. This will delete any contained nodes/connections. Multiple elements can be selected and deleted at once by holding Shift/Cmd/Ctrl and clicking on the elements to select them.

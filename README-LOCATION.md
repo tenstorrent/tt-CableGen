@@ -7,6 +7,7 @@ This document covers the specifics of interacting with tt-CableGen in **Location
   <br>
   <em>Example: 16 Wormhole Loudbox systems in a physical deployment view</em>
 </p>
+
 ## Overview
 
 Location Mode organizes nodes by their **physical data center location**, focusing on where hardware is actually deployed rather than logical topology. This mode is ideal for:
