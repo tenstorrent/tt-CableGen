@@ -4999,6 +4999,7 @@ export class HierarchyModule {
             return;
         }
 
+        const isMovingToRoot = targetTemplateName === 'root-instance';
         const nodeType = node.data('type');
         const nodeLabel = node.data('label');
 
