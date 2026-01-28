@@ -760,7 +760,7 @@
 
 <body>
     <!-- Cache refresh reminder splash notification -->
-    <div id="cacheRefreshSplash" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 20000; display: flex; align-items: center; justify-content: center;">
+    <div id="cacheRefreshSplash" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 20000; align-items: center; justify-content: center; pointer-events: none;">
         <div style="background: white; border-radius: 12px; padding: 30px; max-width: 500px; margin: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: center;">
             <div style="font-size: 48px; margin-bottom: 20px;">🔄</div>
             <h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">Refresh Recommended</h2>
@@ -1680,8 +1680,16 @@
                     const preservedUrl = new URL(preservedParams, window.location.origin);
                     window.history.replaceState({}, '', preservedUrl.pathname + preservedUrl.search);
                     // Reload to trigger the file loading
-                    window.location.reload();
-                    return;
+                    // Only reload once to prevent infinite loop
+                    const reloaded = sessionStorage.getItem('url_params_reloaded');
+                    if (!reloaded) {
+                        sessionStorage.setItem('url_params_reloaded', 'true');
+                        window.location.reload();
+                        return;
+                    } else {
+                        // Clear the flag after successful restore
+                        sessionStorage.removeItem('url_params_reloaded');
+                    }
                 }
             } catch (e) {
                 console.warn('Could not preserve URL parameters:', e);
@@ -1701,6 +1709,7 @@
                     const splash = document.getElementById('cacheRefreshSplash');
                     if (splash) {
                         splash.style.display = 'flex';
+                        splash.style.pointerEvents = 'auto';
                         splash.style.animation = 'fadeIn 0.3s ease-out';
                     }
                 }
@@ -1710,6 +1719,7 @@
                     const splash = document.getElementById('cacheRefreshSplash');
                     if (splash) {
                         splash.style.animation = 'fadeOut 0.3s ease-out';
+                        splash.style.pointerEvents = 'none';
                         setTimeout(() => {
                             splash.style.display = 'none';
                         }, 300);
@@ -1763,6 +1773,35 @@
         })();
     </script>
     <script type="module" src="{{ url_for('static', filename='js/visualizer.js', v=cache_version) }}"></script>
+    <script>
+        // Debug: Check if tab buttons exist and are clickable
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                const locationTab = document.getElementById('locationTab');
+                const topologyTab = document.getElementById('topologyTab');
+                console.log('Tab buttons check:', {
+                    locationTab: !!locationTab,
+                    topologyTab: !!topologyTab,
+                    locationTabStyle: locationTab ? window.getComputedStyle(locationTab).pointerEvents : 'N/A',
+                    topologyTabStyle: topologyTab ? window.getComputedStyle(topologyTab).pointerEvents : 'N/A'
+                });
+                
+                // Try direct click handlers as fallback
+                if (locationTab && typeof window.switchTab === 'function') {
+                    locationTab.addEventListener('click', function(e) {
+                        console.log('Location tab clicked directly');
+                        window.switchTab('location');
+                    });
+                }
+                if (topologyTab && typeof window.switchTab === 'function') {
+                    topologyTab.addEventListener('click', function(e) {
+                        console.log('Topology tab clicked directly');
+                        window.switchTab('topology');
+                    });
+                }
+            }, 1000);
+        });
+    </script>
     <!-- All inline script functions have been moved to visualizer.js (Phase 10.5) -->
 </body>
 
