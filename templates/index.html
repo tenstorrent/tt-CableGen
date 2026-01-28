@@ -832,7 +832,7 @@
 
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
-                    <button class="tab-button" id="locationTab">
+                    <button class="tab-button active" id="locationTab">
                         📍 Physical Deployment
                         <span class="mode-badge csv-mode">CSV</span>
                     </button>
@@ -844,7 +844,7 @@
 
                 <!-- Flow Description Section (changes based on active tab) -->
                 <div id="flowDescriptionLocation"
-                    style="display: none; background-color: #f0f8ff; border: 1px solid #b3d9ff; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
+                    style="display: block; background-color: #f0f8ff; border: 1px solid #b3d9ff; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
                     <h4 style="margin: 0 0 10px 0; color: #0066cc; font-size: 14px;">📍 Location/Deployment Flow</h4>
                     <ul style="margin: 8px 0; padding-left: 25px; line-height: 1.6;">
                         <li><strong>Load CSV:</strong> Import existing cabling data with physical locations (hall,
@@ -1773,35 +1773,6 @@
         })();
     </script>
     <script type="module" src="{{ url_for('static', filename='js/visualizer.js', v=cache_version) }}"></script>
-    <script>
-        // Debug: Check if tab buttons exist and are clickable
-        window.addEventListener('load', function() {
-            setTimeout(function() {
-                const locationTab = document.getElementById('locationTab');
-                const topologyTab = document.getElementById('topologyTab');
-                console.log('Tab buttons check:', {
-                    locationTab: !!locationTab,
-                    topologyTab: !!topologyTab,
-                    locationTabStyle: locationTab ? window.getComputedStyle(locationTab).pointerEvents : 'N/A',
-                    topologyTabStyle: topologyTab ? window.getComputedStyle(topologyTab).pointerEvents : 'N/A'
-                });
-                
-                // Try direct click handlers as fallback
-                if (locationTab && typeof window.switchTab === 'function') {
-                    locationTab.addEventListener('click', function(e) {
-                        console.log('Location tab clicked directly');
-                        window.switchTab('location');
-                    });
-                }
-                if (topologyTab && typeof window.switchTab === 'function') {
-                    topologyTab.addEventListener('click', function(e) {
-                        console.log('Topology tab clicked directly');
-                        window.switchTab('topology');
-                    });
-                }
-            }, 1000);
-        });
-    </script>
     <!-- All inline script functions have been moved to visualizer.js (Phase 10.5) -->
 </body>
 

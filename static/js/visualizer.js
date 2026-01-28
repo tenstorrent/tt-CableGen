@@ -655,6 +655,11 @@ function attachEventListener(selector, event, handler) {
         element.addEventListener(event, handler);
         return true;
     }
+    if (!element) {
+        console.warn(`[EventListeners] Element not found: ${selector}`);
+    } else if (typeof handler !== 'function') {
+        console.warn(`[EventListeners] Handler is not a function for: ${selector}`);
+    }
     return false;
 }
 
@@ -667,9 +672,35 @@ function setupEventListeners() {
     // Notification banner
     attachEventListener('notificationCloseBtn', 'click', () => hideNotificationBanner());
 
-    // Tab navigation
-    attachEventListener('locationTab', 'click', () => switchTab('location'));
-    attachEventListener('topologyTab', 'click', () => switchTab('topology'));
+    // Tab navigation - ensure switchTab is available
+    const locationTab = document.getElementById('locationTab');
+    const topologyTab = document.getElementById('topologyTab');
+    if (locationTab) {
+        locationTab.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[Tab] Location tab clicked');
+            if (typeof switchTab === 'function') {
+                switchTab('location');
+            } else {
+                console.error('[Tab] switchTab function not available');
+            }
+        });
+    } else {
+        console.warn('[EventListeners] locationTab not found');
+    }
+    if (topologyTab) {
+        topologyTab.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[Tab] Topology tab clicked');
+            if (typeof switchTab === 'function') {
+                switchTab('topology');
+            } else {
+                console.error('[Tab] switchTab function not available');
+            }
+        });
+    } else {
+        console.warn('[EventListeners] topologyTab not found');
+    }
 
     // Upload buttons
     attachEventListener('uploadBtnLocation', 'click', () => uploadFileLocation());
@@ -737,6 +768,23 @@ function setupEventListeners() {
 
 // Setup event listeners when DOM is ready
 setupEventListeners();
+
+// Initialize default tab on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            if (typeof switchTab === 'function') {
+                switchTab('location');
+            }
+        }, 100);
+    });
+} else {
+    setTimeout(() => {
+        if (typeof switchTab === 'function') {
+            switchTab('location');
+        }
+    }, 100);
+}
 
 // Tab-specific empty visualization functions
 function createEmptyVisualizationLocation() {
