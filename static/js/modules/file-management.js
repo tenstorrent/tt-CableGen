@@ -370,6 +370,13 @@ export class FileManagementModule {
         const fileUrl = urlParams.get('file') || urlParams.get('url');
         
         if (fileUrl) {
+            // Clear preserved URL params from sessionStorage since we're loading the file
+            try {
+                sessionStorage.removeItem('preserved_url_params');
+            } catch (e) {
+                // Ignore errors
+            }
+            
             // Validate it's a URL
             try {
                 const url = new URL(fileUrl);

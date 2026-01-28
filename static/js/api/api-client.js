@@ -136,7 +136,12 @@ export class ApiClient {
                 }
                 // If no redirect URL but we got auth error, redirect to the original endpoint
                 // OAuth2 Proxy will handle the OAuth2 flow
-                window.location.href = url;
+                // Preserve current page URL parameters (like ?file=...) when redirecting
+                const currentUrl = new URL(window.location.href);
+                const redirectUrl = new URL(url, window.location.origin);
+                // Add current page as redirect_uri parameter to preserve it through OAuth2 flow
+                redirectUrl.searchParams.set('redirect_uri', currentUrl.pathname + currentUrl.search);
+                window.location.href = redirectUrl.toString();
                 return new Promise(() => {});
             }
             
@@ -170,8 +175,13 @@ export class ApiClient {
                                   error.message.includes('NetworkError'))) {
                 // This might be an OAuth2 redirect that failed due to CORS
                 // Try to redirect to the original endpoint - OAuth2 Proxy will handle it
+                // Preserve current page URL parameters (like ?file=...) when redirecting
                 console.warn('CORS error detected, redirecting to endpoint for OAuth2 flow');
-                window.location.href = url;
+                const currentUrl = new URL(window.location.href);
+                const redirectUrl = new URL(url, window.location.origin);
+                // Add current page as redirect_uri parameter to preserve it through OAuth2 flow
+                redirectUrl.searchParams.set('redirect_uri', currentUrl.pathname + currentUrl.search);
+                window.location.href = redirectUrl.toString();
                 return new Promise(() => {});
             }
             

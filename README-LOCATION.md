@@ -2,6 +2,38 @@
 
 This document covers the specifics of interacting with tt-CableGen in **Location Mode** (Physical Location View).
 
+<!-- Remember to update the table of contents when adding new sections -->
+## Table of Contents
+
+- [Overview](#overview)
+- [Getting Started](#getting-started)
+  - [Entering Location Mode](#entering-location-mode)
+  - [Mode Indicator](#mode-indicator)
+- [Key Features](#key-features)
+  - [1. Physical Hierarchy](#1-physical-hierarchy)
+  - [2. Location-Based Organization](#2-location-based-organization)
+  - [3. Connection Visualization](#3-connection-visualization)
+  - [4. Connection Type Filters](#4-connection-type-filters)
+  - [5. Node Management](#5-node-management)
+- [Common Workflows](#common-workflows)
+  - [Importing a CSV with Location Data](#importing-a-csv-with-location-data)
+  - [Assigning Physical Locations](#assigning-physical-locations)
+  - [Filtering Connections by Type](#filtering-connections-by-type)
+  - [Adding Nodes in Location Mode](#adding-nodes-in-location-mode)
+  - [Adding Connections](#adding-connections)
+  - [Collapsing/Expanding Racks](#collapsingexpanding-racks)
+  - [Editing Node Properties](#editing-node-properties)
+- [UI Elements Specific to Location Mode](#ui-elements-specific-to-location-mode)
+  - [Visible Elements](#visible-elements)
+  - [Hidden Elements](#hidden-elements)
+  - [Node Labels](#node-labels)
+- [Import/Export Considerations](#importexport-considerations)
+  - [Import Formats](#import-formats)
+  - [Export Formats](#export-formats)
+- [Tips and Best Practices](#tips-and-best-practices)
+- [Limitations](#limitations)
+- [Related Documentation](#related-documentation)
+
 <p align="center">
   <img src="static/img/closetbox_deployment.png" alt="16xN300_LB Physical Location View" width="800">
   <br>
@@ -206,7 +238,8 @@ Rack nodes display:
 
 - **Cabling Guide**: Primary export format for Location Mode (CSV instructions for technicians)
 - **Deployment Descriptor**: Exports physical location mappings
-- **Cabling Descriptor**: Will export a flat cabling descriptor with all nodes and connections, ignoring any hierarchical structure.
+- **Cabling Descriptor**: Will export a flat cabling descriptor with all nodes and connections.
+- **FSD**: Will export a FSD file with all nodes and connections, useful for physically validating deployed systems. See [TT-Metal Scaleout Tools](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) for more information.
 
 ## Tips and Best Practices
 
@@ -220,46 +253,9 @@ Rack nodes display:
 ## Limitations
 
 - **Mode Switching**: Cannot switch to Hierarchy Mode if session started from CSV import
+  - This is intentional because CSVs do not contain hierarchical structure information. So working in Hierarchy Mode after importing a CSV is not generally useful or and efficient workflow.
 - **Logical Structure**: Graph template information is hidden in this mode
-- **Template Instantiation**: Cannot add graph template instances (Hierarchy Mode only)
-
-## Physical Layout Configuration
-
-### Hall Names
-- Format: Comma-separated or one per line
-- Example: `DataHall` or `Hall1, Hall2, Hall3`
-- Can be empty (omitted from hierarchy)
-
-### Aisle Names
-- Format: Numbers (1-26) or letters, ranges, or lists
-- Examples:
-  - `A` (single aisle)
-  - `1-5` (aisles A through E)
-  - `A,B,C` (specific aisles)
-- Automatically converts numbers 1-26 to letters A-Z
-
-### Rack Numbers
-- Format: Range or comma-separated list
-- Examples:
-  - `1-10` (racks 1 through 10)
-  - `1,2,5,10` (specific racks)
-- Default: `1-10` if not specified
-
-### Shelf Units
-- Format: Comma-separated list of U positions
-- Examples:
-  - `24,18,12,6` (standard 4-shelf configuration)
-  - `42,36,30,24,18,12,6` (7-shelf configuration)
-- Default: `24,18,12,6` if not specified
-
-### Capacity Calculation
-
-The total capacity is calculated as:
-```
-Total Nodes = Halls × Aisles × Racks × Shelf Units
-```
-
-This is displayed in the physical layout modal to help plan deployments.
+- **Template Instantiation**: Cannot work with graph template instances (Hierarchy Mode only)
 
 ## Related Documentation
 

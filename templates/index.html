@@ -4,6 +4,9 @@
 <head>
     <meta charset="utf-8">
     <title>Network Cabling Visualizer</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
@@ -734,10 +737,48 @@
                 transform: translateX(-50%) translateY(-20px);
             }
         }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Cache refresh reminder splash notification -->
+    <div id="cacheRefreshSplash" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 20000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; padding: 30px; max-width: 500px; margin: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 20px;">🔄</div>
+            <h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">Refresh Recommended</h2>
+            <p style="margin: 0 0 25px 0; color: #666; font-size: 16px; line-height: 1.5;">
+                To ensure you're viewing the latest version of the site, please perform a hard refresh:
+            </p>
+            <div style="background-color: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 25px; text-align: left;">
+                <div style="margin-bottom: 10px; font-weight: 600; color: #333;">Windows/Linux:</div>
+                <div style="color: #666; font-family: monospace; font-size: 14px; margin-bottom: 15px;">Ctrl + Shift + R</div>
+                <div style="margin-bottom: 10px; font-weight: 600; color: #333;">Mac:</div>
+                <div style="color: #666; font-family: monospace; font-size: 14px;">Cmd + Shift + R</div>
+            </div>
+            <button id="cacheRefreshDismiss" style="background-color: #007bff; color: white; border: none; border-radius: 6px; padding: 12px 30px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#0056b3'" onmouseout="this.style.backgroundColor='#007bff'">
+                Got it, thanks!
+            </button>
+        </div>
+    </div>
+
     <!-- Floating notification banner (fixed at top, below header) -->
     <div id="notificationBanner"
         style="display: none; position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 10000; min-width: 400px; max-width: 80%; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; padding: 15px 20px; font-size: 14px; font-weight: 500; animation: slideDown 0.3s ease-out;">
@@ -1615,6 +1656,111 @@
         // Server-side injected node configurations
         // This ensures JavaScript always uses the same configs as Python
         window.SERVER_NODE_CONFIGS = {{ node_configs | tojson }};
+        
+        // Preserve URL parameters through OAuth2 redirects
+        // Store current URL parameters if they exist, so they can be restored after OAuth2 redirect
+        (function() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const fileParam = urlParams.get('file') || urlParams.get('url');
+                
+                // If we have file/url parameter, store it in sessionStorage
+                // This helps preserve it through OAuth2 redirects
+                if (fileParam) {
+                    const currentUrl = window.location.pathname + window.location.search;
+                    sessionStorage.setItem('preserved_url_params', currentUrl);
+                    console.log('Stored URL parameters for OAuth2 redirect:', currentUrl);
+                }
+                
+                // Check if we need to restore URL parameters after OAuth2 redirect
+                const preservedParams = sessionStorage.getItem('preserved_url_params');
+                if (preservedParams && !fileParam && preservedParams.includes('file=')) {
+                    // We were redirected back but lost the parameters - restore them
+                    console.log('Restoring preserved URL parameters:', preservedParams);
+                    const preservedUrl = new URL(preservedParams, window.location.origin);
+                    window.history.replaceState({}, '', preservedUrl.pathname + preservedUrl.search);
+                    // Reload to trigger the file loading
+                    window.location.reload();
+                    return;
+                }
+            } catch (e) {
+                console.warn('Could not preserve URL parameters:', e);
+            }
+        })();
+        
+        // Cache busting: Check if we need to force a reload or show refresh reminder
+        // This helps users with cached HTML get the latest version
+        (function() {
+            try {
+                const currentVersion = '{{ cache_version }}';
+                const storedVersion = sessionStorage.getItem('page_version');
+                const splashDismissed = sessionStorage.getItem('cache_refresh_splash_dismissed');
+                
+                // Function to show the cache refresh splash
+                function showCacheRefreshSplash() {
+                    const splash = document.getElementById('cacheRefreshSplash');
+                    if (splash) {
+                        splash.style.display = 'flex';
+                        splash.style.animation = 'fadeIn 0.3s ease-out';
+                    }
+                }
+                
+                // Function to dismiss the splash
+                function dismissSplash() {
+                    const splash = document.getElementById('cacheRefreshSplash');
+                    if (splash) {
+                        splash.style.animation = 'fadeOut 0.3s ease-out';
+                        setTimeout(() => {
+                            splash.style.display = 'none';
+                        }, 300);
+                        sessionStorage.setItem('cache_refresh_splash_dismissed', 'true');
+                    }
+                }
+                
+                // Set up dismiss button
+                const dismissBtn = document.getElementById('cacheRefreshDismiss');
+                if (dismissBtn) {
+                    dismissBtn.addEventListener('click', dismissSplash);
+                }
+                
+                // Allow clicking outside the modal to dismiss
+                const splash = document.getElementById('cacheRefreshSplash');
+                if (splash) {
+                    splash.addEventListener('click', function(e) {
+                        // Only dismiss if clicking the backdrop (not the modal content)
+                        if (e.target === splash) {
+                            dismissSplash();
+                        }
+                    });
+                }
+                
+                // If versions don't match, we're likely viewing a cached page
+                if (storedVersion && storedVersion !== currentVersion) {
+                    console.log('Page version mismatch detected. Forcing hard reload to clear cache...');
+                    sessionStorage.setItem('page_version', currentVersion);
+                    // Force a hard reload to bypass cache
+                    window.location.reload(true);
+                    return;
+                }
+                
+                // Show splash on first load of the session to remind users about hard refresh
+                // Only show if it hasn't been dismissed in this session
+                if (!splashDismissed) {
+                    // Show splash after a short delay to let page load
+                    setTimeout(() => {
+                        showCacheRefreshSplash();
+                    }, 500);
+                }
+                
+                // Store current version for next page load comparison
+                if (currentVersion) {
+                    sessionStorage.setItem('page_version', currentVersion);
+                }
+            } catch (e) {
+                // Silently fail if sessionStorage is not available
+                console.warn('Could not check page version:', e);
+            }
+        })();
     </script>
     <script type="module" src="{{ url_for('static', filename='js/visualizer.js', v=cache_version) }}"></script>
     <!-- All inline script functions have been moved to visualizer.js (Phase 10.5) -->

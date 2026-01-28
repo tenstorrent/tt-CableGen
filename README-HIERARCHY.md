@@ -2,6 +2,37 @@
 
 This document covers the specifics of interacting with tt-CableGen in **Hierarchy Mode** (Logical Hierarchy View).
 
+<!-- Remember to update the table of contents when adding new sections -->
+## Table of Contents
+
+- [Overview](#overview)
+- [Getting Started](#getting-started)
+  - [Entering Hierarchy Mode](#entering-hierarchy-mode)
+  - [Mode Indicator](#mode-indicator)
+- [Key Features](#key-features)
+  - [1. Graph Template System](#1-graph-template-system)
+  - [2. Hierarchical Structure](#2-hierarchical-structure)
+  - [3. Connection Visualization](#3-connection-visualization)
+  - [4. Node Management](#4-node-management)
+- [Common Usage Patterns](#common-usage-patterns)
+  - [Importing a Topology](#importing-a-topology)
+  - [Adding a Graph Template Instance](#adding-a-graph-template-instance)
+  - [Collapsing/Expanding Graph Instances](#collapsingexpanding-graph-instances)
+  - [Adding Connections](#adding-connections)
+  - [Editing Node Properties](#editing-node-properties)
+  - [Switching to Location Mode](#switching-to-location-mode)
+- [UI Elements Specific to Hierarchy Mode](#ui-elements-specific-to-hierarchy-mode)
+  - [Visible Elements](#visible-elements)
+  - [Hidden Elements](#hidden-elements)
+  - [Node Labels](#node-labels)
+- [Import/Export Considerations](#importexport-considerations)
+  - [Import Formats](#import-formats)
+  - [Export Formats](#export-formats)
+- [Tips and Best Practices](#tips-and-best-practices)
+- [Recommended Workflow](#recommended-workflow)
+- [Limitations](#limitations)
+- [Related Documentation](#related-documentation)
+
 <p align="center">
   <img src="static/img/closetbox_hierarchy.png" alt="16xN300_LB Hierarchical Topology" width="800">
   <br>

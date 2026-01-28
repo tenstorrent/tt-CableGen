@@ -2,6 +2,25 @@
 
 For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this tool can be used to visualize how to connect multiple systems for a specific multi-node scale-out topology.
 
+<!-- Remember to update the table of contents when adding new sections -->
+## Table of Contents
+
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Basic Usage](#basic-usage)
+- [What Can It Do?](#what-can-it-do)
+- [Supported Hardware](#supported-hardware)
+- [Basic Usage](#basic-usage-1)
+  - [Importing a Topology](#importing-a-topology)
+  - [Editing](#editing)
+  - [Exporting](#exporting)
+- [Docker Deployment](#docker-deployment)
+- [Detailed Documentation](#detailed-documentation)
+  - [General Interactions](#general-interactions)
+  - [Visualizer Descriptors/Files](#visualizer-descriptorsfiles)
+- [License](#license)
+- [Support](#support)
+
 ![Python](https://img.shields.io/badge/python-3.7+-blue.svg)
 ![Flask](https://img.shields.io/badge/flask-3.0.2-green.svg)
 
@@ -25,6 +44,8 @@ The tool is mostly self-packaged as a docker image packaged as part of the repo.
 
 Select a predefined topology from the [Defined Topologies](defined_topologies/README.md) folder and upload the desired CSV or TextProto file to visualize your network topology. Alternatively, click a mode tab and then **"Create Empty Canvas"** to build one from scratch, with different Tenstorrent node types!
 
+Please regularly hard refresh the page (Ctrl+Shift+R / Cmd+Shift+R) to ensure you are using the latest version of the tool.
+
 ## What Can It Do?
 
 | Feature | Description |
@@ -40,10 +61,10 @@ Select a predefined topology from the [Defined Topologies](defined_topologies/RE
 
 ## Basic Usage
 
-### Importing a Topology
+### Starting a New Visualization
 
-1. Drag & drop a `.csv` or `.textproto` file onto the site
-2. Click **"Generate Visualization"**
+- **Drag & Drop**: Drag & drop a `.csv` or `.textproto` file onto the site to start a new visualization.
+- **Create Empty Canvas**: Click the "Create Empty Canvas" button under the "Physical Deployment" or "Logical Hierarchy" tab to start a new visualization from scratch.
 
 ### Editing
 

@@ -11,7 +11,7 @@ import argparse
 import time
 import threading
 import json
-from flask import Flask, request, jsonify, render_template, send_from_directory, Response
+from flask import Flask, request, jsonify, render_template, send_from_directory, Response, make_response
 import traceback
 from urllib.parse import urlparse
 
@@ -69,12 +69,26 @@ def index():
             # Fallback to current timestamp on any error
             cache_version = str(int(time.time()))
 
-        return render_template("index.html", node_configs=node_configs, cache_version=cache_version)
+        html_content = render_template("index.html", node_configs=node_configs, cache_version=cache_version)
+        response = make_response(html_content)
+        # Prevent HTML caching to ensure users always get the latest version
+        response.cache_control.no_cache = True
+        response.cache_control.no_store = True
+        response.cache_control.must_revalidate = True
+        response.cache_control.max_age = 0
+        return response
 
     except Exception as e:
         # Fallback to template without configs if there's an error
         cache_version = str(int(time.time()))
-        return render_template("index.html", node_configs={}, cache_version=cache_version)
+        html_content = render_template("index.html", node_configs={}, cache_version=cache_version)
+        response = make_response(html_content)
+        # Prevent HTML caching to ensure users always get the latest version
+        response.cache_control.no_cache = True
+        response.cache_control.no_store = True
+        response.cache_control.must_revalidate = True
+        response.cache_control.max_age = 0
+        return response
 
 
 def normalize_github_url(url):
@@ -959,9 +973,21 @@ def generate_cabling_guide():
 @app.route("/favicon.ico")
 def favicon():
     """Serve favicon"""
+    import hashlib
     response = send_from_directory("static/img", "favicon.ico")
+    
+    # Generate ETag for cache validation
+    try:
+        file_path = os.path.join("static", "img", "favicon.ico")
+        if os.path.exists(file_path):
+            stat = os.stat(file_path)
+            etag = hashlib.md5(f"{stat.st_mtime}-{stat.st_size}".encode()).hexdigest()
+            response.set_etag(etag)
+    except Exception:
+        pass
+    
     # Add cache headers - allow caching but require revalidation
-    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.max_age = 3600  # 1 hour
     response.cache_control.public = True
     response.cache_control.must_revalidate = True
     return response
@@ -970,10 +996,23 @@ def favicon():
 @app.route("/static/<path:filename>")
 def static_files(filename):
     """Serve static files if needed"""
+    import hashlib
     response = send_from_directory("static", filename)
+    
+    # Generate ETag based on file content for better cache validation
+    try:
+        file_path = os.path.join("static", filename)
+        if os.path.exists(file_path):
+            # Generate ETag from file modification time and size
+            stat = os.stat(file_path)
+            etag = hashlib.md5(f"{stat.st_mtime}-{stat.st_size}".encode()).hexdigest()
+            response.set_etag(etag)
+    except Exception:
+        pass
+    
     # Add cache headers - allow caching but require revalidation
     # This ensures browsers check for updates regularly
-    response.cache_control.max_age = 86400  # 1 day
+    response.cache_control.max_age = 3600  # 1 hour (reduced from 1 day for faster updates)
     response.cache_control.public = True
     response.cache_control.must_revalidate = True
     return response
