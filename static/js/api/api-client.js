@@ -122,11 +122,11 @@ export class ApiClient {
             // Handle authentication errors (401, 403) - might be redirected to OAuth2
             if (response.status === 401 || response.status === 403) {
                 // Check if response includes a redirect URL (OAuth2 Proxy might include this)
-                const redirectUrl = response.headers.get('Location');
-                if (redirectUrl) {
-                    const absoluteRedirectUrl = redirectUrl.startsWith('http') 
-                        ? redirectUrl 
-                        : new URL(redirectUrl, this.baseUrl).href;
+                const authRedirectUrl = response.headers.get('Location');
+                if (authRedirectUrl) {
+                    const absoluteRedirectUrl = authRedirectUrl.startsWith('http') 
+                        ? authRedirectUrl 
+                        : new URL(authRedirectUrl, this.baseUrl).href;
                     
                     if (absoluteRedirectUrl.includes('login.microsoftonline.com') || 
                         absoluteRedirectUrl.includes('/oauth2/')) {
@@ -136,7 +136,12 @@ export class ApiClient {
                 }
                 // If no redirect URL but we got auth error, redirect to the original endpoint
                 // OAuth2 Proxy will handle the OAuth2 flow
-                window.location.href = url;
+                // Preserve current page URL parameters (like ?file=...) when redirecting
+                const currentUrl = new URL(window.location.href);
+                const authEndpointUrl = new URL(url, window.location.origin);
+                // Add current page as redirect_uri parameter to preserve it through OAuth2 flow
+                authEndpointUrl.searchParams.set('redirect_uri', currentUrl.pathname + currentUrl.search);
+                window.location.href = authEndpointUrl.toString();
                 return new Promise(() => {});
             }
             
@@ -170,8 +175,13 @@ export class ApiClient {
                                   error.message.includes('NetworkError'))) {
                 // This might be an OAuth2 redirect that failed due to CORS
                 // Try to redirect to the original endpoint - OAuth2 Proxy will handle it
+                // Preserve current page URL parameters (like ?file=...) when redirecting
                 console.warn('CORS error detected, redirecting to endpoint for OAuth2 flow');
-                window.location.href = url;
+                const currentUrl = new URL(window.location.href);
+                const corsRedirectUrl = new URL(url, window.location.origin);
+                // Add current page as redirect_uri parameter to preserve it through OAuth2 flow
+                corsRedirectUrl.searchParams.set('redirect_uri', currentUrl.pathname + currentUrl.search);
+                window.location.href = corsRedirectUrl.toString();
                 return new Promise(() => {});
             }
             

@@ -2,6 +2,25 @@
 
 For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this tool can be used to visualize how to connect multiple systems for a specific multi-node scale-out topology.
 
+<!-- Remember to update the table of contents when adding new sections -->
+## Table of Contents
+
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Basic Usage](#basic-usage)
+- [What Can It Do?](#what-can-it-do)
+- [Supported Hardware](#supported-hardware)
+- [Basic Usage](#basic-usage-1)
+  - [Importing a Topology](#importing-a-topology)
+  - [Editing](#editing)
+  - [Exporting](#exporting)
+- [Docker Deployment](#docker-deployment)
+- [Detailed Documentation](#detailed-documentation)
+  - [General Interactions](#general-interactions)
+  - [Visualizer Descriptors/Files](#visualizer-descriptorsfiles)
+- [License](#license)
+- [Support](#support)
+
 ![Python](https://img.shields.io/badge/python-3.7+-blue.svg)
 ![Flask](https://img.shields.io/badge/flask-3.0.2-green.svg)
 
@@ -13,59 +32,52 @@ For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this t
 
 ## Quick Start
 
+This tool is built with 2 modes of use in mind: 
+1. A **Physical Deployment** (with racking information) mode that is useful for visualizing nodes in a simplified view of how they would be organized in data center Aisles/Racks/Shelves. See [README-LOCATION.md](README-LOCATION.md) for detailed documentation.
+2. A **Logical Hierarchy** (with clustering/pod information) mode that is useful for visualizing node groupings in terms of graphs and subgraphs. See [README-HIERARCHY.md](README-HIERARCHY.md) for detailed documentation.
+
 ### Prerequisites
 
-Currently requires TT-Metal to be installed and built from source:
+The tool is mostly self-packaged as a docker image packaged as part of the repo. This docker environment takes care of all JavaScript, Python, and [tt-Metal](https://github.com/tenstorrent/tt-metal) dependencies. For most deployments we have a Makefile that serves as as simple interface for managing the application. For a simple deployment to test out tool functionality we recommend the make commands with the `-local` suffixes. For more secure, production enviroments, we recommend the default `make` commands (which require some extra environment configuration, see [README-COMPOSE.md](README-COMPOSE.md) for more detail).
 
-See the [TT-Metal Installation Guide](https://github.com/tenstorrent/tt-metal/blob/main/INSTALLING.md#source) for more details on how to install TT-Metal.
+### Basic Usage 
 
-```bash
-export TT_METAL_HOME=/path/to/tt-metal
+Select a predefined topology from the [Defined Topologies](defined_topologies/README.md) folder and upload the desired CSV or TextProto file to visualize your network topology. Alternatively, click a mode tab and then **"Create Empty Canvas"** to build one from scratch, with different Tenstorrent node types!
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the server
-python server.py
-
-# Open in browser
-open http://localhost:5000
-```
-
-Select a predefined topology from the [Defined Topologies](defined_topologies/README.md) folder and upload the CSV or TextProto file to visualize your network topology. Alternatively, click **"Create Empty Canvas"** to build one from scratch!
+Please regularly hard refresh the page (Ctrl+Shift+R / Cmd+Shift+R) to ensure you are using the latest version of the tool.
 
 ## What Can It Do?
 
 | Feature | Description |
 |---------|-------------|
 | **Visualize** | Interactive graph with pan, zoom, and hierarchical node structure |
-| **Import** | Load topology from CSV or TextProto cabling descriptors |
-| **Edit** | Add/remove nodes, create connections, modify properties |
-| **Export** | Generate cabling descriptors, deployment descriptors, and cabling guides |
+| **Edit** | Add/remove nodes, create connections, create node groupings, modify properties |
+| **Import/Export** | Generate cabling descriptors, deployment descriptors, and cabling guides. Transfer work so it can be consumed by various parties |
 
 ## Supported Hardware
 
-- **Wormhole**: WH_GALAXY variants, N300_LB, N300_QB
-- **Blackhole**: BH_GALAXY variants, P150_LB, P150_QB variants
+- **Wormhole**: WH_GALAXY, N300_LB, N300_QB
+- **Blackhole**: BH_GALAXY, P150_LB, P150_QB
 
 ## Basic Usage
 
-### Importing a Topology
+### Starting a New Visualization
 
-1. Drag & drop a `.csv` or `.textproto` file onto the upload area
-2. Click **"Generate Visualization"**
+- **Drag & Drop**: Drag & drop a `.csv` or `.textproto` file onto the site to start a new visualization.
+- **Create Empty Canvas**: Click the "Create Empty Canvas" button under the "Physical Deployment" or "Logical Hierarchy" tab to start a new visualization from scratch.
 
 ### Editing
 
-- **Add nodes**: Use "Add New Node" panel to create shelf nodes
-- **Create connections**: Enable edit mode → click source port → click destination port
-- **Edit nodes**: Double-click any shelf node
-- **Delete**: Select item + press Delete/Backspace
+- **Enable Edit Mode**: Click the "Enable Cabling Editing" button under the "Cabling Editor" section to enable edit mode.
+- **Add nodes**: Use "Add New Node" panel to create shelf nodes.
+- **Create connections**: Enable edit mode → click source port → click destination port.
+- **Edit nodes**: Double-click any shelf node to edit the node properties.
+- **Delete**: Select item + press Delete/Backspace.
 
 ### Exporting
 
 - **Cabling Descriptor**: Topology definition (hierarchy-based)
-- **Deployment Descriptor**: Physical location mapping
+- **Deployment Descriptor**: Physical location mapping (tied to a Cabling Descriptor usually)
 - **Cabling Guide**: CSV instructions for technicians (requires `TT_METAL_HOME`)
 
 ## Docker Deployment
@@ -74,120 +86,25 @@ See [README-COMPOSE.md](README-COMPOSE.md) for containerized deployment options.
 
 ---
 
-<details>
-<summary><strong>📚 Detailed Documentation</strong></summary>
+## Detailed Documentation
 
-## Visualization Modes
+### General Interactions
 
-### Location Mode (CSV Import)
-Organizes nodes by physical data center location (Hall → Aisle → Rack → Shelf). Nodes appear grouped within rack compounds that can be collapsed/expanded.
+The visualizer has 2 distinct modes which expose different information but there are common flows/functionality between them. 
 
-### Hierarchy Mode (TextProto Import)
-Organizes nodes by logical topology (Graph Templates → Instances → Shelves). Useful for template-based topology design.
+1. Panning/Dragging: Clicking and dragging on the blank background will allow the user to move around the visualized topologies. Clicking on a node and dragging will move the node. In both modes, clicking the "Reset Layout" button will reset the layout to calculated default positions.
+2. Node/Connection Info: In both modes clicking on the a connected port will show the connection info panel with details about the connection and the endpoints. 
+3. Connection Creation: In both modes clicking on an unconnected port will allow the user to create a connection to another unconnected port.
+4. Element Deletion: In both modes, selcting an element and clicking the delete button (or pressing Backspace/Delete) will delete the element. This will delete any contained nodes/connections. Multiple elements can be selected and deleted at once by holding Shift/Cmd/Ctrl and clicking on the elements to select them.
 
-## File Format Reference
+**📖 For detailed Location Mode documentation, see [README-LOCATION.md](README-LOCATION.md)**
 
-### CSV Import Formats
+**📖 For detailed Hierarchy Mode documentation, see [README-HIERARCHY.md](README-HIERARCHY.md)**
 
-**Hierarchical CSV** (with location info):
-```
-hostname, hall, aisle, rack_num, shelf_u, tray, port, cable_type, cable_length, dest_hostname, dest_hall, dest_aisle, dest_rack_num, dest_shelf_u, dest_tray, dest_port
-```
+### Visualizer Descriptors/Files
 
-**Simplified CSV** (hostname-based):
-```
-hostname, tray, port, cable_type, cable_length, dest_hostname, dest_tray, dest_port
-```
+See [TT-Metal Scaleout tools](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) page for more information on how our descriptor files are structured, their specific use cases, and how they fit in with our flows. 
 
-The parser auto-detects the format based on column headers.
-
-### TextProto Format
-
-See [TT-Metal Scaleout tools](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) for the CablingDescriptor protobuf schema.
-
-Basic structure:
-```protobuf
-graph_templates {
-  key: "template_name"
-  value {
-    children { name: "node1" node_ref { node_descriptor: "P150_LB" } }
-    internal_connections {
-      key: "QSFP_DD"
-      value {
-        connections {
-          port_a { path: ["node1"] tray_id: 1 port_id: 2 }
-          port_b { path: ["node2"] tray_id: 1 port_id: 2 }
-        }
-      }
-    }
-  }
-}
-
-root_instance {
-  template_name: "template_name"
-  child_mappings { key: "node1" value { host_id: 0 } }
-}
-```
-
-## Cabling Guide Generation
-
-Requires TT-Metal to be installed and built:
-
-```bash
-export TT_METAL_HOME=/path/to/tt-metal
-# Ensure cabling generator is built:
-# cd $TT_METAL_HOME && ./build_metal.sh
-```
-
-The generator creates:
-- **Cabling Guide CSV**: Step-by-step connection instructions
-- **Factory System Descriptor**: Complete system specification
-
-## Command Line Options
-
-```bash
-python server.py [OPTIONS]
-
-Options:
-  -p, --port PORT     Port number (default: 5000)
-  --host HOST         Host address (default: 0.0.0.0)
-  --debug             Enable debug mode (default)
-  --no-debug          Disable debug mode
-```
-
-## Project Structure
-
-```
-tt-CableGen/
-├── server.py                 # Flask web server
-├── import_cabling.py         # Parsing and visualization engine
-├── export_descriptors.py     # Export logic
-├── templates/index.html      # Web interface
-├── static/js/visualizer.js   # Client-side application
-├── docker-compose.yml        # Docker setup
-└── nginx/                    # Nginx/OAuth2 config
-```
-
-## Hardware Type Details
-
-| Type | Trays | Ports/Tray | Notes |
-|------|-------|------------|-------|
-| WH_GALAXY | 4 | 6 | Base Wormhole |
-| WH_GALAXY_X_TORUS | 4 | 6 | X-axis torus |
-| WH_GALAXY_Y_TORUS | 4 | 6 | Y-axis torus |
-| WH_GALAXY_XY_TORUS | 4 | 6 | Full torus |
-| N300_LB | 4 | 2 | Horizontal layout |
-| N300_QB | 4 | 2 | Horizontal layout |
-| BH_GALAXY | 4 | 14 | Base Blackhole |
-| BH_GALAXY_X_TORUS | 4 | 14 | X-axis torus |
-| BH_GALAXY_Y_TORUS | 4 | 14 | Y-axis torus |
-| BH_GALAXY_XY_TORUS | 4 | 14 | Full torus |
-| P150_LB | 8 | 4 | Standard P150 |
-| P150_QB_AMERICA | 4 | 4 | Horizontal layout |
-| P150_QB_GLOBAL | 4 | 4 | Horizontal layout |
-| P150_QB_AE | 4 | 4 | AE configuration |
-
-</details>
 
 ---
 

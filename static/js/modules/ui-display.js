@@ -71,7 +71,7 @@ export class UIDisplayModule {
         if (this.state.mode === 'hierarchy') {
             indicator.style.background = '#fff3cd';
             indicator.style.borderColor = '#ffc107';
-            currentModeDiv.innerHTML = '<strong>🌳 Logical Topology View</strong>';
+            currentModeDiv.innerHTML = '<strong>🌳 Logical Hierarchy View</strong>';
             descriptionDiv.textContent = 'Organized by graph templates and instances (ignores physical location)';
 
             // Hide physical fields, show logical message
@@ -1761,7 +1761,7 @@ export class UIDisplayModule {
         }
 
         // Show a status message
-        const modeLabel = newMode === 'hierarchy' ? 'Logical Topology View' : 'Physical Location View';
+        const modeLabel = newMode === 'hierarchy' ? 'Logical Hierarchy View' : 'Physical Location View';
         this.showExportStatus(`Switched to ${modeLabel}`, 'success');
 
         setTimeout(() => {
@@ -1809,6 +1809,14 @@ export class UIDisplayModule {
                 addGraphSection.style.display = 'none';
             }
 
+            // Show create template section only in hierarchy mode
+            const createTemplateSection = document.getElementById('createTemplateSection');
+            if (createTemplateSection && this.state.mode === 'hierarchy') {
+                createTemplateSection.style.display = 'block';
+            } else if (createTemplateSection) {
+                createTemplateSection.style.display = 'none';
+            }
+
             // Add visual feedback only for available (unconnected) ports
             window.updatePortEditingHighlight?.();
 
@@ -1839,6 +1847,11 @@ export class UIDisplayModule {
 
             // Hide add graph section
             document.getElementById('addGraphSection').style.display = 'none';
+            // Hide create template section
+            const createTemplateSection = document.getElementById('createTemplateSection');
+            if (createTemplateSection) {
+                createTemplateSection.style.display = 'none';
+            }
 
             // Clear any selected connection and remove its styling
             if (this.state.editing.selectedConnection) {

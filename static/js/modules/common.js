@@ -2997,20 +2997,31 @@ export class CommonModule {
             }
 
             // Collect cross-host connections for distance calculation
-            if (isCrossHost && !isSameShelf) {
-                const sourcePos = sourceNode.position();
-                const targetPos = targetNode.position();
+            // Also collect edges between graph nodes (both rerouted and direct edges) for distance-based curves
+            // In hierarchy mode, edges can directly connect graph nodes without being rerouted
+            // Check the actual edge endpoints (not original port endpoints) to see if they're graph nodes
+            const edgeSourceNode = edge.source();
+            const edgeTargetNode = edge.target();
+            const edgeSourceIsGraph = edgeSourceNode.data('type') === 'graph';
+            const edgeTargetIsGraph = edgeTargetNode.data('type') === 'graph';
+            const isBetweenGraphNodes = edgeSourceIsGraph && edgeTargetIsGraph && edgeSourceNode.id() !== edgeTargetNode.id();
+            
+            if ((isCrossHost && !isSameShelf) || isBetweenGraphNodes) {
+                // Use the actual edge endpoints for position calculation (graph nodes, not ports)
+                const sourcePos = edgeSourceNode.position();
+                const targetPos = edgeTargetNode.position();
                 const dx = targetPos.x - sourcePos.x;
                 const dy = targetPos.y - sourcePos.y;
                 const straightDistance = Math.sqrt(dx * dx + dy * dy);
 
                 crossHostConnections.push({
                     edge,
-                    sourceNode,
-                    targetNode,
+                    sourceNode: edgeSourceNode,  // Use actual edge endpoints (graph nodes)
+                    targetNode: edgeTargetNode,  // Use actual edge endpoints (graph nodes)
                     distance: straightDistance,
                     isRerouted,
                     isCrossGraph,
+                    isBetweenGraphNodes,
                     sharePortOrTray  // Store heuristic result for second pass
                 });
             }
@@ -3030,9 +3041,9 @@ export class CommonModule {
                     'control-point-distance': controlPointDistance,  // Distance from straight line (scaled by slider and heuristic)
                     'control-point-weight': 0.5  // Position along edge (0.5 = middle)
                 };
-            } else if (isCrossHost) {
-                // Skip cross-host connections in first pass - will be handled in second pass
-                // with dynamic min/max thresholds
+            } else if (isCrossHost || isBetweenGraphNodes) {
+                // Skip cross-host connections and edges between graph nodes in first pass
+                // Will be handled in second pass with dynamic distance-based curve scaling
             } else {
                 _crossShelfCount++;
                 curveStyle = 'bezier';
@@ -3055,8 +3066,9 @@ export class CommonModule {
         });
 
         // Second pass: Apply dynamic distance-based curve scaling to cross-host connections
+        // and edges between collapsed nodes (all edges have curves based on relative distance)
         if (crossHostConnections.length > 0) {
-            // Calculate min and max distances across all cross-host connections
+            // Calculate min and max distances across all connections (cross-host and between collapsed nodes)
             const distances = crossHostConnections.map(conn => conn.distance);
             const minDistance = Math.min(...distances);
             const maxDistance = Math.max(...distances);
@@ -3068,11 +3080,11 @@ export class CommonModule {
             );
 
             // Curve magnitude range (keep the same scale, scaled by multiplier)
-            const minCurveDistance = controlPointStepSize * 1.0 * curveMagnitudeMultiplier;  // Minimum curve for closest ports
-            const maxCurveDistance = controlPointStepSize * 2.0 * curveMagnitudeMultiplier;  // Maximum curve for farthest ports
+            const minCurveDistance = controlPointStepSize * 1.0 * curveMagnitudeMultiplier;  // Minimum curve for closest nodes
+            const maxCurveDistance = controlPointStepSize * 2.0 * curveMagnitudeMultiplier;  // Maximum curve for farthest nodes
             const _curveRange = maxCurveDistance - minCurveDistance;
 
-            // Apply styles to cross-host connections with dynamic scaling
+            // Apply styles to cross-host connections and edges between collapsed nodes with dynamic scaling
             crossHostConnections.forEach(conn => {
                 _crossShelfCount++;
                 const curveStyle = 'unbundled-bezier';

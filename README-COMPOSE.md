@@ -59,6 +59,10 @@ FQDN=cablegen.yourcompany.com
 
 ## Management Commands
 
+### Production Environment (Includes OAuth authentication) 
+<details>
+<summary> </summary>
+
 ```bash
 make setup     # Copy env.example to .env (if .env doesn't exist)
 make build     # Build all Docker images
@@ -71,6 +75,23 @@ make clean     # Remove containers, networks, and volumes
 make shell     # Open shell in cablegen container
 make nginx-shell # Open shell in nginx container
 ```
+</details>
+
+### Local Development/Deployment Environment (No authentication)
+<details>
+<summary> </summary>
+
+```bash
+make build-local     # Build all Docker images
+make up-local        # Start all services
+make down-local      # Stop all services
+make logs-local      # View logs from all services
+make status-local    # Check status of all services
+make restart-local   # Restart all services
+make clean-local     # Remove containers, networks, and volumes
+make shell-local     # Open shell in cablegen container
+```
+</details>
 
 ## Troubleshooting
 
