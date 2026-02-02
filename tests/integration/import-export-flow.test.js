@@ -14,7 +14,7 @@
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
-import cytoscape from 'cytoscape';
+import { createHeadlessCyWithStyleMock, cytoscape } from '../cytoscape-test-helper.js';
 import { VisualizerState } from '../../static/js/state/visualizer-state.js';
 import { LocationModule } from '../../static/js/modules/location.js';
 import { HierarchyModule } from '../../static/js/modules/hierarchy.js';
@@ -164,29 +164,8 @@ describe('Import/Export Flow Integration Tests', () => {
         locationModule = new LocationModule(state, commonModule);
         hierarchyModule = new HierarchyModule(state, commonModule);
 
-        // Setup real Cytoscape instance in headless mode
-        // We don't need rendering - just data manipulation
-        state.cy = global.cytoscape({
-            headless: true, // Run in headless mode (no DOM rendering needed)
-            elements: []
-        });
-
-        // Mock style() method for headless mode (some methods need it)
-        if (!state.cy.style || typeof state.cy.style !== 'function') {
-            state.cy.style = jest.fn(() => ({
-                update: jest.fn()
-            }));
-        } else {
-            // If style() exists but update() doesn't, mock update
-            const originalStyle = state.cy.style.bind(state.cy);
-            state.cy.style = jest.fn(() => {
-                const styleObj = originalStyle();
-                if (!styleObj || typeof styleObj.update !== 'function') {
-                    return { update: jest.fn() };
-                }
-                return styleObj;
-            });
-        }
+        // Setup real Cytoscape instance in headless mode (shared helper)
+        state.cy = createHeadlessCyWithStyleMock([]);
     });
 
     afterEach(() => {

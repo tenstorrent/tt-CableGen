@@ -693,6 +693,10 @@ export class UIDisplayModule {
             return;
         }
 
+        this._physicalLayoutModalMode = null;
+        this._resetPhysicalLayoutModalToDefault();
+        modal.removeEventListener('click', this._handlePasteDestinationModalClick);
+
         // Ensure manual tab is active and visible before accessing form elements
         const manualContent = document.getElementById('manualLayoutContent');
         if (manualContent) {
@@ -762,26 +766,302 @@ export class UIDisplayModule {
     }
 
     /**
+     * Show paste destination modal (location mode only). Hierarchy mode pastes directly into
+     * the selected graph instance (or at root) with no modal.
+     */
+    showPasteDestinationModal() {
+        const modal = document.getElementById('physicalLayoutModal');
+        if (!modal) return;
+
+        const dest = this.locationModule.getPasteDestinationFromSelection();
+        this._pasteDestinationContext = dest || { type: 'canvas', label: 'Canvas (no destination selected)' };
+        this._physicalLayoutModalMode = 'pasteDestination';
+
+        const header = document.getElementById('physicalLayoutModalHeader');
+        const subheader = document.getElementById('physicalLayoutModalSubheader');
+        const tabs = document.getElementById('physicalLayoutModalTabs');
+        const capacityRow = document.getElementById('physicalLayoutCapacityRow');
+        const applyBtn = document.getElementById('applyLayoutBtn');
+        const show = (id, visible) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = visible ? 'block' : 'none';
+        };
+
+        if (header) header.textContent = 'Paste destination';
+        if (subheader) subheader.textContent = 'Paste destination: ' + this._pasteDestinationContext.label + '. Enter location attributes below. Shelf U: use capacity (e.g. 4 for 4 positions) or range/list; we assign one position per pasted shelf.';
+        if (tabs) tabs.style.display = 'none';
+        if (capacityRow) capacityRow.style.display = 'none';
+        if (applyBtn) applyBtn.textContent = 'Paste';
+        show('physicalLayoutHierarchyPasteGroup', false);
+
+        const clipboard = this.state.clipboard;
+        const copyLevel = (clipboard && clipboard.copyLevel) ? clipboard.copyLevel : 'shelf';
+        const type = this._pasteDestinationContext.type;
+        const showHall = type === 'canvas' && (copyLevel === 'hall' || copyLevel === 'aisle' || copyLevel === 'rack' || copyLevel === 'shelf');
+        const showAisle = (type === 'canvas' || type === 'hall') && (copyLevel === 'hall' || copyLevel === 'aisle' || copyLevel === 'rack');
+        const showRack = (type === 'canvas' || type === 'hall' || type === 'aisle') && (copyLevel === 'hall' || copyLevel === 'aisle' || copyLevel === 'rack');
+        const showShelfUs = (type === 'canvas' || type === 'hall' || type === 'aisle' || type === 'rack' || type === 'shelf') && copyLevel === 'shelf';
+        show('physicalLayoutHallGroup', showHall);
+        show('physicalLayoutAisleGroup', showAisle);
+        show('physicalLayoutRackGroup', showRack);
+        show('physicalLayoutShelfUsGroup', showShelfUs);
+
+        const hallInput = document.getElementById('hallNames');
+        const aisleInput = document.getElementById('aisleNames');
+        const rackInput = document.getElementById('rackNumbers');
+        const shelfInput = document.getElementById('shelfUnitNumbers');
+        const ctx = this._pasteDestinationContext;
+        if (hallInput) {
+            if (showHall) hallInput.value = ctx.hall != null ? ctx.hall : '';
+            else hallInput.value = ctx.hall != null ? ctx.hall : (clipboard && clipboard.copyHall != null ? clipboard.copyHall : '');
+        }
+        if (aisleInput) {
+            if (showAisle) aisleInput.value = ctx.aisle != null ? ctx.aisle : '';
+            else aisleInput.value = ctx.aisle != null ? ctx.aisle : (clipboard && clipboard.copyAisle != null ? clipboard.copyAisle : '');
+        }
+        if (rackInput) {
+            if (showRack) rackInput.value = ctx.rack_num != null ? String(ctx.rack_num) : '1';
+            else rackInput.value = ctx.rack_num != null ? String(ctx.rack_num) : (clipboard && clipboard.copyRackNum != null ? String(clipboard.copyRackNum) : '1');
+        }
+        const shelfCount = clipboard && clipboard.shelves ? clipboard.shelves.length : 1;
+        if (shelfInput) {
+            if (showShelfUs) shelfInput.value = shelfCount > 1 ? '1-' + shelfCount : '1';
+            else shelfInput.value = clipboard && clipboard.shelves && clipboard.shelves.length > 0
+                ? clipboard.shelves.map(s => s.shelf_u != null ? s.shelf_u : 1).join(',')
+                : '1';
+        }
+
+        const manualContent = document.getElementById('manualLayoutContent');
+        if (manualContent) manualContent.style.display = 'block';
+        const uploadContent = document.getElementById('uploadLayoutContent');
+        if (uploadContent) uploadContent.style.display = 'none';
+
+        modal.classList.add('active');
+        modal.removeEventListener('click', this._handlePasteDestinationModalClick);
+        this._handlePasteDestinationModalClick = (e) => {
+            if (e.target.id === 'physicalLayoutModal') this.cancelPasteDestinationModal();
+        };
+        modal.addEventListener('click', this._handlePasteDestinationModalClick);
+    }
+
+    /**
+     * Parse paste destination inputs (from paste modal) into { hall, aisle, rack_num, rack_numbers, shelf_u_list }.
+     * Anything at or above the ceiling (paste target) is taken from _pasteDestinationContext; only levels below
+     * the ceiling are read from inputs. rack_numbers is the full list when user enters multiple racks (e.g. "1,2").
+     */
+    _parsePasteDestinationInputs() {
+        const ctx = this._pasteDestinationContext || { type: 'canvas' };
+        const parseOneText = (id) => {
+            const el = document.getElementById(id);
+            if (!el) return '';
+            const raw = this.parseFlexibleInput((el.value || '').trim());
+            return raw.length > 0 ? String(raw[0]) : '';
+        };
+        const parseOneNumber = (id) => {
+            const el = document.getElementById(id);
+            if (!el) return null;
+            const raw = this.parseFlexibleInput((el.value || '').trim());
+            if (raw.length === 0) return null;
+            const first = raw[0];
+            return typeof first === 'number' ? first : parseInt(first, 10) || null;
+        };
+        const parseRackNumbersList = () => {
+            const el = document.getElementById('rackNumbers');
+            if (!el) return [];
+            const raw = this.parseFlexibleInput((el.value || '').trim());
+            return raw.map(x => (typeof x === 'number' ? x : parseInt(x, 10) || 1));
+        };
+        const parseShelfUList = () => {
+            const el = document.getElementById('shelfUnitNumbers');
+            if (!el) return [];
+            const raw = this.parseFlexibleInput((el.value || '').trim());
+            return raw.map(x => (typeof x === 'number' ? x : parseInt(x, 10) || 1));
+        };
+
+        let hall, aisle, rackNum;
+        let rackNumbersList;
+        if (ctx.type === 'canvas' || ctx.type === 'hall') {
+            hall = ctx.type === 'canvas' ? parseOneText('hallNames') : (ctx.hall != null ? ctx.hall : '');
+            aisle = parseOneText('aisleNames');
+            rackNum = parseOneNumber('rackNumbers');
+            rackNumbersList = parseRackNumbersList();
+        } else if (ctx.type === 'aisle') {
+            hall = ctx.hall != null ? ctx.hall : '';
+            aisle = ctx.aisle != null ? ctx.aisle : '';
+            rackNum = parseOneNumber('rackNumbers');
+            rackNumbersList = parseRackNumbersList();
+        } else {
+            hall = ctx.hall != null ? ctx.hall : '';
+            aisle = ctx.aisle != null ? ctx.aisle : '';
+            rackNum = ctx.rack_num != null ? ctx.rack_num : parseOneNumber('rackNumbers');
+            rackNumbersList = (ctx.rack_num != null ? [ctx.rack_num] : parseRackNumbersList());
+        }
+        const shelfUList = parseShelfUList();
+        return {
+            hall,
+            aisle,
+            rack_num: rackNum != null ? rackNum : 1,
+            rack_numbers: rackNumbersList.length > 0 ? rackNumbersList : [1],
+            shelf_u_list: shelfUList
+        };
+    }
+
+    /**
+     * Build per-shelf (rack_num, shelf_u) assignments using the same for-loop order as Apply physical layout:
+     * outer loop rack numbers, inner loop shelf U (rack × shelf_u). Ensures at least count slots by expanding
+     * shelf_u_list if needed, then takes first count slots.
+     */
+    _buildPasteShelfAssignments(rackNumbers, shelfUList, count) {
+        if (count <= 0 || !rackNumbers.length) return [];
+        const racks = rackNumbers;
+        const minShelfULength = Math.ceil(count / racks.length);
+        const shelfU = this._normalizePasteShelfUList(shelfUList, minShelfULength);
+        const slots = [];
+        for (let r = 0; r < racks.length; r++) {
+            for (let u = 0; u < shelfU.length; u++) {
+                slots.push({ rack_num: racks[r], shelf_u: shelfU[u] });
+            }
+        }
+        return slots.slice(0, count);
+    }
+
+    /**
+     * Expand or trim shelf_u_list to exactly count values so paste has one position per shelf.
+     * - Empty: use [1, 2, ..., count].
+     * - Single number: treat as starting U, use [start, start+1, ..., start+count-1].
+     * - Capacity (e.g. "4" parsed as [1,2,3,4]): take first count values.
+     * - Short list: extend by max+1, max+2, ... until length is count.
+     */
+    _normalizePasteShelfUList(shelfUList, count) {
+        if (count <= 0) return [];
+        if (shelfUList.length >= count) {
+            return shelfUList.slice(0, count);
+        }
+        if (shelfUList.length === 0) {
+            const out = [];
+            for (let u = 1; u <= count; u++) out.push(u);
+            return out;
+        }
+        if (shelfUList.length === 1) {
+            const start = shelfUList[0];
+            const out = [];
+            for (let i = 0; i < count; i++) out.push(start + i);
+            return out;
+        }
+        const out = shelfUList.slice();
+        const max = Math.max.apply(null, out);
+        while (out.length < count) {
+            out.push(max + (out.length - shelfUList.length + 1));
+        }
+        return out;
+    }
+
+    /**
+     * Apply paste destination (Paste button in paste modal). Location mode only; hierarchy
+     * mode pastes directly into the selected graph instance with no modal.
+     */
+    applyPasteDestination() {
+        const clipboard = this.state.clipboard;
+        if (!clipboard) {
+            this.showExportStatus('Nothing to paste.', 'warning');
+            return;
+        }
+
+        const destination = this._parsePasteDestinationInputs();
+        const count = clipboard && clipboard.shelves ? clipboard.shelves.length : 0;
+        if (count === 0) {
+            this.showExportStatus('Nothing to paste.', 'warning');
+            return;
+        }
+        const copyLevel = (clipboard && clipboard.copyLevel) ? clipboard.copyLevel : 'shelf';
+        if (copyLevel === 'hall' || copyLevel === 'aisle') {
+            destination.shelf_assignments = clipboard.shelves.map(s => ({
+                rack_num: s.rack_num != null ? s.rack_num : 1,
+                shelf_u: s.shelf_u != null ? s.shelf_u : 1
+            }));
+        } else if (copyLevel === 'rack') {
+            const shelfUFromClipboard = clipboard.shelves.map(s => (s.shelf_u != null ? s.shelf_u : 1));
+            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, shelfUFromClipboard, count);
+        } else {
+            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, destination.shelf_u_list, count);
+        }
+        const result = this.locationModule.pasteFromClipboard(destination);
+        this.cancelPasteDestinationModal();
+        if (result.success) {
+            this.showExportStatus(result.message, 'success');
+            window.updateDeleteButtonState?.();
+        } else if (result.message) {
+            this.showExportStatus(result.message, 'warning');
+        }
+    }
+
+    /**
+     * Reset physical layout modal to default (hide hierarchy paste group, show location groups).
+     */
+    _resetPhysicalLayoutModalToDefault() {
+        const hierarchyGroup = document.getElementById('physicalLayoutHierarchyPasteGroup');
+        if (hierarchyGroup) hierarchyGroup.style.display = 'none';
+        const show = (id, visible) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = visible ? 'block' : 'none';
+        };
+        show('physicalLayoutHallGroup', true);
+        show('physicalLayoutAisleGroup', true);
+        show('physicalLayoutRackGroup', true);
+        show('physicalLayoutShelfUsGroup', true);
+        const header = document.getElementById('physicalLayoutModalHeader');
+        const subheader = document.getElementById('physicalLayoutModalSubheader');
+        if (header) header.textContent = '📍 Specify Physical Layout';
+        if (subheader) subheader.textContent = 'Choose how to assign physical locations to all nodes: upload a deployment descriptor or define ranges manually.';
+    }
+
+    /**
+     * Cancel paste destination modal (close without pasting).
+     */
+    cancelPasteDestinationModal() {
+        const modal = document.getElementById('physicalLayoutModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.removeEventListener('click', this._handlePasteDestinationModalClick);
+        }
+        this._pasteDestinationContext = null;
+        this._resetPhysicalLayoutModalToDefault();
+    }
+
+    /**
      * Cancel physical layout modal (close without applying)
      * Stay in hierarchy mode - don't switch to physical layout
      */
     cancelPhysicalLayoutModal() {
+        if (this._physicalLayoutModalMode === 'pasteDestination') {
+            this.cancelPasteDestinationModal();
+            return;
+        }
         console.log('cancelPhysicalLayoutModal called - staying in hierarchy mode');
         const modal = document.getElementById('physicalLayoutModal');
         if (modal) {
             modal.classList.remove('active');
             modal.removeEventListener('click', (e) => this.handlePhysicalLayoutModalClick(e));
         }
+        this._resetPhysicalLayoutModalToDefault();
 
-        // Make sure we stay in hierarchy mode
         const currentMode = this.state.mode;
         if (currentMode !== 'hierarchy') {
-            // setVisualizationMode is a global function, will be called from wrapper
             window.setVisualizationMode?.('hierarchy');
             this.updateModeIndicator();
         }
-
         this.showExportStatus('Physical layout configuration cancelled', 'info');
+    }
+
+    /**
+     * Apply button action for the shared physical layout modal. Dispatches to paste or physical layout based on mode.
+     */
+    applyPhysicalLayoutModalAction() {
+        if (this._physicalLayoutModalMode === 'pasteDestination') {
+            this.applyPasteDestination();
+        } else {
+            this.applyPhysicalLayout();
+        }
     }
 
     /**
@@ -1120,6 +1400,32 @@ export class UIDisplayModule {
                 this.state.cy.elements().remove();
                 this.state.cy.add(data.elements);
 
+                // In location mode, ensure shelves with racking data are in hall/aisle/rack compound nodes
+                if (this.state.mode === 'location') {
+                    const existingRacks = this.state.cy.nodes('[type="rack"]');
+                    const shelfNodes = this.state.cy.nodes('[type="shelf"]');
+                    const shelvesWithLocation = shelfNodes.filter(shelf => {
+                        const d = shelf.data();
+                        return d.hall || d.aisle || (d.rack_num !== undefined && d.rack_num !== null);
+                    });
+                    const shelfUnderRack = (shelf) => {
+                        let node = shelf;
+                        while (node.length) {
+                            const parent = node.parent();
+                            if (parent.length === 0) break;
+                            if (parent.data('type') === 'rack') return true;
+                            node = parent;
+                        }
+                        return false;
+                    };
+                    const needRebuild = shelvesWithLocation.length > 0 && (existingRacks.length === 0 || shelvesWithLocation.some(s => !shelfUnderRack(s)));
+                    if (needRebuild) {
+                        this.locationModule.rebuildLocationViewFromCurrentGraph();
+                    } else if (existingRacks.length > 0) {
+                        this.locationModule.calculateLayout();
+                    }
+                }
+
                 // Apply drag restrictions
                 this.commonModule.applyDragRestrictions();
 
@@ -1135,6 +1441,8 @@ export class UIDisplayModule {
                     // Show container after initialization completes
                     if (cyContainer) {
                         cyContainer.style.visibility = 'visible';
+                        cyContainer.style.opacity = '1';
+                        cyContainer.style.display = 'block';
                     }
                 }, 50);
             } else {
@@ -1157,7 +1465,6 @@ export class UIDisplayModule {
                     },
                     minZoom: 0.1,
                     maxZoom: 5,
-                    wheelSensitivity: 0.2,
                     autoungrabify: false,
                     autounselectify: false,
                     autolock: false,
@@ -1205,23 +1512,33 @@ export class UIDisplayModule {
                         this.hierarchyModule.recalculateHostIndicesForTemplates();
                     }
                 } else {
-                    // Location mode - check if racks exist, if not create them from shelf location data (like switchMode does)
+                    // Location mode: ensure shelves with racking info (hall/aisle/rack_num) are inside hall/aisle/rack compound nodes.
+                    // Rebuild from shelf data when there are no racks, or when any shelf with location is not under a rack.
                     const existingRacks = this.state.cy.nodes('[type="rack"]');
                     const shelfNodes = this.state.cy.nodes('[type="shelf"]');
                     const shelvesWithLocation = shelfNodes.filter(shelf => {
                         const data = shelf.data();
                         return data.hall || data.aisle || (data.rack_num !== undefined && data.rack_num !== null);
                     });
+                    const shelfUnderRack = (shelf) => {
+                        let node = shelf;
+                        while (node.length) {
+                            const parent = node.parent();
+                            if (parent.length === 0) break;
+                            if (parent.data('type') === 'rack') return true;
+                            node = parent;
+                        }
+                        return false;
+                    };
+                    const shelvesWithLocationNotUnderRack = shelvesWithLocation.filter(s => !shelfUnderRack(s));
 
-                    // If we have shelves with location data but no racks, create racks (like switchMode does)
-                    if (existingRacks.length === 0 && shelvesWithLocation.length > 0) {
-                        console.log('[initVisualization] No racks found but shelves have location data - creating racks like switchMode does');
-                        // Call switchMode to rebuild with proper hall/aisle/rack structure
-                        this.locationModule.switchMode();
-                        return; // switchMode handles everything including calculateLayout and resetLayout
+                    if (shelvesWithLocation.length > 0 && (existingRacks.length === 0 || shelvesWithLocationNotUnderRack.length > 0)) {
+                        console.log('[initVisualization] Shelves have racking data but are not in hall/aisle/rack - rebuilding location view');
+                        this.locationModule.rebuildLocationViewFromCurrentGraph();
+                        return; // rebuild handles layout and styling
                     }
 
-                    // Racks already exist or no location data - use normal flow
+                    // Racks exist and all shelves with location are under them - use normal flow
                     // calculateLayout() creates the hall/aisle nodes, resetLayout() does final positioning and cleanup
                     this.locationModule.calculateLayout();
 
@@ -1241,11 +1558,14 @@ export class UIDisplayModule {
                     this.state.cy.fit(null, 50);
                     this.state.cy.center();
                     this.state.cy.forceRender();
-                    
+                    this.saveDefaultLayout();
+
                     // Show container after fit completes (hierarchy mode)
                     const cyContainer = document.getElementById('cy');
                     if (cyContainer) {
                         cyContainer.style.visibility = 'visible';
+                        cyContainer.style.opacity = '1';
+                        cyContainer.style.display = 'block';
                     }
                 }
 
@@ -1267,17 +1587,42 @@ export class UIDisplayModule {
             // This should rarely be needed since location mode shows in calculateLayout and hierarchy mode shows after fit
             setTimeout(() => {
                 const cyContainer = document.getElementById('cy');
-                if (cyContainer && cyContainer.style.visibility === 'hidden') {
-                    console.log('[initVisualization] Fallback: showing container after timeout');
-                    // Ensure fit is applied even in fallback
-                    if (this.state.cy) {
-                        this.state.cy.fit(null, 50);
-                        this.state.cy.center();
-                        this.state.cy.forceRender();
+                if (cyContainer) {
+                    const computedStyle = window.getComputedStyle(cyContainer);
+                    const isHidden = cyContainer.style.visibility === 'hidden' ||
+                        computedStyle.visibility === 'hidden' ||
+                        computedStyle.opacity === '0' ||
+                        computedStyle.display === 'none';
+
+                    if (isHidden) {
+                        console.log('[initVisualization] Fallback: showing container after timeout - was hidden');
+                        // Ensure fit is applied even in fallback
+                        if (this.state.cy) {
+                            this.state.cy.fit(null, 50);
+                            this.state.cy.center();
+                            this.state.cy.forceRender();
+                        }
+                        // Make sure container is fully visible
+                        cyContainer.style.visibility = 'visible';
+                        cyContainer.style.opacity = '1';
+                        cyContainer.style.display = 'block';
                     }
-                    cyContainer.style.visibility = 'visible';
                 }
             }, 1500);
+
+            // Additional safety check: ensure container is visible after a longer timeout
+            setTimeout(() => {
+                const cyContainer = document.getElementById('cy');
+                if (cyContainer) {
+                    const computedStyle = window.getComputedStyle(cyContainer);
+                    if (computedStyle.visibility === 'hidden' || computedStyle.opacity === '0' || computedStyle.display === 'none') {
+                        console.warn('[initVisualization] Container still hidden after 3s - forcing visibility');
+                        cyContainer.style.visibility = 'visible';
+                        cyContainer.style.opacity = '1';
+                        cyContainer.style.display = 'block';
+                    }
+                }
+            }, 3000);
 
             // Log Cytoscape instance status (state.cy should be set by this point)
             if (this.state.cy) {
@@ -1304,6 +1649,8 @@ export class UIDisplayModule {
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer) {
                     cyContainer.style.visibility = 'visible';
+                    cyContainer.style.opacity = '1';
+                    cyContainer.style.display = 'block';
                 }
             }, 100);
 
@@ -1337,7 +1684,47 @@ export class UIDisplayModule {
     }
 
     /**
-     * Recalculate layout based on current visualization mode and current node data
+     * Save current node positions as the default layout for current mode.
+     * Layout is fully calculable (shelves, racks, aisles, halls); no separation pass.
+     */
+    saveDefaultLayout() {
+        if (!this.state.cy) return;
+        const mode = this.state.mode;
+        if (!this.state.layout[mode]) {
+            this.state.layout[mode] = new Map();
+        }
+        const map = this.state.layout[mode];
+        map.clear();
+        this.state.cy.nodes().forEach((node) => {
+            const pos = node.position();
+            map.set(node.id(), { x: pos.x, y: pos.y });
+        });
+    }
+
+    /**
+     * Restore default positions for current mode. Returns true if all current nodes had saved positions.
+     */
+    restoreDefaultLayout() {
+        if (!this.state.cy) return false;
+        const mode = this.state.mode;
+        const map = this.state.layout[mode];
+        if (!map || map.size === 0) return false;
+        const nodes = this.state.cy.nodes();
+        let allFound = true;
+        nodes.forEach((node) => {
+            const pos = map.get(node.id());
+            if (pos != null) {
+                node.position(pos);
+            } else {
+                allFound = false;
+            }
+        });
+        return allFound;
+    }
+
+    /**
+     * Reset layout: restore default positions (from init / full expansion) when available.
+     * Recalculation runs only when no saved default exists or structure changed (add/move/delete).
      */
     resetLayout() {
         if (!this.state.cy) {
@@ -1348,19 +1735,30 @@ export class UIDisplayModule {
         const mode = this.state.mode;
 
         if (mode === 'hierarchy') {
-            // Hierarchy mode - recalculate layout using JavaScript layout engine
-            this.showExportStatus('Recalculating hierarchical layout...', 'info');
+            const map = this.state.layout.hierarchy;
+            const canRestore = map && map.size > 0 && this.state.cy.nodes().length === map.size &&
+                this.state.cy.nodes().toArray().every((node) => map.has(node.id()));
 
-            // Use JavaScript layout engine for consistent spacing
-            this.hierarchyModule.calculateLayout();
-
-            // Fit viewport to show all nodes
-            this.state.cy.fit(null, 50);
-
-            // Apply drag restrictions
-            this.commonModule.applyDragRestrictions();
-
-            this.showExportStatus('Layout reset with consistent spacing', 'success');
+            if (canRestore) {
+                this.showExportStatus('Restoring default layout...', 'info');
+                this.restoreDefaultLayout();
+                if (this.commonModule.recalculateAllEdgeRouting) {
+                    this.commonModule.recalculateAllEdgeRouting();
+                }
+                this.commonModule.forceApplyCurveStyles();
+                this.state.cy.fit(null, 50);
+                this.commonModule.applyDragRestrictions();
+                this.state.cy.resize();
+                this.state.cy.forceRender();
+                this.showExportStatus('Default layout restored', 'success');
+            } else {
+                this.showExportStatus('Recalculating hierarchical layout...', 'info');
+                this.hierarchyModule.calculateLayout();
+                this.state.cy.fit(null, 50);
+                this.commonModule.applyDragRestrictions();
+                this.saveDefaultLayout();
+                this.showExportStatus('Layout reset with consistent spacing', 'success');
+            }
 
             setTimeout(() => {
                 const statusDiv = document.getElementById('rangeStatus');
@@ -1372,85 +1770,94 @@ export class UIDisplayModule {
             return;
         }
 
-        // Location mode - recalculate based on rack/shelf positions with hall/aisle grouping
-        // Get all racks and group by hall/aisle
+        // Location mode: restore default positions when available, else recalculate and save
         const racks = this.state.cy.nodes('[type="rack"]');
         if (racks.length === 0) {
-            // Check if canvas is empty - if so, silently return (no error needed)
             const allNodes = this.state.cy.nodes();
             if (allNodes.length === 0) {
-                // Empty canvas - this is expected, no error needed
                 return;
             }
-            // No racks but nodes exist - check if this is expected (8-column/hostname-based format)
             const fileFormat = this.state.data.currentData?.metadata?.file_format;
             if (fileFormat === 'hostname_based') {
-                // This is expected for 8-column format - no racks, just standalone shelves
-                // Silently return without showing alert
                 return;
             }
-            // For other formats, racks are expected - show warning
             alert('No rack hierarchy found.');
             return;
         }
 
-        // Show status message
+        const locMap = this.state.layout.location;
+        const locNodes = this.state.cy.nodes();
+        const canRestoreLocation = locMap && locMap.size > 0 && locNodes.length === locMap.size &&
+            locNodes.toArray().every((node) => locMap.has(node.id()));
+
+        if (canRestoreLocation) {
+            this.showExportStatus('Restoring default layout...', 'info');
+            this.restoreDefaultLayout();
+            if (this.commonModule.recalculateAllEdgeRouting) {
+                this.commonModule.recalculateAllEdgeRouting();
+            }
+            this.commonModule.forceApplyCurveStyles();
+            this.commonModule.applyDragRestrictions();
+            window.updatePortConnectionStatus?.();
+            if (window.locationModule && typeof window.locationModule.updateAllShelfLabels === 'function') {
+                window.locationModule.updateAllShelfLabels();
+            }
+            this.state.cy.fit(null, 50);
+            this.state.cy.resize();
+            this.state.cy.forceRender();
+            this.showExportStatus('Default layout restored', 'success');
+            setTimeout(() => {
+                const statusDiv = document.getElementById('rangeStatus');
+                if (statusDiv) statusDiv.textContent = '';
+            }, 2000);
+            return;
+        }
+
         this.showExportStatus('Recalculating location-based layout with hall/aisle grouping...', 'info');
 
-        // Group racks by hall -> aisle -> rack hierarchy
         const rackHierarchy = {};
         racks.forEach((rack) => {
             const hall = rack.data('hall') || 'unknown_hall';
             const aisle = rack.data('aisle') || 'unknown_aisle';
             const rackNum = parseInt(rack.data('rack_num')) || 0;
-
             if (!rackHierarchy[hall]) rackHierarchy[hall] = {};
             if (!rackHierarchy[hall][aisle]) rackHierarchy[hall][aisle] = [];
-
-            rackHierarchy[hall][aisle].push({
-                node: rack,
-                rack_num: rackNum
-            });
+            rackHierarchy[hall][aisle].push({ node: rack, rack_num: rackNum });
         });
 
-        // Sort racks within each aisle by rack number (descending - higher rack numbers to the left)
         Object.keys(rackHierarchy).forEach(hall => {
             Object.keys(rackHierarchy[hall]).forEach(aisle => {
-                rackHierarchy[hall][aisle].sort((a, b) => {
-                    return b.rack_num - a.rack_num; // Descending order - rack 2 to the left of rack 1
-                });
+                rackHierarchy[hall][aisle].sort((a, b) => b.rack_num - a.rack_num);
             });
         });
 
-        // Dynamically calculate layout constants based on actual node sizes
-        // Calculate average/max rack width
         let maxRackWidth = 0;
         racks.forEach((rack) => {
-            // Skip if rack has been removed or is invalid
             if (!rack || !rack.cy() || rack.removed()) return;
-
-            const bb = rack.boundingBox();
-            const width = bb.w;
+            const width = rack.boundingBox().w;
             if (width > maxRackWidth) maxRackWidth = width;
         });
         const rackWidth = maxRackWidth || LAYOUT_CONSTANTS.DEFAULT_RACK_WIDTH;
 
-        // Calculate average/max shelf height (including all descendants)
+        const collapsedGraphs = this.state.ui?.collapsedGraphs;
+        const shelfIsCollapsed = (s) => collapsedGraphs && collapsedGraphs instanceof Set && collapsedGraphs.has(s.id());
         let maxShelfHeight = 0;
         let totalShelfHeight = 0;
         let shelfCount = 0;
+        let hasCollapsedShelf = false;
 
         racks.forEach((rack) => {
-            // Skip if rack has been removed or is invalid
             if (!rack || !rack.cy() || rack.removed()) return;
-
             rack.children('[type="shelf"]').forEach((shelf) => {
-                // Skip if shelf has been removed or is invalid
                 if (!shelf || !shelf.cy() || shelf.removed()) return;
-
-                // Get bounding box of shelf including all its children
-                const bb = shelf.boundingBox({ includeLabels: false, includeOverlays: false });
-                const height = bb.h;
+                let height;
+                if (shelfIsCollapsed(shelf)) {
+                    hasCollapsedShelf = true;
+                    height = LAYOUT_CONSTANTS.COLLAPSED_SHELF_LAYOUT_MIN_HEIGHT;
+                } else {
+                    const nodeType = shelf.data('shelf_node_type') || 'WH_GALAXY';
+                    height = getShelfLayoutDimensions(nodeType).height;
+                }
                 totalShelfHeight += height;
                 shelfCount++;
                 if (height > maxShelfHeight) maxShelfHeight = height;
@@ -1458,112 +1865,73 @@ export class UIDisplayModule {
         });
 
         const avgShelfHeight = shelfCount > 0 ? totalShelfHeight / shelfCount : 300;
-
-        // Use max shelf height + 25% buffer for spacing to prevent any overlaps
-        const shelfSpacingBuffer = 1.25; // 25% extra space
+        const shelfSpacingBuffer = hasCollapsedShelf
+            ? LAYOUT_CONSTANTS.COLLAPSED_SHELF_LOCATION_SPACING_FACTOR
+            : LAYOUT_CONSTANTS.SHELF_VERTICAL_SPACING_FACTOR;
         const shelfSpacing = Math.max(maxShelfHeight, avgShelfHeight) * shelfSpacingBuffer;
-
-        // Rack spacing should be enough for the widest rack + buffer
         const rackSpacing = rackWidth * LAYOUT_CONSTANTS.RACK_SPACING_BUFFER - rackWidth;
-
-        // Calculate appropriate starting positions with padding
         const baseX = Math.max(200, rackWidth / 2 + LAYOUT_CONSTANTS.RACK_X_OFFSET);
         const baseY = Math.max(300, maxShelfHeight + LAYOUT_CONSTANTS.RACK_Y_OFFSET);
+        const hallSpacing = 1200;
+        const aisleSpacing = 1000;
 
-        // Stacked hall/aisle layout constants
-        const hallSpacing = 1200; // Vertical spacing between halls
-        const aisleSpacing = 1000; // Vertical spacing between aisles (no horizontal offset) - increased for better separation
-
-        // First pass: calculate all new positions and deltas BEFORE making any changes
         const positionUpdates = [];
-
         let hallIndex = 0;
         Object.keys(rackHierarchy).sort().forEach(hall => {
             const hallStartY = baseY + (hallIndex * hallSpacing);
-
             let aisleIndex = 0;
             Object.keys(rackHierarchy[hall]).sort().forEach(aisle => {
-                // Aisles are arranged vertically (no horizontal offset)
                 const aisleStartX = baseX;
                 const aisleStartY = hallStartY + (aisleIndex * aisleSpacing);
-
                 let rackX = aisleStartX;
                 rackHierarchy[hall][aisle].forEach((rackData) => {
                     const rack = rackData.node;
-
-                    // Calculate rack position (horizontal sequence within aisle)
-                    positionUpdates.push({
-                        node: rack,
-                        newPos: { x: rackX, y: aisleStartY }
-                    });
-
-                    // Update rack label to show hall/aisle
+                    positionUpdates.push({ node: rack, newPos: { x: rackX, y: aisleStartY } });
                     rack.data('label', `Rack ${rackData.rack_num} (${hall}-${aisle})`);
 
-                    // Get all shelves in this rack and sort by shelf_u (descending - higher U at top)
                     const shelves = rack.children('[type="shelf"]');
                     const sortedShelves = [];
                     shelves.forEach((shelf) => {
                         sortedShelves.push({
                             node: shelf,
-                            shelf_u: parseInt(shelf.data('shelf_u')) || 0,
-                            oldPos: { x: shelf.position().x, y: shelf.position().y }
+                            shelf_u: parseInt(shelf.data('shelf_u')) || 0
                         });
                     });
-                    sortedShelves.sort((a, b) => {
-                        return b.shelf_u - a.shelf_u; // Descending: higher shelf_u at top
-                    });
+                    sortedShelves.sort((a, b) => b.shelf_u - a.shelf_u);
 
-                    // Calculate vertical positions for shelves (centered in rack)
                     const numShelves = sortedShelves.length;
                     if (numShelves > 0) {
-                        const totalShelfHeight = (numShelves - 1) * shelfSpacing;
-                        const shelfStartY = aisleStartY - (totalShelfHeight / 2);
-
-                        // Calculate position for each shelf
+                        const totalShelfHeightRack = (numShelves - 1) * shelfSpacing;
+                        const shelfStartY = aisleStartY - (totalShelfHeightRack / 2);
                         sortedShelves.forEach((shelfData, shelfIndex) => {
                             const shelf = shelfData.node;
-                            const newShelfX = rackX;
-                            const newShelfY = shelfStartY + (shelfIndex * shelfSpacing);
-
-                            // Store shelf position update
                             positionUpdates.push({
                                 node: shelf,
-                                newPos: { x: newShelfX, y: newShelfY },
-                                needsChildArrangement: true // Flag to trigger tray/port arrangement
+                                newPos: { x: rackX, y: shelfStartY + (shelfIndex * shelfSpacing) },
+                                needsChildArrangement: true
                             });
                         });
                     }
-
-                    // Move to next rack position
                     rackX += rackWidth + rackSpacing;
                 });
-
                 aisleIndex++;
             });
-
             hallIndex++;
         });
 
-        // Second pass: apply all position updates in a batch
         this.state.cy.startBatch();
         positionUpdates.forEach((update) => {
             update.node.position(update.newPos);
-
-            // If this is a shelf that needs child arrangement, apply tray/port layout
             if (update.needsChildArrangement) {
                 this.commonModule.arrangeTraysAndPorts(update.node);
             }
         });
         this.state.cy.endBatch();
 
-        // Force a complete refresh of the cytoscape instance
         this.state.cy.resize();
         this.state.cy.forceRender();
 
-        // Small delay to ensure rendering is complete before fitting viewport and reapplying styles
         setTimeout(() => {
-            // Apply fcose layout to prevent overlaps in location mode
             const locationNodes = this.state.cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
             if (locationNodes.length > 0) {
                 try {
@@ -1571,81 +1939,55 @@ export class UIDisplayModule {
                         name: 'fcose',
                         eles: locationNodes,
                         quality: 'default',
-                        randomize: false,  // Use calculated positions as starting point
-                        animate: true,  // Animate for smooth transition when resetting layout
+                        randomize: false,
+                        animate: true,
                         animationDuration: 500,
                         fit: false,
                         nodeDimensionsIncludeLabels: true,
-                        nodeRepulsion: 4000,  // Slightly lower than hierarchy mode for tighter location-based layout
+                        nodeRepulsion: 4000,
                         idealEdgeLength: 150,
-                        nestingFactor: 0.15,  // Respect parent-child relationships (hall > aisle > rack)
-                        gravity: 0.1,  // Lower gravity to maintain manual layout structure
-                        numIter: 300,  // Fewer iterations since we're fine-tuning, not starting from scratch
+                        nestingFactor: 0.15,
+                        gravity: 0.1,
+                        numIter: 300,
                         stop: () => {
-                            // Re-arrange trays/ports after fcose moves shelves
-                            // This ensures tray/port positions are correct relative to new shelf positions
                             this.state.cy.nodes('[type="shelf"]').forEach(shelf => {
                                 this.commonModule.arrangeTraysAndPorts(shelf);
                             });
                             this.commonModule.applyDragRestrictions();
                             this.commonModule.forceApplyCurveStyles();
                             window.updatePortConnectionStatus?.();
-
-                            // Update all shelf labels to ensure they use the correct format
                             if (this.state.mode === 'location' && window.locationModule) {
                                 window.locationModule.updateAllShelfLabels();
                             }
-
-                            // Fit the view to show all nodes with padding
+                            this.saveDefaultLayout();
                             this.state.cy.fit(50);
                             this.state.cy.center();
                             this.state.cy.forceRender();
-
-                            // Show container after layout and coloring complete
                             const cyContainer = document.getElementById('cy');
-                            if (cyContainer) {
-                                cyContainer.style.visibility = 'visible';
-                            }
-
-                            // Show success message
+                            if (cyContainer) cyContainer.style.visibility = 'visible';
                             this.showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
                         }
                     });
                     if (layout) {
                         layout.run();
-                        return;  // Exit early, stop callback will handle the rest
+                        return;
                     }
                 } catch (e) {
                     console.warn('Error applying fcose layout in location mode:', e.message);
                 }
             }
 
-            // Fallback if fcose not available or no location nodes
-            // Reapply edge curve styles after repositioning
             this.commonModule.forceApplyCurveStyles();
-
-            // Update all shelf labels to ensure they use the correct format
             if (this.state.mode === 'location' && window.locationModule) {
                 window.locationModule.updateAllShelfLabels();
             }
-
-            // Update port connection status visual indicators
+            this.saveDefaultLayout();
             window.updatePortConnectionStatus?.();
-
-            // Fit the view to show all nodes with padding
             this.state.cy.fit(50);
             this.state.cy.center();
-
-            // Force another render to ensure everything is updated
             this.state.cy.forceRender();
-
-            // Show container after layout and coloring complete
             const cyContainer = document.getElementById('cy');
-            if (cyContainer) {
-                cyContainer.style.visibility = 'visible';
-            }
-
-            // Show success message
+            if (cyContainer) cyContainer.style.visibility = 'visible';
             this.showExportStatus('Layout reset successfully! All nodes repositioned based on hierarchy.', 'success');
         }, 100);
     }
@@ -1677,6 +2019,11 @@ export class UIDisplayModule {
 
         // Restructure the visualization based on the new mode
         if (newMode === 'location') {
+            // Expand the hierarchy fully before switching (avoids rerouted edges / missing nodes when building location graph)
+            if (this.commonModule && typeof this.commonModule.expandAllLevels === 'function') {
+                this.commonModule.expandAllLevels();
+            }
+
             // Check if we need to show the physical layout specification modal
             // This happens on first switch to location mode when nodes don't have physical locations
             const shelfNodes = this.state.cy.nodes('[type="shelf"]');

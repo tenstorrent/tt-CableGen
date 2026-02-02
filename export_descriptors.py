@@ -1337,8 +1337,7 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
                 raise ValueError(
                     f"Shelf node '{hostname}' is missing required host_index. "
                     f"This should not happen - all shelf nodes must have host_index set at creation "
-                    f"or via DFS recalculation. Please ensure nodes are created with host_index "
-                    f"or run DFS recalculation."
+                    f"or via DFS recalculation. If nodes were collapsed, try expanding the hierarchy and try again."
                 )
             
             # CRITICAL: Detect duplicate host_index values (Issue #3)
@@ -1367,10 +1366,11 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
             host_by_index[host_index] = (hostname, node_type)
     
     if not host_by_index:
-        # No valid hosts found
+        # No valid hosts found (e.g. payload missing shelf nodes when hierarchy was collapsed)
         raise ValueError(
             "No valid hosts found for export. "
-            "Hosts must have both hostname, node_type, and host_index defined."
+            "Hosts must have both hostname, node_type, and host_index defined. "
+            "If nodes were collapsed, try expanding the hierarchy and try again."
         )
     
     # Sort by host_index to maintain the indexed relationship
@@ -1672,10 +1672,15 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     for template_name, template_info in sorted_templates:
         graph_template = cluster_config_pb2.GraphTemplate()
         
-        # Add children
+        # Add children (deduplicate by name so lowest-level template has no duplicate node_ref)
+        seen_child_names = set()
         for child_info in template_info.get('children', []):
+            child_name = child_info.get('name')
+            if not child_name or child_name in seen_child_names:
+                continue
+            seen_child_names.add(child_name)
             child = graph_template.children.add()
-            child.name = child_info['name']
+            child.name = child_name
             
             if child_info.get('type') == 'node':
                 # Leaf node
@@ -2276,11 +2281,13 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id,
             child_name = child_data.get("child_name") or child_data.get("label") or child_data.get("id")
             children_by_name[child_name] = child_el
         
-        # Process children in template order
+        # Process children in template order (deduplicate by name so host_id is consecutive 0,1,2,...)
         children = []
+        seen_child_names = set()
         for template_child in template.children:
             child_name = template_child.name
-            if child_name in children_by_name:
+            if child_name in children_by_name and child_name not in seen_child_names:
+                seen_child_names.add(child_name)
                 children.append(children_by_name[child_name])
     else:
         # No template order available, use element_map order
@@ -2306,15 +2313,20 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id,
         
         if child_type == "shelf":
             # This is a leaf node - map it to a host_id
-            # Use child_name which is the template-relative name
+            # Use visualizer metadata host_index/host_id when present; otherwise fall back to counter
             child_name = child_data.get("child_name", child_label)
-            
-            
+            node_host_id = child_data.get("host_index")
+            if node_host_id is None:
+                node_host_id = child_data.get("host_id")
+            if node_host_id is not None:
+                mapping_host_id = int(node_host_id)
+            else:
+                mapping_host_id = host_id
+                host_id += 1
+
             child_mapping = cluster_config_pb2.ChildMapping()
-            child_mapping.host_id = host_id
+            child_mapping.host_id = mapping_host_id
             graph_instance.child_mappings[child_name].CopyFrom(child_mapping)
-            
-            host_id += 1
             
         else:
             # This is a hierarchical container - create a nested instance

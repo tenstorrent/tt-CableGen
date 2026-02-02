@@ -2,13 +2,15 @@
  * Notification Manager - Centralized notification/alert handling
  * Extracted from visualizer.js to separate UI concerns
  */
+import { MESSAGE_TYPE_STYLES } from '../config/constants.js';
+
 export class NotificationManager {
     constructor() {
         this.notificationTimer = null;
         this.banner = document.getElementById('notificationBanner');
         this.content = document.getElementById('notificationContent');
     }
-    
+
     /**
      * Show notification banner
      * @param {string} message - Message to display
@@ -42,7 +44,7 @@ export class NotificationManager {
             this.hide();
         }, dismissTime);
     }
-    
+
     /**
      * Hide notification banner
      */
@@ -61,7 +63,7 @@ export class NotificationManager {
             this.banner.style.display = 'none';
         }, 300);
     }
-    
+
     /**
      * Show error notification
      * @param {string} message - Error message
@@ -69,7 +71,7 @@ export class NotificationManager {
     error(message) {
         this.show(message, 'error');
     }
-    
+
     /**
      * Show success notification
      * @param {string} message - Success message
@@ -77,7 +79,7 @@ export class NotificationManager {
     success(message) {
         this.show(message, 'success');
     }
-    
+
     /**
      * Show warning notification
      * @param {string} message - Warning message
@@ -85,7 +87,7 @@ export class NotificationManager {
     warning(message) {
         this.show(message, 'warning');
     }
-    
+
     /**
      * Show info notification
      * @param {string} message - Info message
@@ -93,36 +95,13 @@ export class NotificationManager {
     info(message) {
         this.show(message, 'info');
     }
-    
+
     /**
      * Get styles for notification type
      * @private
      */
     _getStylesForType(type) {
-        const styles = {
-            success: {
-                backgroundColor: '#d4edda',
-                borderLeft: '4px solid #28a745',
-                color: '#155724'
-            },
-            error: {
-                backgroundColor: '#f8d7da',
-                borderLeft: '4px solid #dc3545',
-                color: '#721c24'
-            },
-            warning: {
-                backgroundColor: '#fff3cd',
-                borderLeft: '4px solid #ffc107',
-                color: '#856404'
-            },
-            info: {
-                backgroundColor: '#d1ecf1',
-                borderLeft: '4px solid #17a2b8',
-                color: '#0c5460'
-            }
-        };
-        
-        return styles[type] || styles.success;
+        return MESSAGE_TYPE_STYLES[type] || MESSAGE_TYPE_STYLES.success;
     }
 }
 

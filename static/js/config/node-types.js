@@ -92,7 +92,7 @@ export function initializeNodeConfigs(serverConfigs = null) {
         configCache = { ...NODE_TYPES };
         console.log('Using default node configurations');
     }
-    
+
     return configCache;
 }
 
@@ -111,10 +111,12 @@ export function initializeNodeConfigs(serverConfigs = null) {
  */
 export function getNodeConfig(nodeType) {
     if (!nodeType) return null;
-    
+    const str = String(nodeType).trim();
+    if (!str) return null;
+
     // Normalize: strip variation suffixes (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
     // Order matters: check longer suffixes first (_XY_TORUS before _X_TORUS/_Y_TORUS)
-    let normalized = nodeType;
+    let normalized = str;
     if (normalized.endsWith('_XY_TORUS')) {
         normalized = normalized.slice(0, -9); // Remove '_XY_TORUS' (9 chars)
     } else if (normalized.endsWith('_X_TORUS')) {
@@ -124,8 +126,14 @@ export function getNodeConfig(nodeType) {
     } else if (normalized.endsWith('_DEFAULT')) {
         normalized = normalized.slice(0, -8); // Remove '_DEFAULT' (8 chars)
     }
-    
-    return configCache[normalized] || null;
+
+    // Direct key (config keys are uppercase; server/CSV may send lowercase e.g. after secondary import)
+    if (configCache[normalized]) return configCache[normalized];
+    const keyUpper = normalized.toUpperCase();
+    if (configCache[keyUpper]) return configCache[keyUpper];
+    // Case-insensitive fallback for secondary-import node types (e.g. wh_galaxy, bh_galaxy)
+    const key = Object.keys(configCache).find((k) => k.toUpperCase() === keyUpper);
+    return key ? configCache[key] : null;
 }
 
 /**
@@ -190,5 +198,45 @@ export function getTotalPortCount(nodeType) {
     const config = getNodeConfig(nodeType);
     if (!config) return 0;
     return config.tray_count * config.ports_per_tray;
+}
+
+/**
+ * Uniform grid step so that center-to-center distance from any port to an adjacent port
+ * (above, below, left, right) is the same for any node type / tray layout.
+ * Derived spacing: traySpacing = STEP - trayHeight, portSpacing = STEP - portWidth.
+ */
+const UNIFORM_PORT_GRID_STEP = 70;
+
+/** Layout dimensions used by arrangeTraysAndPorts and getShelfLayoutDimensions */
+export const SHELF_LAYOUT_TRAY_HEIGHT = 60;
+export const SHELF_LAYOUT_TRAY_SPACING = UNIFORM_PORT_GRID_STEP - 60;   // 10
+export const SHELF_LAYOUT_PORT_WIDTH = 45;
+export const SHELF_LAYOUT_PORT_SPACING = UNIFORM_PORT_GRID_STEP - 45;   // 25
+export const SHELF_LAYOUT_EXTENT = 150;  // extent from center for tray block
+export const SHELF_LAYOUT_PORT_EXTENT = 120;
+/** Square port display size (same width and height); grid step unchanged */
+export const SHELF_LAYOUT_PORT_SIZE = 32;
+
+/**
+ * Get calculable layout dimensions for a shelf node type (for positioning, no bbox).
+ * Matches the extent used in arrangeTraysAndPorts so layout spacing avoids overlap.
+ *
+ * @param {string} nodeType - Shelf node type (e.g. WH_GALAXY, BH_GALAXY)
+ * @returns {{ width: number, height: number }}
+ */
+export function getShelfLayoutDimensions(nodeType) {
+    const config = getNodeConfig(nodeType);
+    if (!config) {
+        return { width: 300, height: 280 };
+    }
+    const { tray_count, ports_per_tray, tray_layout } = config;
+    const trayStep = UNIFORM_PORT_GRID_STEP;
+    const portStep = UNIFORM_PORT_GRID_STEP;
+    const widthExtent = 2 * SHELF_LAYOUT_PORT_EXTENT + Math.max(0, ports_per_tray - 1) * portStep;
+    const heightExtent = 2 * SHELF_LAYOUT_EXTENT + Math.max(0, tray_count - 1) * trayStep;
+    if (tray_layout === 'vertical') {
+        return { width: widthExtent, height: heightExtent };
+    }
+    return { width: heightExtent, height: widthExtent };
 }
 

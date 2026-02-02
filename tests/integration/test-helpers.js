@@ -204,8 +204,8 @@ print(json.dumps(visualization_data))`;
             throw new Error(`JSON parse failed: ${parseError.message}\nAttempted to parse (first 200 chars): ${preview}\nFull output length: ${trimmed.length}, JSON start: ${jsonStart}, JSON end: ${jsonEnd}`);
         }
     } catch (error) {
-        // Include the actual output in the error
-        const outputPreview = result.length > 500 ? result.substring(0, 500) + '...' : result;
+        const output = (error.stdout ?? error.stderr ?? error.message ?? '') || '';
+        const outputPreview = output.length > 500 ? output.substring(0, 500) + '...' : output;
         throw new Error(`Python import failed: ${error.message}\nOutput preview (first 500 chars): ${outputPreview}\n${error.stdout || ''}\n${error.stderr || ''}`);
     } finally {
         // Clean up temp script
@@ -450,6 +450,56 @@ original_print(result)`;
         if (fs.existsSync(tempScript)) {
             fs.unlinkSync(tempScript);
         }
+    }
+}
+
+/**
+ * Call Python export_flat_cabling_descriptor (same path used for cabling guide generation).
+ * Used to test that flat export works with no/incomplete location info.
+ *
+ * @param {Object} cytoscapeData - Cytoscape visualization data from JS
+ * @returns {string} Textproto content from Python flat cabling export
+ */
+export function callPythonExportFlatCabling(cytoscapeData) {
+    const tempDataFile = path.join(PROJECT_ROOT, '.test_export_flat_cabling_data.json');
+    const tempScript = path.join(PROJECT_ROOT, '.test_export_flat_cabling_script.py');
+
+    try {
+        fs.writeFileSync(tempDataFile, JSON.stringify(cytoscapeData));
+
+        const pythonScript = `import sys
+import json
+import builtins
+original_print = builtins.print
+def print_to_stderr(*args, **kwargs):
+    kwargs.setdefault('file', sys.stderr)
+    original_print(*args, **kwargs)
+builtins.print = print_to_stderr
+
+sys.path.insert(0, r'${PROJECT_ROOT.replace(/\\/g, '/')}')
+
+from export_descriptors import export_flat_cabling_descriptor
+
+with open(r'${tempDataFile.replace(/\\/g, '/')}', 'r') as f:
+    cytoscape_data = json.load(f)
+
+result = export_flat_cabling_descriptor(cytoscape_data)
+original_print(result)`;
+
+        fs.writeFileSync(tempScript, pythonScript);
+
+        const result = execSync(`python3 "${tempScript}"`, {
+            encoding: 'utf-8',
+            cwd: PROJECT_ROOT,
+            maxBuffer: 10 * 1024 * 1024
+        });
+
+        return result.trim();
+    } catch (error) {
+        throw new Error(`Python flat cabling export failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
+    } finally {
+        if (fs.existsSync(tempDataFile)) fs.unlinkSync(tempDataFile);
+        if (fs.existsSync(tempScript)) fs.unlinkSync(tempScript);
     }
 }
 

@@ -742,6 +742,7 @@
             from {
                 opacity: 0;
             }
+
             to {
                 opacity: 1;
             }
@@ -751,6 +752,7 @@
             from {
                 opacity: 1;
             }
+
             to {
                 opacity: 0;
             }
@@ -760,20 +762,26 @@
 
 <body>
     <!-- Cache refresh reminder splash notification -->
-    <div id="cacheRefreshSplash" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 20000; align-items: center; justify-content: center; pointer-events: none;">
-        <div style="background: white; border-radius: 12px; padding: 30px; max-width: 500px; margin: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: center;">
+    <div id="cacheRefreshSplash"
+        style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 20000; align-items: center; justify-content: center; pointer-events: none;">
+        <div
+            style="background: white; border-radius: 12px; padding: 30px; max-width: 500px; margin: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); text-align: center;">
             <div style="font-size: 48px; margin-bottom: 20px;">🔄</div>
             <h2 style="margin: 0 0 15px 0; color: #333; font-size: 24px;">Refresh Recommended</h2>
             <p style="margin: 0 0 25px 0; color: #666; font-size: 16px; line-height: 1.5;">
                 To ensure you're viewing the latest version of the site, please perform a hard refresh:
             </p>
-            <div style="background-color: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 25px; text-align: left;">
+            <div
+                style="background-color: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 25px; text-align: left;">
                 <div style="margin-bottom: 10px; font-weight: 600; color: #333;">Windows/Linux:</div>
-                <div style="color: #666; font-family: monospace; font-size: 14px; margin-bottom: 15px;">Ctrl + Shift + R</div>
+                <div style="color: #666; font-family: monospace; font-size: 14px; margin-bottom: 15px;">Ctrl + Shift + R
+                </div>
                 <div style="margin-bottom: 10px; font-weight: 600; color: #333;">Mac:</div>
                 <div style="color: #666; font-family: monospace; font-size: 14px;">Cmd + Shift + R</div>
             </div>
-            <button id="cacheRefreshDismiss" style="background-color: #007bff; color: white; border: none; border-radius: 6px; padding: 12px 30px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#0056b3'" onmouseout="this.style.backgroundColor='#007bff'">
+            <button id="cacheRefreshDismiss"
+                style="background-color: #007bff; color: white; border: none; border-radius: 6px; padding: 12px 30px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background-color 0.2s;"
+                onmouseover="this.style.backgroundColor='#0056b3'" onmouseout="this.style.backgroundColor='#007bff'">
                 Got it, thanks!
             </button>
         </div>
@@ -830,9 +838,9 @@
                     </p>
                 </div>
 
-                <!-- Tab Navigation -->
+                <!-- Tab Navigation (no tab selected on startup; both tab contents hidden until user clicks) -->
                 <div class="tab-navigation">
-                    <button class="tab-button active" id="locationTab">
+                    <button class="tab-button" id="locationTab">
                         📍 Physical Deployment
                         <span class="mode-badge csv-mode">CSV</span>
                     </button>
@@ -842,9 +850,9 @@
                     </button>
                 </div>
 
-                <!-- Flow Description Section (changes based on active tab) -->
+                <!-- Flow Description Section (changes based on active tab; hidden until a tab is selected) -->
                 <div id="flowDescriptionLocation"
-                    style="display: block; background-color: #f0f8ff; border: 1px solid #b3d9ff; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
+                    style="display: none; background-color: #f0f8ff; border: 1px solid #b3d9ff; border-radius: 6px; padding: 15px; margin: 15px 0; font-size: 13px; color: #333;">
                     <h4 style="margin: 0 0 10px 0; color: #0066cc; font-size: 14px;">📍 Location/Deployment Flow</h4>
                     <ul style="margin: 8px 0; padding-left: 25px; line-height: 1.6;">
                         <li><strong>Load CSV:</strong> Import existing cabling data with physical locations (hall,
@@ -993,6 +1001,23 @@
                                 detailed usage information.</strong>
                         </p>
                     </div>
+                </div>
+
+                <!-- Add another cabling guide (location mode only, persists so multiple guides can be imported) -->
+                <div id="addAnotherCablingGuideSection" class="location-mode-only"
+                    style="margin-bottom: 20px; padding: 15px; background-color: #f0f8ff; border: 2px dashed #007bff; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333; font-size: 14px;">➕ Add another cabling guide</h4>
+                    <p style="margin: 0 0 10px 0; font-size: 12px; color: #666;">
+                        Drag a CSV here or choose a file to merge into the current visualization.
+                    </p>
+                    <div class="file-input" style="margin: 10px 0;">
+                        <input type="file" id="addAnotherCablingGuideFile" accept=".csv" />
+                    </div>
+                    <button type="button" id="addAnotherCablingGuideBtn" class="upload-btn"
+                        style="width: 100%; padding: 10px; font-size: 14px;">
+                        📊 Add CSV to visualization
+                    </button>
+                    <div class="loading" id="loadingAddAnotherLocation" style="margin-top: 8px;">🔄 Processing...</div>
                 </div>
 
                 <!-- Visualization Mode Indicator with Toggle -->
@@ -1566,17 +1591,18 @@
             </div>
         </div>
 
-        <!-- Modal for physical layout specification -->
+        <!-- Modal for physical layout specification and paste destination (reused) -->
         <div class="modal-overlay" id="physicalLayoutModal">
             <div class="modal-content">
-                <div class="modal-header">📍 Specify Physical Layout</div>
-                <div class="modal-subheader">
+                <div class="modal-header" id="physicalLayoutModalHeader">📍 Specify Physical Layout</div>
+                <div class="modal-subheader" id="physicalLayoutModalSubheader">
                     Choose how to assign physical locations to all nodes: upload a deployment descriptor or define
                     ranges manually.
                 </div>
 
-                <!-- Tab selection for manual vs upload -->
-                <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd;">
+                <!-- Tab selection for manual vs upload (hidden when modal used for paste destination) -->
+                <div id="physicalLayoutModalTabs"
+                    style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd;">
                     <button class="layout-tab-btn active" id="manualLayoutTab"
                         style="flex: 1; padding: 10px; background: none; border: none; border-bottom: 3px solid #007bff; cursor: pointer; font-weight: bold;">
                         📝 Manual Entry
@@ -1587,36 +1613,51 @@
                     </button>
                 </div>
 
-                <!-- Manual entry form -->
+                <!-- Manual entry form (shared by physical layout and paste destination) -->
                 <div id="manualLayoutContent" class="layout-tab-content">
-                    <div class="physical-layout-form">
+                    <!-- Hierarchy paste: parent graph and instance name (hidden when location paste or physical layout) -->
+                    <div class="physical-layout-form" id="physicalLayoutHierarchyPasteGroup" style="display: none;">
                         <div class="form-group">
+                            <label for="hierarchyPasteParentId">Paste under (parent graph):</label>
+                            <select id="hierarchyPasteParentId" class="form-input">
+                                <option value="">— Root (top level) —</option>
+                            </select>
+                            <small>Select a graph instance as parent, or paste at root.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="hierarchyPasteInstancePrefix">Instance name prefix (optional):</label>
+                            <input type="text" id="hierarchyPasteInstancePrefix" class="form-input" value="copy" placeholder="e.g. copy, my_cluster">
+                            <small>Used for root-level graph instance names (e.g. copy_0, copy_1).</small>
+                        </div>
+                    </div>
+                    <div class="physical-layout-form">
+                        <div class="form-group" id="physicalLayoutHallGroup">
                             <label for="hallNames">Hall Names (optional):</label>
                             <textarea id="hallNames" rows="2" class="form-input form-textarea"
                                 placeholder='e.g., Building-A, West-Wing. Default: "DataHall". Clear to omit hall level.'>DataHall</textarea>
                             <small>Comma-separated list or one per line. Default: "DataHall". Clear this field to omit
                                 the hall level.</small>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="physicalLayoutAisleGroup">
                             <label for="aisleNames">Aisle Names (optional):</label>
                             <input type="text" id="aisleNames" class="form-input" value="A"
                                 placeholder="e.g., A, B, C (leave empty to omit)">
                             <small>Comma-separated list or number (e.g., 5 for A-E). Leave empty to omit aisle
                                 level.</small>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="physicalLayoutRackGroup">
                             <label for="rackNumbers">Rack Numbers:</label>
                             <input type="text" id="rackNumbers" class="form-input" value="1-10"
                                 placeholder="e.g., 1-10 or 1,2,5,10,15">
                             <small>Range (e.g., 1-10) or comma-separated (e.g., 1, 2, 5, 10, 15)</small>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="physicalLayoutShelfUsGroup">
                             <label for="shelfUnitNumbers">Shelf U Numbers:</label>
                             <input type="text" id="shelfUnitNumbers" class="form-input" value="24,18,12,6"
                                 placeholder="e.g., 1-42 or 1,2,3,5,10">
                             <small>Range (e.g., 1-42) or comma-separated (e.g., 1, 2, 3, 5, 10)</small>
                         </div>
-                        <div class="layout-info">
+                        <div class="layout-info" id="physicalLayoutCapacityRow">
                             <strong>Total Capacity:</strong> <span id="totalCapacity">42 nodes</span>
                         </div>
                     </div>
@@ -1656,14 +1697,14 @@
         // Server-side injected node configurations
         // This ensures JavaScript always uses the same configs as Python
         window.SERVER_NODE_CONFIGS = {{ node_configs | tojson }};
-        
+
         // Preserve URL parameters through OAuth2 redirects
         // Store current URL parameters if they exist, so they can be restored after OAuth2 redirect
-        (function() {
+        (function () {
             try {
                 const urlParams = new URLSearchParams(window.location.search);
                 const fileParam = urlParams.get('file') || urlParams.get('url');
-                
+
                 // If we have file/url parameter, store it in sessionStorage
                 // This helps preserve it through OAuth2 redirects
                 if (fileParam) {
@@ -1671,7 +1712,7 @@
                     sessionStorage.setItem('preserved_url_params', currentUrl);
                     console.log('Stored URL parameters for OAuth2 redirect:', currentUrl);
                 }
-                
+
                 // Check if we need to restore URL parameters after OAuth2 redirect
                 const preservedParams = sessionStorage.getItem('preserved_url_params');
                 if (preservedParams && !fileParam && preservedParams.includes('file=')) {
@@ -1695,15 +1736,15 @@
                 console.warn('Could not preserve URL parameters:', e);
             }
         })();
-        
+
         // Cache busting: Check if we need to force a reload or show refresh reminder
         // This helps users with cached HTML get the latest version
-        (function() {
+        (function () {
             try {
                 const currentVersion = '{{ cache_version }}';
                 const storedVersion = sessionStorage.getItem('page_version');
                 const splashDismissed = sessionStorage.getItem('cache_refresh_splash_dismissed');
-                
+
                 // Function to show the cache refresh splash
                 function showCacheRefreshSplash() {
                     const splash = document.getElementById('cacheRefreshSplash');
@@ -1713,7 +1754,7 @@
                         splash.style.animation = 'fadeIn 0.3s ease-out';
                     }
                 }
-                
+
                 // Function to dismiss the splash
                 function dismissSplash() {
                     const splash = document.getElementById('cacheRefreshSplash');
@@ -1726,24 +1767,24 @@
                         sessionStorage.setItem('cache_refresh_splash_dismissed', 'true');
                     }
                 }
-                
+
                 // Set up dismiss button
                 const dismissBtn = document.getElementById('cacheRefreshDismiss');
                 if (dismissBtn) {
                     dismissBtn.addEventListener('click', dismissSplash);
                 }
-                
+
                 // Allow clicking outside the modal to dismiss
                 const splash = document.getElementById('cacheRefreshSplash');
                 if (splash) {
-                    splash.addEventListener('click', function(e) {
+                    splash.addEventListener('click', function (e) {
                         // Only dismiss if clicking the backdrop (not the modal content)
                         if (e.target === splash) {
                             dismissSplash();
                         }
                     });
                 }
-                
+
                 // If versions don't match, we're likely viewing a cached page
                 if (storedVersion && storedVersion !== currentVersion) {
                     console.log('Page version mismatch detected. Forcing hard reload to clear cache...');
@@ -1752,7 +1793,7 @@
                     window.location.reload(true);
                     return;
                 }
-                
+
                 // Show splash on first load of the session to remind users about hard refresh
                 // Only show if it hasn't been dismissed in this session
                 if (!splashDismissed) {
@@ -1761,7 +1802,7 @@
                         showCacheRefreshSplash();
                     }, 500);
                 }
-                
+
                 // Store current version for next page load comparison
                 if (currentVersion) {
                     sessionStorage.setItem('page_version', currentVersion);

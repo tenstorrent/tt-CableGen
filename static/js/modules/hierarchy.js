@@ -31,7 +31,7 @@ export class HierarchyModule {
         // First, traverse up to find the graph node with the containing template
         while (current && current.length > 0) {
             const currentData = current.data();
-            
+
             if (currentData.type === 'graph' && currentData.template_name === containingTemplateName) {
                 containingTemplateNode = current;
                 break;
@@ -912,7 +912,7 @@ export class HierarchyModule {
         // Aim for roughly square aspect ratio
         const numNodes = sortedTopLevel.length;
         let gridRows, gridCols;
-        
+
         if (numNodes <= 3) {
             // For 1-3 nodes, arrange vertically (single column)
             gridRows = numNodes;
@@ -922,7 +922,7 @@ export class HierarchyModule {
             // Calculate rows first (for column-major ordering in hierarchy mode)
             gridRows = Math.ceil(Math.sqrt(numNodes));
             gridCols = Math.ceil(numNodes / gridRows);
-            
+
             // Optimize to make it as square as possible
             // If the grid is too wide, try adding a row
             if (gridCols > gridRows * 1.2) {
@@ -934,11 +934,11 @@ export class HierarchyModule {
         // First pass: position nodes temporarily to get accurate dimensions
         sortedTopLevel.forEach((node, _index) => {
             // Temporary position for bounding box calculation
-            node.position({ 
-                x: LAYOUT_CONSTANTS.TOP_LEVEL_START_X, 
-                y: LAYOUT_CONSTANTS.TOP_LEVEL_START_Y 
+            node.position({
+                x: LAYOUT_CONSTANTS.TOP_LEVEL_START_X,
+                y: LAYOUT_CONSTANTS.TOP_LEVEL_START_Y
             });
-            
+
             // Recursively position children to get accurate dimensions
             this.common.positionGraphChildren(node);
         });
@@ -947,14 +947,28 @@ export class HierarchyModule {
         const rowHeights = new Array(gridRows).fill(0);
         const colWidths = new Array(gridCols).fill(0);
 
-        // First pass: calculate dimensions
+        // First pass: calculate dimensions (use larger minimum when node or any descendant is collapsed)
+        const collapsedGraphs = this.state.ui?.collapsedGraphs;
+        const hasCollapsedInSubtree = (n) => {
+            if (!collapsedGraphs || !(collapsedGraphs instanceof Set)) return false;
+            if (collapsedGraphs.has(n.id())) return true;
+            const descendants = n.descendants();
+            for (let i = 0; i < descendants.length; i++) {
+                if (collapsedGraphs.has(descendants[i].id())) return true;
+            }
+            return false;
+        };
         sortedTopLevel.forEach((node, index) => {
             const row = index % gridRows;  // Column-major: row changes faster
             const col = Math.floor(index / gridRows);  // Column-major: col changes slower
 
             const bbox = node.boundingBox();
-            const nodeWidth = (bbox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.15; // 15% spacing
-            const nodeHeight = (bbox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
+            let nodeWidth = (bbox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.15; // 15% spacing
+            let nodeHeight = (bbox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
+            if (hasCollapsedInSubtree(node)) {
+                nodeWidth = Math.max(nodeWidth, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_WIDTH);
+                nodeHeight = Math.max(nodeHeight, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_HEIGHT);
+            }
 
             colWidths[col] = Math.max(colWidths[col], nodeWidth);
             rowHeights[row] = Math.max(rowHeights[row], nodeHeight);
@@ -1072,7 +1086,7 @@ export class HierarchyModule {
 
         // Extract all tray and port data (preserve the full hierarchy structure)
         const trayPortData = [];
-        
+
         if (hasSavedHierarchyState) {
             // Extract tray and port data from saved hierarchy state
             const savedTrayElements = this.state.data.hierarchyModeState.elements.filter(el =>
@@ -1162,21 +1176,24 @@ export class HierarchyModule {
             });
         }
 
-        // Extract all connections (edges)
+        // Extract only original (port-to-port) connections; never include rerouted edges (they reference collapsed graph nodes)
         const connections = [];
         if (hasSavedHierarchyState) {
-            // Extract connections from saved hierarchy state
-            const savedEdgeElements = this.state.data.hierarchyModeState.elements.filter(el =>
-                el.data && el.data.source && el.data.target  // Edge elements have source and target
-            );
+            const savedEdgeElements = this.state.data.hierarchyModeState.elements.filter(el => {
+                if (!el.data || !el.data.source || !el.data.target) return false;
+                if (el.data.isRerouted === true) return false;
+                if (typeof el.data.id === 'string' && el.data.id.startsWith('rerouted_')) return false;
+                return true;
+            });
             connections.push(...savedEdgeElements.map(edgeEl => ({
                 data: edgeEl.data,
                 classes: edgeEl.classes || []
             })));
         } else {
-            // Extract from current Cytoscape state
             this.state.cy.edges().forEach(edge => {
-                // Get all data fields from the edge
+                if (edge.data('isRerouted') === true) return;
+                const edgeId = edge.data('id') || edge.id();
+                if (typeof edgeId === 'string' && edgeId.startsWith('rerouted_')) return;
                 const edgeData = {};
                 const data = edge.data();
                 for (const key in data) {
@@ -1366,17 +1383,17 @@ export class HierarchyModule {
                 restoredGraphElements.forEach(graphEl => {
                     const graphData = graphEl.data;
                     const graphId = graphData.id;
-                    
+
                     // Build logical path by traversing up the parent chain
                     const pathParts = [];
                     let currentGraph = graphEl;
-                    
+
                     while (currentGraph && currentGraph.data) {
                         const label = currentGraph.data.child_name || currentGraph.data.label;
                         if (label) {
                             pathParts.unshift(label);
                         }
-                        
+
                         // Find parent in restoredGraphElements
                         if (currentGraph.data.parent) {
                             const parentEl = restoredGraphElements.find(e =>
@@ -1391,7 +1408,7 @@ export class HierarchyModule {
                             break;
                         }
                     }
-                    
+
                     // Map logical path to graph ID (used by node association logic)
                     if (pathParts.length > 0) {
                         const pathStr = pathParts.join('/');
@@ -1830,23 +1847,23 @@ export class HierarchyModule {
                         const templateName = commonAncestor.data('template_name');
                         if (templateName) {
                             const currentTemplateName = edge.data('template_name');
-                            
+
                             // Only update if:
                             // 1. Template name is missing, OR
                             // 2. Template name doesn't match the calculated one (connection might be in wrong template)
                             // 3. Template name is "extracted_topology" but we have a logical topology (shouldn't happen, but fix it)
-                            const needsUpdate = !currentTemplateName || 
-                                              currentTemplateName !== templateName ||
-                                              (currentTemplateName === "extracted_topology" && hasLogicalTopology);
-                            
+                            const needsUpdate = !currentTemplateName ||
+                                currentTemplateName !== templateName ||
+                                (currentTemplateName === "extracted_topology" && hasLogicalTopology);
+
                             if (needsUpdate) {
                                 edge.data('template_name', templateName);
                                 edge.data('containerTemplate', templateName);
-                                
+
                                 // Update depth based on common ancestor depth
                                 const ancestorDepth = commonAncestor.data('depth') || 0;
                                 edge.data('depth', ancestorDepth);
-                                
+
                                 console.log(`[switchMode] Updated connection ${sourceId} -> ${targetId} template association: ${currentTemplateName || 'none'} -> ${templateName}`);
                             }
                         }
@@ -1885,6 +1902,11 @@ export class HierarchyModule {
         // Recolor connections for logical view (depth-based coloring)
         this.recolorConnections();
 
+        // Reapply rerouted edges for any collapsed nodes (state.ui.collapsedGraphs) so collapse state is visible after mode switch
+        if (this.common && typeof this.common.recalculateAllEdgeRouting === 'function') {
+            this.common.recalculateAllEdgeRouting();
+        }
+
         // Run preset layout first
         this.state.cy.layout({ name: 'preset' }).run();
 
@@ -1912,12 +1934,12 @@ export class HierarchyModule {
                             this.common.applyDragRestrictions();
                             // Update edge curve styles for hierarchy mode after layout completes
                             this.common.forceApplyCurveStyles();
-                            
+
                             // Fit the view to show all nodes with padding before showing container
                             this.state.cy.fit(null, 50);
                             this.state.cy.center();
                             this.state.cy.forceRender();
-                            
+
                             // Show container after layout, styling, and zoom complete
                             const cyContainer = document.getElementById('cy');
                             if (cyContainer) {
@@ -1931,12 +1953,12 @@ export class HierarchyModule {
                         console.warn('fcose layout extension not available, falling back to preset layout');
                         this.state.cy.layout({ name: 'preset' }).run();
                         this.common.forceApplyCurveStyles();
-                        
+
                         // Fit the view to show all nodes with padding before showing container
                         this.state.cy.fit(null, 50);
                         this.state.cy.center();
                         this.state.cy.forceRender();
-                        
+
                         // Show container after fallback layout and zoom complete
                         const cyContainer = document.getElementById('cy');
                         if (cyContainer) {
@@ -1947,12 +1969,12 @@ export class HierarchyModule {
                     console.warn('Error using fcose layout:', e.message, '- falling back to preset layout');
                     this.state.cy.layout({ name: 'preset' }).run();
                     this.common.forceApplyCurveStyles();
-                    
+
                     // Fit the view to show all nodes with padding before showing container
                     this.state.cy.fit(null, 50);
                     this.state.cy.center();
                     this.state.cy.forceRender();
-                    
+
                     // Show container after fallback layout and zoom complete
                     const cyContainer = document.getElementById('cy');
                     if (cyContainer) {
@@ -1962,12 +1984,12 @@ export class HierarchyModule {
             } else {
                 // No graph nodes, but still update curve styles
                 this.common.forceApplyCurveStyles();
-                
+
                 // Fit the view to show all nodes with padding before showing container
                 this.state.cy.fit(null, 50);
                 this.state.cy.center();
                 this.state.cy.forceRender();
-                
+
                 // Show container after styling and zoom complete
                 const cyContainer = document.getElementById('cy');
                 if (cyContainer) {
@@ -2097,7 +2119,7 @@ export class HierarchyModule {
             // Arrange trays and ports using common layout function
             const addedShelf = this.state.cy.getElementById(shelfId);
             this.common.arrangeTraysAndPorts(addedShelf);
-            
+
             // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
             // This handles connections like QSFP connections in DEFAULT variants and torus connections
             this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
@@ -2196,14 +2218,14 @@ export class HierarchyModule {
                 // Arrange trays and ports using common layout function
                 const addedShelf = this.state.cy.getElementById(shelfId);
                 this.common.arrangeTraysAndPorts(addedShelf);
-                
+
                 // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
                 // This handles connections like QSFP connections in DEFAULT variants and torus connections
                 this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
 
                 totalNodesAdded++;
             });
-            
+
             // Mark hierarchy structure as changed (forces re-import of deployment descriptor)
             this.state.data.hierarchyStructureChanged = true;
             console.log('[Hierarchy.addNode] Hierarchy structure changed (template instance) - deployment descriptor needs re-import');
@@ -2272,6 +2294,7 @@ export class HierarchyModule {
         // Apply drag restrictions and layout
         this.common.applyDragRestrictions();
         this.calculateLayout();
+        window.saveDefaultLayout?.();
 
         // Update the connection legend (in case template structure affects it)
         if (this.state.data.currentData) {
@@ -2289,6 +2312,330 @@ export class HierarchyModule {
                 window.showExportStatus?.(`Added node (${nodeType}) to ${parentLabel}`, 'success');
             }
         }
+    }
+
+    /**
+     * Check if pasting the given clipboard root graph templates under the given parent would create
+     * a circular dependency (self-reference or child template containing parent template).
+     * @param {Array} clipboardNodes - clipboard.nodes
+     * @param {string|null} parentId - Paste destination parent graph id, or null for root
+     * @returns {{ allowed: boolean, message?: string }}
+     */
+    /**
+     * Get the index of the pasted root that contains the given node index (by following parentIndex).
+     * @param {Array} nodes - clipboard.nodes
+     * @param {number} nodeIdx - Index of a node
+     * @returns {number|undefined} Root index or undefined
+     */
+    _getPastedRootIndexForNode(nodes, nodeIdx) {
+        if (nodeIdx < 0 || nodeIdx >= nodes.length) return undefined;
+        let current = nodeIdx;
+        const seen = new Set();
+        while (current >= 0 && !seen.has(current)) {
+            seen.add(current);
+            const parentIndex = nodes[current].parentIndex;
+            if (parentIndex === -1) return current;
+            current = parentIndex;
+        }
+        return undefined;
+    }
+
+    /**
+     * Get the index of the lowest common ancestor graph of two node indices in the clipboard.
+     * Used to decide if a connection is fully inside a template so we can skip ID-mapped edge.
+     * @param {Array} nodes - clipboard.nodes
+     * @param {number} nodeIdxA - Index of first node
+     * @param {number} nodeIdxB - Index of second node
+     * @returns {number|undefined} Index of LCA graph node or undefined
+     */
+    _getLowestCommonAncestorGraphIndex(nodes, nodeIdxA, nodeIdxB) {
+        const ancestorsOf = (idx) => {
+            const set = new Set();
+            let current = idx;
+            while (current >= 0) {
+                set.add(current);
+                current = nodes[current].parentIndex;
+            }
+            return set;
+        };
+        const ancestorsA = ancestorsOf(nodeIdxA);
+        const ancestorsB = ancestorsOf(nodeIdxB);
+        let lcaGraphIdx = undefined;
+        let maxDepth = -1;
+        ancestorsA.forEach((i) => {
+            if (!ancestorsB.has(i)) return;
+            if (nodes[i].type !== 'graph') return;
+            const depth = (nodes[i].data && nodes[i].data.depth != null) ? nodes[i].data.depth : -1;
+            if (depth > maxDepth) {
+                maxDepth = depth;
+                lcaGraphIdx = i;
+            }
+        });
+        return lcaGraphIdx;
+    }
+
+    /**
+     * Build pathMapping for a pasted graph subtree so template connections can be applied.
+     * pathMapping key: path from graph to node (child_name chain joined by '.'). value: new node id.
+     * Works for any graph index (root or nested).
+     * @param {Array} nodes - clipboard.nodes
+     * @param {number} rootIdx - Index of the graph in clipboard (root or nested)
+     * @param {Map} oldIdToNewId - Map old id -> new id
+     * @returns {Object} pathMapping
+     */
+    _buildPathMappingForPastedRoot(nodes, rootIdx, oldIdToNewId) {
+        const pathMapping = {};
+        const rootId = nodes[rootIdx].id;
+        const newRootId = oldIdToNewId.get(rootId);
+        if (newRootId == null) return pathMapping;
+
+        const pathFromRoot = new Map();
+        pathFromRoot.set(rootIdx, []);
+
+        for (let i = 0; i < nodes.length; i++) {
+            if (i === rootIdx) continue;
+            const parentIndex = nodes[i].parentIndex;
+            if (parentIndex < 0) continue;
+            const parentPath = pathFromRoot.get(parentIndex);
+            if (parentPath === undefined) continue;
+            const childName = (nodes[i].data && (nodes[i].data.child_name != null ? nodes[i].data.child_name : nodes[i].data.label)) || `node_${i}`;
+            const path = parentPath.concat([childName]);
+            pathFromRoot.set(i, path);
+            const newId = oldIdToNewId.get(nodes[i].id);
+            if (newId == null) continue;
+            const key = path.join('.');
+            pathMapping[key] = newId;
+            if (path.length === 1) {
+                pathMapping[path[0]] = newId;
+            }
+        }
+        return pathMapping;
+    }
+
+    _checkPasteCircularDependency(clipboardNodes, parentId) {
+        if (!parentId || !this.state.cy) {
+            return { allowed: true };
+        }
+        const parentNode = this.state.cy.getElementById(parentId);
+        if (!parentNode || parentNode.length === 0 || parentNode.data('type') !== 'graph') {
+            return { allowed: true };
+        }
+        const parentTemplateName = parentNode.data('template_name');
+        if (!parentTemplateName) {
+            return { allowed: true };
+        }
+
+        const rootGraphTemplates = new Set();
+        for (let i = 0; i < clipboardNodes.length; i++) {
+            const n = clipboardNodes[i];
+            if (n.parentIndex === -1 && n.type === 'graph' && n.data && n.data.template_name) {
+                rootGraphTemplates.add(n.data.template_name);
+            }
+        }
+
+        for (const pastedTemplateName of rootGraphTemplates) {
+            if (pastedTemplateName === parentTemplateName) {
+                return {
+                    allowed: false,
+                    message: `Cannot paste: self-referential dependency. Template "${pastedTemplateName}" cannot be pasted inside an instance of itself. Select a different parent or paste at root.`
+                };
+            }
+            if (this.templateContainsTemplate(pastedTemplateName, parentTemplateName)) {
+                return {
+                    allowed: false,
+                    message: `Cannot paste: circular dependency. Template "${pastedTemplateName}" contains "${parentTemplateName}". Pasting it under "${parentTemplateName}" would create a cycle. Select a different parent or paste at root.`
+                };
+            }
+        }
+        return { allowed: true };
+    }
+
+    /**
+     * Paste hierarchy selection from clipboard under the given parent (or at root).
+     * Validates circular dependencies (self-reference and template containment) before pasting.
+     * @param {Object} destination - { parentId: string|null, instanceNamePrefix?: string }
+     * @returns {{ success: boolean, message?: string }}
+     */
+    pasteFromClipboardHierarchy(destination = null) {
+        if (!this.state.cy || !this.state.clipboard || this.state.clipboard.mode !== 'hierarchy' || !this.state.clipboard.nodes || this.state.clipboard.nodes.length === 0) {
+            return { success: false, message: 'Nothing to paste. Copy graph instances or shelves first (Ctrl+C).' };
+        }
+
+        const clipboard = this.state.clipboard;
+        const nodes = clipboard.nodes;
+        const connections = clipboard.connections || [];
+        const parentId = (destination && destination.parentId != null) ? destination.parentId : null;
+        const prefix = (destination && destination.instanceNamePrefix != null && String(destination.instanceNamePrefix).trim() !== '') ? String(destination.instanceNamePrefix).trim() : 'copy';
+
+        const circularCheck = this._checkPasteCircularDependency(nodes, parentId);
+        if (!circularCheck.allowed) {
+            return { success: false, message: circularCheck.message };
+        }
+
+        const oldIdToNewId = new Map();
+        let rootGraphIndex = 0;
+        const nodesToAdd = [];
+        const edgesToAdd = [];
+
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const oldId = node.id;
+            const type = node.type;
+            const data = node.data || {};
+            const parentIndex = node.parentIndex;
+            const parentOldId = parentIndex >= 0 ? nodes[parentIndex].id : null;
+            const parentNewId = parentOldId != null ? oldIdToNewId.get(parentOldId) : null;
+            const effectiveParentId = parentIndex === -1 ? parentId : parentNewId;
+
+            if (type === 'graph') {
+                const label = data.child_name || data.label || `graph_${i}`;
+                const newId = effectiveParentId == null
+                    ? `graph_${prefix}_${rootGraphIndex++}`
+                    : `${effectiveParentId}_${label}`;
+                oldIdToNewId.set(oldId, newId);
+                const pos = { x: 0, y: 0 };
+                const templateColor = data.templateColor || this.common.getTemplateColor(data.template_name || '');
+                nodesToAdd.push({
+                    group: 'nodes',
+                    data: {
+                        id: newId,
+                        parent: effectiveParentId || undefined,
+                        label: data.label != null ? data.label : label,
+                        type: 'graph',
+                        template_name: data.template_name != null ? data.template_name : '',
+                        depth: data.depth != null ? data.depth : 0,
+                        child_name: data.child_name != null ? data.child_name : label,
+                        templateColor,
+                        instance_only: true
+                    },
+                    position: pos,
+                    classes: 'graph'
+                });
+            } else if (type === 'shelf') {
+                const hostIndex = this.state.data.globalHostCounter;
+                this.state.data.globalHostCounter++;
+                const childName = data.child_name || data.label || `node_${i}`;
+                const newShelfId = effectiveParentId == null ? String(hostIndex) : `${effectiveParentId}_${childName}`;
+                const nodeType = data.shelf_node_type || 'WH_GALAXY';
+                const config = getNodeConfig(nodeType);
+                if (!config) {
+                    return { success: false, message: `Unknown shelf type: ${nodeType}. Paste aborted.` };
+                }
+                oldIdToNewId.set(oldId, newShelfId);
+                const displayLabel = `${childName} (host_${hostIndex})`;
+                const logicalPath = data.logical_path && Array.isArray(data.logical_path) ? data.logical_path : [];
+                nodesToAdd.push({
+                    group: 'nodes',
+                    data: {
+                        id: newShelfId,
+                        parent: effectiveParentId || undefined,
+                        label: displayLabel,
+                        type: 'shelf',
+                        host_index: hostIndex,
+                        hostname: data.hostname != null ? data.hostname : childName,
+                        shelf_node_type: nodeType,
+                        child_name: childName,
+                        original_name: data.original_name != null ? data.original_name : childName,
+                        logical_path: logicalPath,
+                        instance_only: true
+                    },
+                    position: { x: 0, y: 0 },
+                    classes: 'shelf'
+                });
+                const location = {};
+                const trayPortNodes = this.common.nodeFactory.createTraysAndPorts(newShelfId, hostIndex, nodeType, location);
+                nodesToAdd.push(...trayPortNodes);
+            } else if (type === 'tray') {
+                const trayNum = data.tray != null ? data.tray : 1;
+                if (parentNewId == null) continue;
+                const newTrayId = `${parentNewId}:t${trayNum}`;
+                oldIdToNewId.set(oldId, newTrayId);
+            } else if (type === 'port') {
+                const portNum = data.port != null ? data.port : 1;
+                if (parentNewId == null) continue;
+                const newPortId = `${parentNewId}:p${portNum}`;
+                oldIdToNewId.set(oldId, newPortId);
+            }
+        }
+
+        this.state.cy.add(nodesToAdd);
+
+        const templates = this.state.data.availableGraphTemplates || {};
+        const graphsWithTemplateConnections = new Set();
+        const templateNameToFirstGraphIdx = new Map();
+
+        for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i].type !== 'graph') continue;
+            const templateName = nodes[i].data && nodes[i].data.template_name;
+            if (!templateName || !templates[templateName] || !templates[templateName].connections || templates[templateName].connections.length === 0) {
+                continue;
+            }
+            graphsWithTemplateConnections.add(i);
+            if (!templateNameToFirstGraphIdx.has(templateName)) {
+                templateNameToFirstGraphIdx.set(templateName, i);
+            }
+        }
+
+        templateNameToFirstGraphIdx.forEach((graphIdx, templateName) => {
+            const pathMapping = this._buildPathMappingForPastedRoot(nodes, graphIdx, oldIdToNewId);
+            const deferred = [
+                {
+                    graphLabel: '',
+                    connections: templates[templateName].connections,
+                    pathMapping,
+                    templateName
+                }
+            ];
+            this.processDeferredConnections(deferred, edgesToAdd);
+        });
+
+        connections.forEach((conn, idx) => {
+            const lcaGraphIdx = this._getLowestCommonAncestorGraphIndex(nodes, conn.sourceIndex, conn.targetIndex);
+            if (lcaGraphIdx !== undefined && graphsWithTemplateConnections.has(lcaGraphIdx)) {
+                return;
+            }
+            const srcOldId = nodes[conn.sourceIndex] && nodes[conn.sourceIndex].id;
+            const tgtOldId = nodes[conn.targetIndex] && nodes[conn.targetIndex].id;
+            if (srcOldId == null || tgtOldId == null) return;
+            const srcNewId = oldIdToNewId.get(srcOldId);
+            const tgtNewId = oldIdToNewId.get(tgtOldId);
+            if (srcNewId == null || tgtNewId == null) return;
+            const edgeId = `paste_conn_${Date.now()}_${idx}`;
+            const templateName = (nodes[conn.sourceIndex] && nodes[conn.sourceIndex].data && nodes[conn.sourceIndex].data.template_name) || '';
+            const depth = (nodes[conn.sourceIndex] && nodes[conn.sourceIndex].data && nodes[conn.sourceIndex].data.depth) != null ? nodes[conn.sourceIndex].data.depth : 0;
+            const connectionColor = this.common.getTemplateColor(templateName);
+            edgesToAdd.push({
+                group: 'edges',
+                data: {
+                    id: edgeId,
+                    source: srcNewId,
+                    target: tgtNewId,
+                    cableType: conn.cableType || 'QSFP_DD',
+                    cableLength: conn.cableLength || 'Unknown',
+                    color: connectionColor,
+                    containerTemplate: templateName,
+                    template_name: templateName,
+                    depth
+                }
+            });
+        });
+        if (edgesToAdd.length > 0) {
+            this.state.cy.add(edgesToAdd);
+        }
+
+        if (this.calculateLayout) {
+            this.calculateLayout();
+            window.saveDefaultLayout?.();
+        }
+        if (this.recolorConnections) {
+            this.recolorConnections();
+        }
+        const graphCount = nodes.filter(n => n.type === 'graph').length;
+        const shelfCount = nodes.filter(n => n.type === 'shelf').length;
+        return {
+            success: true,
+            message: `Pasted ${graphCount} graph(s), ${shelfCount} shelf(s), and ${connections.length} connection(s).`
+        };
     }
 
     /**
@@ -2616,7 +2963,7 @@ export class HierarchyModule {
                             const shelfNode = this.state.cy.getElementById(node.data.id);
                             if (shelfNode && shelfNode.length > 0) {
                                 this.common.arrangeTraysAndPorts(shelfNode);
-                                
+
                                 // Create internal connections for node type variations
                                 const nodeType = shelfNode.data('shelf_node_type');
                                 const hostIndex = shelfNode.data('host_index');
@@ -2653,6 +3000,7 @@ export class HierarchyModule {
                 // Defer layout calculation to ensure nodes are fully rendered and bounding boxes are accurate
                 setTimeout(() => {
                     this.calculateLayout();
+                    window.saveDefaultLayout?.();
                     this.state.cy.fit(null, 50);
 
                     // Apply curves and update status after layout is done
@@ -3247,6 +3595,7 @@ export class HierarchyModule {
             // Recalculate layout
             setTimeout(() => {
                 this.calculateLayout();
+                window.saveDefaultLayout?.();
                 this.state.cy.fit(null, 50);
 
                 setTimeout(() => {
@@ -3431,7 +3780,7 @@ export class HierarchyModule {
         // Delegate to common module for unified DFS traversal
         // This ensures consistent behavior across hierarchy and location modes
         this.common.recalculateHostIndices();
-        
+
         // Clear the flag
         this._recalculatingHostIndices = false;
     }
@@ -4260,7 +4609,7 @@ export class HierarchyModule {
             // Arrange trays and ports
             const addedShelf = this.state.cy.getElementById(shelfId);
             this.common.arrangeTraysAndPorts(addedShelf);
-            
+
             // Create internal connections for node type variations (DEFAULT, X_TORUS, Y_TORUS, XY_TORUS)
             // Use the full node type to determine which internal connections to create
             this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
@@ -4357,12 +4706,12 @@ export class HierarchyModule {
             if (!targetTemplate.children) {
                 targetTemplate.children = [];
             }
-            
+
             // Check if this child already exists to prevent duplicates
             const childExists = targetTemplate.children.some(
                 child => child.type === 'graph' && child.graph_template === graphTemplateName && child.name === childName
             );
-            
+
             if (!childExists) {
                 targetTemplate.children.push({
                     name: childName,
@@ -4382,12 +4731,12 @@ export class HierarchyModule {
                 if (!metaTargetTemplate.children) {
                     metaTargetTemplate.children = [];
                 }
-                
+
                 // Check if this child already exists in metadata to prevent duplicates
                 const metaChildExists = metaTargetTemplate.children.some(
                     child => child.type === 'graph' && child.graph_template === graphTemplateName && child.name === childName
                 );
-                
+
                 if (!metaChildExists) {
                     metaTargetTemplate.children.push({
                         name: childName,
@@ -4476,21 +4825,21 @@ export class HierarchyModule {
             console.log(`[moveGraphInstanceToTemplate] Found ${targetInstances.length} target instance(s) of template "${targetTemplateName}"`);
             console.log(`[moveGraphInstanceToTemplate] Moving template "${graphTemplateName}" (child name: "${childName}") into target template "${targetTemplateName}"`);
         }
-        
+
         // Log the structure of the template being moved to verify nested children are preserved
         const graphTemplate = this.state.data.availableGraphTemplates[graphTemplateName];
         if (!graphTemplate) {
             throw new Error(`Template "${graphTemplateName}" not found`);
         }
-        
-        const childTemplatesInMovedTemplate = graphTemplate.children ? 
+
+        const childTemplatesInMovedTemplate = graphTemplate.children ?
             graphTemplate.children.filter(c => c.type === 'graph').map(c => `${c.name} (${c.graph_template})`) : [];
         console.log(`[moveGraphInstanceToTemplate] Template "${graphTemplateName}" contains ${childTemplatesInMovedTemplate.length} child template(s): [${childTemplatesInMovedTemplate.join(', ')}]`);
-        
+
         // Log the current structure of the target template (if not root-instance)
         if (targetTemplateName !== null) {
             const targetTemplate = this.state.data.availableGraphTemplates[targetTemplateName];
-            const childTemplatesInTarget = targetTemplate && targetTemplate.children ? 
+            const childTemplatesInTarget = targetTemplate && targetTemplate.children ?
                 targetTemplate.children.filter(c => c.type === 'graph').map(c => `${c.name} (${c.graph_template})`) : [];
             console.log(`[moveGraphInstanceToTemplate] Target template "${targetTemplateName}" currently contains ${childTemplatesInTarget.length} child template(s): [${childTemplatesInTarget.join(', ')}]`);
         }
@@ -4602,7 +4951,7 @@ export class HierarchyModule {
 
         // Check if there are any internal connections
         const hasInternalConnections = this.state.cy.edges().some(edge => edge.data('is_internal') === true);
-        
+
         // Add "Node Connections" option if internal connections exist
         if (hasInternalConnections) {
             const nodeConnectionsOption = document.createElement('option');
@@ -5028,9 +5377,10 @@ export class HierarchyModule {
 
             // Recalculate layout
             this.calculateLayout();
+            window.saveDefaultLayout?.();
 
             if (window.showExportStatus && typeof window.showExportStatus === 'function') {
-                const successMessage = isMovingToRoot 
+                const successMessage = isMovingToRoot
                     ? `Successfully moved "${nodeLabel}" to root-instance`
                     : `Successfully moved "${nodeLabel}" to template "${targetTemplateName}"`;
                 window.showExportStatus(successMessage, 'success');
