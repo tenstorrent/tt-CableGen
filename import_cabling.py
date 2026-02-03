@@ -340,7 +340,7 @@ class NetworkCablingCytoscapeVisualizer:
                     if self.current_config["tray_layout"] == "vertical"
                     else "horizontal_sequence",
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -396,7 +396,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "dimensions": self.current_config["tray_dimensions"],
                     "position_type": tray_position,  # From config (same as CSV)
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -425,7 +425,7 @@ class NetworkCablingCytoscapeVisualizer:
                     if self.current_config["tray_layout"] == "vertical"
                     else "horizontal_sequence",
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -3254,7 +3254,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "source_hostname": src_node_name if src_node_name else f"host_{src_host_id}",
                     "destination_hostname": dst_node_name if dst_node_name else f"host_{dst_host_id}",
                 },
-                "classes": f"connection depth-{depth}",
+                "classes": "connection",
             }
             
             self.edges.append(edge_data)

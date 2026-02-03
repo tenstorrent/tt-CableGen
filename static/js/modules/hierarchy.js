@@ -1226,7 +1226,8 @@ export class HierarchyModule {
             });
         }
 
-        // Clear the entire graph
+        // Clear the entire graph (batch with add below for performance)
+        this.state.cy.startBatch();
         this.state.cy.elements().remove();
 
         // Rebuild visualization based ONLY on logical topology data
@@ -2558,6 +2559,7 @@ export class HierarchyModule {
             }
         }
 
+        this.state.cy.startBatch();
         this.state.cy.add(nodesToAdd);
 
         const templates = this.state.data.availableGraphTemplates || {};
@@ -2622,6 +2624,7 @@ export class HierarchyModule {
         if (edgesToAdd.length > 0) {
             this.state.cy.add(edgesToAdd);
         }
+        this.state.cy.endBatch();
 
         if (this.calculateLayout) {
             this.calculateLayout();
@@ -2867,8 +2870,9 @@ export class HierarchyModule {
                     node.data('template_name') === parentTemplateName
                 );
 
-                // Add the child graph to ALL instances of the parent template
+                // Add the child graph to ALL instances of the parent template (batched for performance)
                 let instancesUpdated = 0;
+                this.state.cy.startBatch();
                 parentTemplateInstances.forEach(parentInstance => {
                     const instanceId = parentInstance.id();
                     const _instanceLabel = parentInstance.data('label');
@@ -4885,7 +4889,8 @@ export class HierarchyModule {
             allDeferredConnections.push(...deferredConnections);
         });
 
-        // Add all nodes first
+        // Add all nodes first (batched with edges below)
+        this.state.cy.startBatch();
         this.state.cy.add(allNodesToAdd);
 
         // Update logical_path for shelf nodes now that parent graphs are in Cytoscape
@@ -4921,6 +4926,7 @@ export class HierarchyModule {
         // This ensures we check against the final state and avoid duplicates
         this.processDeferredConnections(allDeferredConnections, allEdgesToAdd);
         this.state.cy.add(allEdgesToAdd);
+        this.state.cy.endBatch();
 
         console.log(`[moveGraphInstanceToTemplate] Added ${allNodesToAdd.length} nodes and ${allEdgesToAdd.length} edges across ${targetInstances.length} target instance(s)`);
 

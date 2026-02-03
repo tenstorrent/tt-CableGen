@@ -9,11 +9,18 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { execSync } from 'child_process';
 
 // Get test data directory path - use test-data folder
 const TEST_DATA_DIR = path.join(process.cwd(), 'tests', 'integration', 'test-data');
 const PROJECT_ROOT = process.cwd();
+
+/** Unique temp path for parallel tests (avoids one test deleting another's file). */
+function uniqueTempPath(prefix, suffix) {
+    const id = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    return path.join(os.tmpdir(), `${prefix}_${id}${suffix}`);
+}
 
 /**
  * Load a test data file from the test-data directory
@@ -58,7 +65,7 @@ export function getTestDataFiles(extension, subdirectory = null) {
  */
 export function callPythonImport(filePath) {
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(TEST_DATA_DIR, filePath);
-    const tempScript = path.join(PROJECT_ROOT, '.test_import_script.py');
+    const tempScript = uniqueTempPath('test_import', '.py');
 
     const pythonScript = `import sys
 import json
@@ -222,8 +229,8 @@ print(json.dumps(visualization_data))`;
  * @returns {string} Textproto content from Python export
  */
 export function callPythonExport(cytoscapeData) {
-    const tempDataFile = path.join(PROJECT_ROOT, '.test_export_data.json');
-    const tempScript = path.join(PROJECT_ROOT, '.test_export_script.py');
+    const tempDataFile = uniqueTempPath('test_export_data', '.json');
+    const tempScript = uniqueTempPath('test_export', '.py');
 
     try {
         // Write cytoscape data to temp file
@@ -280,8 +287,8 @@ original_print(result)`;
  * @returns {Object} Object with nodeCount and connectionCount
  */
 export function parseExportedTextproto(textprotoContent) {
-    const tempTextprotoFile = path.join(PROJECT_ROOT, '.test_parse_textproto.textproto');
-    const tempScript = path.join(PROJECT_ROOT, '.test_parse_textproto_script.py');
+    const tempTextprotoFile = uniqueTempPath('test_parse_textproto', '.textproto');
+    const tempScript = uniqueTempPath('test_parse_textproto', '.py');
 
     try {
         // Write textproto to temp file
@@ -401,8 +408,8 @@ export function countConnections(cytoscapeData) {
  * @returns {string} Textproto content from Python export
  */
 export function callPythonExportDeployment(cytoscapeData) {
-    const tempDataFile = path.join(PROJECT_ROOT, '.test_export_deployment_data.json');
-    const tempScript = path.join(PROJECT_ROOT, '.test_export_deployment_script.py');
+    const tempDataFile = uniqueTempPath('test_export_deployment_data', '.json');
+    const tempScript = uniqueTempPath('test_export_deployment', '.py');
 
     try {
         // Write cytoscape data to temp file
@@ -461,8 +468,8 @@ original_print(result)`;
  * @returns {string} Textproto content from Python flat cabling export
  */
 export function callPythonExportFlatCabling(cytoscapeData) {
-    const tempDataFile = path.join(PROJECT_ROOT, '.test_export_flat_cabling_data.json');
-    const tempScript = path.join(PROJECT_ROOT, '.test_export_flat_cabling_script.py');
+    const tempDataFile = uniqueTempPath('test_export_flat_cabling_data', '.json');
+    const tempScript = uniqueTempPath('test_export_flat_cabling', '.py');
 
     try {
         fs.writeFileSync(tempDataFile, JSON.stringify(cytoscapeData));
@@ -528,8 +535,8 @@ export function extractHostnames(cytoscapeData) {
  * @returns {string} CSV content from Python export
  */
 export function callPythonExportCSV(cytoscapeData) {
-    const tempDataFile = path.join(PROJECT_ROOT, '.test_export_csv_data.json');
-    const tempScript = path.join(PROJECT_ROOT, '.test_export_csv_script.py');
+    const tempDataFile = uniqueTempPath('test_export_csv_data', '.json');
+    const tempScript = uniqueTempPath('test_export_csv', '.py');
 
     try {
         // Write cytoscape data to temp file
@@ -675,8 +682,8 @@ export function saveTestArtifact(testName, content, extension = 'textproto') {
  */
 export function parseDeploymentDescriptorHostnames(textprotoContent) {
     // Parse deployment descriptor using Python (more reliable than regex)
-    const tempTextproto = path.join(PROJECT_ROOT, '.test_deployment_descriptor.textproto');
-    const tempScript = path.join(PROJECT_ROOT, '.test_parse_deployment.py');
+    const tempTextproto = uniqueTempPath('test_deployment_descriptor', '.textproto');
+    const tempScript = uniqueTempPath('test_parse_deployment', '.py');
 
     // Write textproto content to temp file
     fs.writeFileSync(tempTextproto, textprotoContent, 'utf-8');

@@ -1395,10 +1395,12 @@ export class UIDisplayModule {
                     cyContainer.style.visibility = 'hidden';
                 }
 
-                // Clear existing elements and add new ones
+                // Clear existing elements and add new ones (batched for performance)
                 console.log('Clearing existing elements and adding new ones');
+                this.state.cy.startBatch();
                 this.state.cy.elements().remove();
                 this.state.cy.add(data.elements);
+                this.state.cy.endBatch();
 
                 // In location mode, ensure shelves with racking data are in hall/aisle/rack compound nodes
                 if (this.state.mode === 'location') {

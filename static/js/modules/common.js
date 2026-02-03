@@ -160,6 +160,7 @@ export class CommonModule {
     updatePortConnectionStatus() {
         if (!this.state.cy) return;
 
+        this.state.cy.startBatch();
         this.state.cy.nodes('.port').removeClass('connected-port');
 
         this.state.cy.edges().forEach(edge => {
@@ -176,6 +177,7 @@ export class CommonModule {
                 targetNode.addClass('connected-port');
             }
         });
+        this.state.cy.endBatch();
     }
 
     /**
@@ -185,6 +187,7 @@ export class CommonModule {
     applyDragRestrictions() {
         if (!this.state.cy) return;
 
+        this.state.cy.startBatch();
         this.state.cy.nodes().forEach(node => {
             const nodeType = node.data('type');
             if (nodeType === 'tray' || nodeType === 'port') {
@@ -193,6 +196,7 @@ export class CommonModule {
                 node.grabify();
             }
         });
+        this.state.cy.endBatch();
     }
 
     /**
@@ -773,7 +777,7 @@ export class CommonModule {
                     'text-background-padding': 3,  // Padding around text background for legibility
                     'text-border-width': 1,
                     'text-border-color': '#666666',
-                    'padding': 2,
+                    'padding': 8,
                     'z-index': 3000  // Above edges so labels appear above connections
                     // Removed fixed min-width and min-height to allow auto-sizing
                 }
@@ -797,8 +801,8 @@ export class CommonModule {
                     'font-weight': 'bold',
                     'color': '#000000',
                     // Default dimensions (will be overridden by common_arrangeTraysAndPorts based on layout)
-                    'width': '35px',
-                    'height': '25px',
+                    'width': '26px',
+                    'height': '26px',
                     'z-index': 0
                 }
             },
@@ -817,7 +821,7 @@ export class CommonModule {
                 style: { 'z-index': 4000, 'z-compound-depth': 'top' }
             },
 
-            // Collapsed compound node style - smaller size for compact view
+            // Collapsed compound node style - smaller size for compact view; top layer so they draw above connections
             {
                 selector: '.collapsed-node',
                 style: {
@@ -835,7 +839,8 @@ export class CommonModule {
                     'width': '120px',
                     'height': '60px',
                     'padding': 2,
-                    'z-index': 3000  // Above edges so labels appear above connections
+                    'z-compound-depth': 'top',
+                    'z-index': 3000  // Above edges (10) so collapsed nodes and labels appear above connections
                     // Removed min-width and min-height to allow full auto-sizing
                 }
             },
@@ -1476,6 +1481,31 @@ export class CommonModule {
             sourceNode: edge.source(),
             targetNode: edge.target()
         };
+    }
+
+    /**
+     * Count how many edges share the same (source, target) as the given edge.
+     * Use this to tell if a connection is the sole one between two nodes or one of many.
+     * @param {Object} edge - Cytoscape edge
+     * @returns {number} Number of edges between the same endpoint pair (>= 1)
+     */
+    getParallelEdgeCount(edge) {
+        if (!this.state.cy || !edge) return 0;
+        const sourceId = edge.source().id();
+        const targetId = edge.target().id();
+        const betweenSame = this.state.cy.edges().filter(
+            e => e.source().id() === sourceId && e.target().id() === targetId
+        );
+        return betweenSame.length;
+    }
+
+    /**
+     * Whether this edge is the only connection between its source and target.
+     * @param {Object} edge - Cytoscape edge
+     * @returns {boolean} True if exactly one edge connects this (source, target) pair
+     */
+    isSoleConnection(edge) {
+        return this.getParallelEdgeCount(edge) === 1;
     }
 
     /**
@@ -2854,509 +2884,88 @@ export class CommonModule {
     }
 
     /**
-     * Compute curve style properties for a single edge
+     * Compute curve style properties for a single edge.
+     * Rules (in order):
+     * 1. Port-to-port with different tray and different port → flat (control-point-distance: 0).
+     * 2. Sole connection between same pair → unbundled-bezier, distance-scaled control-point-distance.
+     * 3. One of many between same pair → bezier with fixed control-point-step-size.
      * @param {Object} edge - Cytoscape edge
-     * @param {number} controlPointStepSize - Base step size for curves
+     * @param {number} controlPointStepSize - Base step size for bezier curves
      * @returns {Object} Style properties to apply
      */
     _computeEdgeCurveStyle(edge, controlPointStepSize) {
-        let sourceNode, targetNode;
-        let isSameShelf = false;
-        const isRerouted = edge.data('isRerouted');
+        const source = edge.source();
+        const target = edge.target();
 
-        // Get the actual edge endpoints (for collapsed nodes, these are the collapsed nodes themselves)
-        const edgeSourceNode = edge.source();
-        const edgeTargetNode = edge.target();
-
-        // Check if either endpoint is collapsed (shelves or graphs can be collapsed)
-        const collapsedNodeIds = (this.state.ui && this.state.ui.collapsedGraphs instanceof Set)
-            ? this.state.ui.collapsedGraphs
-            : new Set();
-        const sourceIsCollapsed = collapsedNodeIds.has(edgeSourceNode.id());
-        const targetIsCollapsed = collapsedNodeIds.has(edgeTargetNode.id());
-        const bothEndpointsCollapsed = sourceIsCollapsed && targetIsCollapsed;
-
-        // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
-        if (isRerouted) {
-            sourceNode = edge.source();
-            targetNode = edge.target();
-
-            // Check if original endpoints (ports) are on the same shelf for curve styling
-            const endpoints = this.getOriginalEdgeEndpoints(edge);
-            const originalSourceId = endpoints.sourceNode.id();
-            const originalTargetId = endpoints.targetNode.id();
-            isSameShelf = this.checkSameShelf(originalSourceId, originalTargetId);
-        } else {
-            // Regular edges - get original endpoints (ports)
-            const endpoints = this.getOriginalEdgeEndpoints(edge);
-            sourceNode = endpoints.sourceNode;
-            targetNode = endpoints.targetNode;
-
-            // For regular port-to-port edges, check if they're on the same shelf
-            const sourceId = sourceNode.id();
-            const targetId = targetNode.id();
-            isSameShelf = this.checkSameShelf(sourceId, targetId);
-        }
-
-        // Check if this is a cross-graph connection (between different graph nodes)
-        let isCrossGraph = false;
-
-        if (isRerouted) {
-            const sourceIsGraph = sourceNode.data('type') === 'graph';
-            const targetIsGraph = targetNode.data('type') === 'graph';
-            if (sourceIsGraph && targetIsGraph && sourceNode.id() !== targetNode.id()) {
-                isCrossGraph = true;
-            }
-        } else {
-            // For regular edges, find the graph nodes containing the ports
-            let sourceGraphNode = null;
-            let targetGraphNode = null;
-            let current = sourceNode;
-            while (current && current.length > 0) {
-                if (current.data('type') === 'graph') {
-                    sourceGraphNode = current;
-                    break;
-                }
-                current = current.parent();
-            }
-            current = targetNode;
-            while (current && current.length > 0) {
-                if (current.data('type') === 'graph') {
-                    targetGraphNode = current;
-                    break;
-                }
-                current = current.parent();
-            }
-            if (sourceGraphNode && targetGraphNode && sourceGraphNode.id() !== targetGraphNode.id()) {
-                isCrossGraph = true;
-            }
-        }
-
-        // Get curve magnitude multiplier from slider for collapsed node curves
-        const curveMagnitudeMultiplier = parseFloat(
-            document.getElementById('curveMagnitudeSlider')?.value || '1.0'
-        );
-
-        // If both endpoints are collapsed (shelves or graphs), apply bezier with control step size
-        if (bothEndpointsCollapsed) {
-            // Edges between collapsed nodes get bezier with distance-based step size
-            const baseMinStep = Math.max(20, controlPointStepSize * 0.5);
-            const controlPointStepSizeForEdge = baseMinStep * Math.max(0.5, curveMagnitudeMultiplier);
-            const style = { 'curve-style': 'bezier', 'control-point-step-size': controlPointStepSizeForEdge };
+        // Port-to-port with different tray # and different port # → flat line only when short; long edges stay curved
+        const bothPorts = source.hasClass('port') && target.hasClass('port');
+        const sourceTrayNum = source.data('tray');
+        const targetTrayNum = target.data('tray');
+        const sourcePortNum = source.data('port');
+        const targetPortNum = target.data('port');
+        const differentTrayNum = sourceTrayNum != null && targetTrayNum != null && sourceTrayNum !== targetTrayNum;
+        const differentPortNum = sourcePortNum != null && targetPortNum != null && sourcePortNum !== targetPortNum;
+        const sp = source.position();
+        const tp = target.position();
+        const edgeDistance = Math.sqrt((tp.x - sp.x) ** 2 + (tp.y - sp.y) ** 2) || 1;
+        const FLAT_MAX_DISTANCE = 180;   // Only flat for shorter edges; longer (e.g. cross-shelf) get curve
+        const useFlat = bothPorts && differentTrayNum && differentPortNum && edgeDistance <= FLAT_MAX_DISTANCE;
+        if (useFlat) {
+            const style = { 'curve-style': 'unbundled-bezier', 'control-point-distance': 0, 'control-point-weight': 0.5 };
             if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: edgeSourceNode.id(), target: edgeTargetNode.id(), branch: 'both-collapsed', style });
+                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: source.id(), target: target.id(), branch: 'port-to-port flat', style });
             }
             return style;
-        } else if (isSameShelf) {
-            // Same-shelf (non-collapsed): unbundled-bezier
-            const controlPointDistance = Math.max(10, controlPointStepSize * 0.4);
+        }
+
+        const isSole = this.isSoleConnection(edge);
+        if (isSole) {
+            const UNBUNDLED_DISTANCE_FACTOR = 0.147;
+            const UNBUNDLED_MIN = 35;   // Lower = gentler curve for short edges (~10% bump)
+            const UNBUNDLED_MAX = 137;
+            const controlPointDistance = Math.max(UNBUNDLED_MIN, Math.min(UNBUNDLED_MAX, edgeDistance * UNBUNDLED_DISTANCE_FACTOR));
             const style = { 'curve-style': 'unbundled-bezier', 'control-point-distance': controlPointDistance, 'control-point-weight': 0.5 };
             if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: edgeSourceNode.id(), target: edgeTargetNode.id(), branch: 'same-shelf', style });
-            }
-            return style;
-        } else {
-            const stepSize = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
-            const style = { 'curve-style': 'bezier', 'control-point-step-size': stepSize };
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: edgeSourceNode.id(), target: edgeTargetNode.id(), branch: isCrossGraph ? 'cross-graph' : 'cross-shelf', style });
+                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: source.id(), target: target.id(), branch: 'sole', edgeDistance, controlPointDistance, style });
             }
             return style;
         }
+        const style = { 'curve-style': 'bezier', 'control-point-step-size': controlPointStepSize };
+        if (window.__DEBUG_CURVE_STYLES) {
+            console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: edge.source().id(), target: edge.target().id(), branch: 'many', style });
+        }
+        return style;
     }
 
     /**
-     * Force apply curve styles to all edges based on whether they're on the same shelf
-     * or have the same template type (for collapsed graph nodes in hierarchy mode)
-     * Uses bezier curve style which automatically separates multiple edges between the same nodes
+     * Force apply curve styles to all edges.
+     * Only paradigm: sole connection between two nodes → unbundled-bezier; one of many → bezier.
      */
     forceApplyCurveStyles() {
         if (!this.state.cy) return;
 
         const edges = this.state.cy.edges();
-        // Always log on descriptor load / reflow so it's visible; per-edge detail when __DEBUG_CURVE_STYLES is true
+        const controlPointStepSize = 28;   // Bezier step (multiple connections); smaller = tighter spread
+
         console.log('[curve-style] forceApplyCurveStyles called', {
             edgeCount: edges.length,
-            debugPerEdge: !!window.__DEBUG_CURVE_STYLES,
-            hint: 'Set window.__DEBUG_CURVE_STYLES = true for per-connection edge-style logs'
+            debugPerEdge: !!window.__DEBUG_CURVE_STYLES
         });
 
         try {
-            // Use fixed control-point-step-size instead of viewport-based calculation
-            // This prevents step-size from changing when viewport changes (zoom, pan, layout)
-            const controlPointStepSize = 60; // Fixed value for consistent curve appearance
-
-            // Get curve magnitude multiplier from slider (default to 1.0 if not set)
-            // This multiplier affects ALL bezier curves, not just cross-host
-            const curveMagnitudeMultiplier = parseFloat(
-                document.getElementById('curveMagnitudeSlider')?.value || '1.0'
-            );
-
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] forceApplyCurveStyles start', { edgeCount: edges.length, controlPointStepSize, curveMagnitudeMultiplier });
-            }
-
             this.state.cy.startBatch();
-
-            let _sameShelfCount = 0;
-            let _crossShelfCount = 0;
-            let _crossGraphCount = 0;
-
-            // First pass: collect cross-host connections and calculate their distances
-            // to determine dynamic min/max thresholds
-            const crossHostConnections = [];
-
-            // Get set of collapsed node IDs for checking if edges connect to collapsed nodes
-            // Ensure it exists and is a Set to prevent errors during initialization
-            // Only check for collapsed nodes if state.ui is available (may not be during early init)
-            const collapsedNodeIds = (this.state.ui && this.state.ui.collapsedGraphs instanceof Set)
-                ? this.state.ui.collapsedGraphs
-                : new Set();
-
-            edges.forEach((edge, _index) => {
-                let sourceNode, targetNode;
-                let _isSameTemplate = false;
-                let isSameShelf = false;
-                const isRerouted = edge.data('isRerouted');
-                const _edgeId = edge.id();
-                const _connectionNumber = edge.data('connection_number');
-
-                // For rerouted edges (collapsed nodes), check if the collapsed graph nodes have the same template type
-                if (isRerouted) {
-                    // Rerouted edges connect collapsed graph nodes - check their template_name directly
-                    sourceNode = edge.source();
-                    targetNode = edge.target();
-
-                    // Check if both endpoints are graph nodes with the same template_name
-                    const sourceTemplateName = sourceNode.data('template_name');
-                    const targetTemplateName = targetNode.data('template_name');
-                    const sourceIsGraph = sourceNode.data('type') === 'graph';
-                    const targetIsGraph = targetNode.data('type') === 'graph';
-
-                    if (sourceIsGraph && targetIsGraph && sourceTemplateName && targetTemplateName) {
-                        _isSameTemplate = sourceTemplateName === targetTemplateName;
-                    }
-
-                    // Check if original endpoints (ports) are on the same shelf for curve styling
-                    const endpoints = this.getOriginalEdgeEndpoints(edge);
-                    const originalSourceId = endpoints.sourceNode.id();
-                    const originalTargetId = endpoints.targetNode.id();
-                    isSameShelf = this.checkSameShelf(originalSourceId, originalTargetId);
-                } else {
-                    // Regular edges - get original endpoints (ports)
-                    const endpoints = this.getOriginalEdgeEndpoints(edge);
-                    sourceNode = endpoints.sourceNode;
-                    targetNode = endpoints.targetNode;
-
-                    // For regular port-to-port edges, check if they're on the same shelf
-                    const sourceId = sourceNode.id();
-                    const targetId = targetNode.id();
-                    isSameShelf = this.checkSameShelf(sourceId, targetId);
-                    // Don't check template for regular port-to-port edges
-                }
-
-                // Apply different curve styles based on connection type
-                // Same-shelf connections: use bezier
-                // Cross-shelf connections: use bezier for better separation
-                // Cross-graph connections: use bezier with reduced magnitude
-                let curveStyle;
-                let styleProps;
-
-                // Check if this is a cross-graph connection (between different graph nodes)
-                let isCrossGraph = false;
-                let sourceGraphNodeId = null;
-                let targetGraphNodeId = null;
-
-                if (isRerouted) {
-                    // For rerouted edges, check if source and target are different graph nodes
-                    const sourceGraphNode = sourceNode.data('type') === 'graph' ? sourceNode : null;
-                    const targetGraphNode = targetNode.data('type') === 'graph' ? targetNode : null;
-                    if (sourceGraphNode && targetGraphNode) {
-                        sourceGraphNodeId = sourceGraphNode.id();
-                        targetGraphNodeId = targetGraphNode.id();
-                        if (sourceGraphNodeId !== targetGraphNodeId) {
-                            isCrossGraph = true;
-                        }
-                    }
-                } else {
-                    // For regular edges, find the graph nodes containing the ports
-                    let sourceGraphNode = null;
-                    let targetGraphNode = null;
-                    let current = sourceNode;
-                    while (current && current.length > 0) {
-                        if (current.data('type') === 'graph') {
-                            sourceGraphNode = current;
-                            break;
-                        }
-                        current = current.parent();
-                    }
-                    current = targetNode;
-                    while (current && current.length > 0) {
-                        if (current.data('type') === 'graph') {
-                            targetGraphNode = current;
-                            break;
-                        }
-                        current = current.parent();
-                    }
-                    if (sourceGraphNode && targetGraphNode) {
-                        sourceGraphNodeId = sourceGraphNode.id();
-                        targetGraphNodeId = targetGraphNode.id();
-                        if (sourceGraphNodeId !== targetGraphNodeId) {
-                            isCrossGraph = true;
-                        }
-                    }
-                }
-
-                // Check if this is a cross-host connection
-                const isCrossHost = this._checkCrossHost(sourceNode, targetNode);
-
-                // Apply heuristic: if endpoints share port OR tray number, use normal curve
-                // If both port AND tray are different, default to flat (multiply by 0)
-                // When slider > 1.0, apply offset to initially flat curves: (slider - 1.0)
-                const sharePortOrTray = this._endpointsSharePortOrTray(sourceNode, targetNode);
-                let effectiveMultiplier;
-                if (sharePortOrTray) {
-                    // Endpoints share port/tray: use slider value as normal
-                    effectiveMultiplier = curveMagnitudeMultiplier;
-                } else {
-                    // Endpoints don't share port/tray: flat when slider <= 1.0, offset when slider > 1.0
-                    effectiveMultiplier = Math.max(0, curveMagnitudeMultiplier - 1.0);
-                }
-
-                // Collect cross-host connections for distance calculation
-                // Also collect edges between graph nodes (both rerouted and direct edges) for distance-based curves
-                // In hierarchy mode, edges can directly connect graph nodes without being rerouted
-                // Check the actual edge endpoints (not original port endpoints) to see if they're graph nodes
-                const edgeSourceNode = edge.source();
-                const edgeTargetNode = edge.target();
-                const edgeSourceIsGraph = edgeSourceNode.data('type') === 'graph';
-                const edgeTargetIsGraph = edgeTargetNode.data('type') === 'graph';
-                const isBetweenGraphNodes = edgeSourceIsGraph && edgeTargetIsGraph && edgeSourceNode.id() !== edgeTargetNode.id();
-
-                // Check if either endpoint is a collapsed node (shelves or graphs can be collapsed)
-                const sourceIsCollapsed = collapsedNodeIds.has(edgeSourceNode.id());
-                const targetIsCollapsed = collapsedNodeIds.has(edgeTargetNode.id());
-                const isConnectedToCollapsedNode = sourceIsCollapsed || targetIsCollapsed;
-
-                // Check if both endpoints are collapsed nodes (shelves or graphs)
-                // This needs to be defined before the conditional checks below
-                const bothEndpointsCollapsed = sourceIsCollapsed && targetIsCollapsed;
-
-                // Always collect edges between collapsed nodes (shelves or graphs) for distance-based curves
-                // Also collect cross-host, between graph nodes, or connected to collapsed nodes
-                if (bothEndpointsCollapsed || (isCrossHost && !isSameShelf) || isBetweenGraphNodes || isConnectedToCollapsedNode) {
-                    // Use the actual edge endpoints for position calculation (graph nodes or shelves, not ports)
-                    const sourcePos = edgeSourceNode.position();
-                    const targetPos = edgeTargetNode.position();
-                    const dx = targetPos.x - sourcePos.x;
-                    const dy = targetPos.y - sourcePos.y;
-                    const straightDistance = Math.sqrt(dx * dx + dy * dy);
-
-                    crossHostConnections.push({
-                        edge,
-                        sourceNode: edgeSourceNode,  // Use actual edge endpoints (graph nodes or shelves)
-                        targetNode: edgeTargetNode,  // Use actual edge endpoints (graph nodes or shelves)
-                        distance: straightDistance,
-                        isRerouted,
-                        isCrossGraph,
-                        isBetweenGraphNodes,
-                        isConnectedToCollapsedNode,
-                        bothEndpointsCollapsed,  // Track if both endpoints are collapsed
-                        sharePortOrTray  // Store heuristic result for second pass
-                    });
-                }
-
-                // Apply curve styling based on edge type
-                if (isSameShelf) {
-                    _sameShelfCount++;
-                    curveStyle = 'unbundled-bezier';
-                    const baseControlPointDistance = Math.max(10, controlPointStepSize * 0.9);
-                    const controlPointDistance = baseControlPointDistance * effectiveMultiplier;
-                    styleProps = {
-                        'curve-style': curveStyle,
-                        'control-point-distance': controlPointDistance,
-                        'control-point-weight': 0.5
-                    };
-                } else if (isCrossHost || isBetweenGraphNodes || isConnectedToCollapsedNode) {
-                    // Skip cross-host connections, edges between graph nodes, and edges connected to single collapsed node in first pass
-                    // Will be handled in second pass with dynamic distance-based curve scaling
-                } else {
-                    _crossShelfCount++;
-                    // Cross-shelf/cross-graph fallback (non-collapsed cross-host that didn't go to second pass): unbundled-bezier
-                    curveStyle = 'unbundled-bezier';
-                    const baseDistance = isCrossGraph ? controlPointStepSize * 0.5 : controlPointStepSize;
-                    let controlPointDistance = baseDistance * effectiveMultiplier;
-                    const minDistance = Math.max(15, controlPointStepSize * 0.4);
-                    controlPointDistance = Math.max(minDistance, controlPointDistance);
-                    styleProps = {
-                        'curve-style': curveStyle,
-                        'control-point-distance': controlPointDistance,
-                        'control-point-weight': 0.5
-                    };
-                    const _connectionType = isCrossGraph ? 'CROSS-GRAPH' : 'CROSS-SHELF';
-                    if (isCrossGraph) {
-                        _crossGraphCount++;
-                    }
-                }
-
-                // Apply style only when we set it (skip branch defers to second pass; avoid applying undefined/previous)
-                if (styleProps) {
-                    if (window.__DEBUG_CURVE_STYLES) {
-                        const branch = isSameShelf ? 'first-pass: same-shelf' : 'first-pass: cross-shelf/cross-graph';
-                        console.log('[curve-style] forceApplyCurveStyles', {
-                            edgeId: edge.id(),
-                            source: edge.source().id(),
-                            target: edge.target().id(),
-                            branch,
-                            style: styleProps
-                        });
-                    }
-                    edge.style(styleProps);
-                }
+            edges.forEach((edge) => {
+                const styleProps = this._computeEdgeCurveStyle(edge, controlPointStepSize);
+                edge.style(styleProps);
             });
-
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] forceApplyCurveStyles first pass done', {
-                    deferredToSecondPass: crossHostConnections.length,
-                    sameShelfStyled: _sameShelfCount,
-                    crossShelfStyled: _crossShelfCount
-                });
-            }
-
-            // Second pass: Apply dynamic distance-based curve scaling to cross-host connections
-            // and edges between collapsed nodes. Also apply curve styling to edges connected to collapsed nodes.
-            if (crossHostConnections.length > 0) {
-                // Calculate min and max distances across all connections (cross-host and between collapsed nodes)
-                const distances = crossHostConnections.map(conn => conn.distance);
-                const minDistance = Math.min(...distances);
-                const maxDistance = Math.max(...distances);
-                const distanceRange = maxDistance - minDistance;
-
-                // Get curve magnitude multiplier from slider (default to 1.0 if not set)
-                const curveMagnitudeMultiplier = parseFloat(
-                    document.getElementById('curveMagnitudeSlider')?.value || '1.0'
-                );
-
-                // Curve magnitude range (keep the same scale, scaled by multiplier)
-                const minCurveDistance = controlPointStepSize * 1.0 * curveMagnitudeMultiplier;  // Minimum curve for closest nodes
-                const maxCurveDistance = controlPointStepSize * 2.0 * curveMagnitudeMultiplier;  // Maximum curve for farthest nodes
-                const _curveRange = maxCurveDistance - minCurveDistance;
-
-                // Apply styles to cross-host connections, edges between collapsed nodes, and edges connected to collapsed nodes
-                crossHostConnections.forEach(conn => {
-                    _crossShelfCount++;
-
-                    // Check if this edge is connected to a collapsed node (but not between two collapsed nodes)
-                    // Edges between collapsed nodes (shelves or graphs) should use distance-based scaling
-                    const isConnectedToCollapsedOnly = conn.isConnectedToCollapsedNode && !conn.bothEndpointsCollapsed;
-
-                    if (isConnectedToCollapsedOnly) {
-                        // For edges connected to a single collapsed node (one endpoint collapsed, one not), 
-                        // apply consistent curve styling with control step distance
-                        // Use bezier style with a fixed control-point-step-size for consistent appearance
-                        const curveStyle = 'bezier';
-                        const controlStepSize = controlPointStepSize * curveMagnitudeMultiplier;
-
-                        const styleProps = {
-                            'curve-style': curveStyle,
-                            'control-point-step-size': controlStepSize
-                        };
-                        if (window.__DEBUG_CURVE_STYLES) {
-                            console.log('[curve-style] forceApplyCurveStyles', {
-                                edgeId: conn.edge.id(),
-                                source: conn.sourceNode.id(),
-                                target: conn.targetNode.id(),
-                                branch: 'second-pass: connected-to-collapsed-only',
-                                style: styleProps
-                            });
-                        }
-                        conn.edge.style(styleProps);
-                    } else {
-                        // Cross-host / between graph nodes: bezier (collapsed = distance-based step size; else step size from distance)
-                        const bothCollapsed = conn.bothEndpointsCollapsed !== undefined
-                            ? conn.bothEndpointsCollapsed
-                            : (collapsedNodeIds.has(conn.sourceNode.id()) && collapsedNodeIds.has(conn.targetNode.id()));
-
-                        const sharePortOrTray = conn.sharePortOrTray !== undefined
-                            ? conn.sharePortOrTray
-                            : this._endpointsSharePortOrTray(conn.sourceNode, conn.targetNode);
-
-                        let effectiveMultiplier;
-                        if (bothCollapsed) {
-                            effectiveMultiplier = curveMagnitudeMultiplier;
-                        } else if (sharePortOrTray) {
-                            effectiveMultiplier = curveMagnitudeMultiplier;
-                        } else {
-                            effectiveMultiplier = Math.max(0, curveMagnitudeMultiplier - 1.0);
-                        }
-
-                        const normalizedDistance = distanceRange > 0
-                            ? (conn.distance - minDistance) / distanceRange
-                            : 0.5;
-
-                        if (bothCollapsed) {
-                            // All collapsed elements: bezier with control-point-step-size
-                            const curveStyle = 'bezier';
-                            const baseMinStep = Math.max(20, controlPointStepSize * 0.5);
-                            const minStepForCollapsed = baseMinStep * Math.max(0.5, curveMagnitudeMultiplier);
-                            const maxStepForCollapsed = controlPointStepSize * 2.5 * Math.max(1.0, curveMagnitudeMultiplier);
-                            const stepRangeForCollapsed = maxStepForCollapsed - minStepForCollapsed;
-                            let controlPointStepSizeForEdge = minStepForCollapsed + (normalizedDistance * stepRangeForCollapsed);
-                            controlPointStepSizeForEdge = Math.max(baseMinStep, controlPointStepSizeForEdge);
-                            const stylePropsCollapsed = {
-                                'curve-style': curveStyle,
-                                'control-point-step-size': controlPointStepSizeForEdge
-                            };
-                            if (window.__DEBUG_CURVE_STYLES) {
-                                console.log('[curve-style] forceApplyCurveStyles', {
-                                    edgeId: conn.edge.id(),
-                                    source: conn.sourceNode.id(),
-                                    target: conn.targetNode.id(),
-                                    branch: 'second-pass: both-collapsed',
-                                    style: stylePropsCollapsed
-                                });
-                            }
-                            conn.edge.style(stylePropsCollapsed);
-                        } else {
-                            // Non-collapsed cross-host / between graph: unbundled-bezier (troublesome case)
-                            const curveStyle = 'unbundled-bezier';
-                            const effectiveMinDistance = controlPointStepSize * 1.0 * effectiveMultiplier;
-                            const effectiveMaxDistance = controlPointStepSize * 3.0 * effectiveMultiplier;
-                            const effectiveDistanceRange = effectiveMaxDistance - effectiveMinDistance;
-                            let controlPointDistance = effectiveMinDistance + (normalizedDistance * effectiveDistanceRange);
-                            const baseMinDistance = Math.max(15, controlPointStepSize * 0.4);
-                            controlPointDistance = Math.max(baseMinDistance, controlPointDistance);
-                            const stylePropsNonCollapsed = {
-                                'curve-style': curveStyle,
-                                'control-point-distance': controlPointDistance,
-                                'control-point-weight': 0.5
-                            };
-                            if (window.__DEBUG_CURVE_STYLES) {
-                                console.log('[curve-style] forceApplyCurveStyles', {
-                                    edgeId: conn.edge.id(),
-                                    source: conn.sourceNode.id(),
-                                    target: conn.targetNode.id(),
-                                    branch: 'second-pass: non-collapsed cross-host/between-graph',
-                                    style: stylePropsNonCollapsed
-                                });
-                            }
-                            conn.edge.style(stylePropsNonCollapsed);
-                        }
-                    }
-                });
-            }
-
             this.state.cy.endBatch();
-
-            // Force render to ensure changes take effect
             this.state.cy.forceRender();
         } catch (error) {
             console.error('[forceApplyCurveStyles] Error applying curve styles:', error);
-            // Ensure batch is ended even if there's an error
             try {
                 this.state.cy.endBatch();
             } catch (e) {
-                // Ignore errors when ending batch
+                // Ignore
             }
         }
     }

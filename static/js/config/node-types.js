@@ -214,8 +214,8 @@ export const SHELF_LAYOUT_PORT_WIDTH = 45;
 export const SHELF_LAYOUT_PORT_SPACING = UNIFORM_PORT_GRID_STEP - 45;   // 25
 export const SHELF_LAYOUT_EXTENT = 150;  // extent from center for tray block
 export const SHELF_LAYOUT_PORT_EXTENT = 120;
-/** Square port display size (same width and height); grid step unchanged */
-export const SHELF_LAYOUT_PORT_SIZE = 32;
+/** Square port display size (same width and height); reduced to balance increased tray padding; grid step (70) unchanged */
+export const SHELF_LAYOUT_PORT_SIZE = 26;
 
 /**
  * Get calculable layout dimensions for a shelf node type (for positioning, no bbox).

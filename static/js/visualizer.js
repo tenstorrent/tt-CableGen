@@ -1428,6 +1428,7 @@ function mergeCablingGuideData(existingData, newData, prefix) {
 function applyMergeToGraph(mergeResult) {
     if (!state.cy) return;
     const { newNodesToAdd, newEdgesToAdd, elements: mergedElements } = mergeResult;
+    state.cy.startBatch();
     if (newNodesToAdd?.length > 0 || newEdgesToAdd?.length > 0) {
         const sortedNewElements = sortElementsParentsBeforeChildren([...newNodesToAdd, ...newEdgesToAdd]);
         const sortedNewNodes = sortedNewElements.filter((el) => el.group !== 'edges' && !(el.data && ('source' in (el.data || {}) || 'target' in (el.data || {}))));
@@ -1450,6 +1451,7 @@ function applyMergeToGraph(mergeResult) {
             if (currentParent !== wantParent) node.move({ parent: wantParent != null ? wantParent : null });
         });
     }
+    state.cy.endBatch();
 }
 
 /**

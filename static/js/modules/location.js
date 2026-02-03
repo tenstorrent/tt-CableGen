@@ -793,7 +793,8 @@ export class LocationModule {
         });
         console.log(`[rebuildLocationViewFromCurrentGraph] Preserved ${connections.length} connections (rerouted excluded)`);
 
-        // Clear the entire graph
+        // Clear the entire graph (batch with add below for performance)
+        this.state.cy.startBatch();
         this.state.cy.elements().remove();
 
         // Rebuild visualization based ONLY on physical location data
@@ -1130,6 +1131,7 @@ export class LocationModule {
 
         // Add all elements back to cytoscape
         this.state.cy.add(newElements);
+        this.state.cy.endBatch();
 
         // Recolor connections immediately after adding edges (before layout)
         // This ensures colors are set before any async layout operations
