@@ -34,7 +34,7 @@ describe('UIDisplayModule', () => {
     describe('showExportStatus', () => {
         test('delegates to notificationManager.show', () => {
             module.showExportStatus('Export done', 'success');
-            expect(notificationManager.show).toHaveBeenCalledWith('Export done', 'success');
+            expect(notificationManager.show).toHaveBeenCalledWith('Export done', 'success', null);
         });
     });
 

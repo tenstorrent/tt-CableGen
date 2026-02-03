@@ -408,7 +408,7 @@ export class FileManagementModule {
                 }
             }, false);
 
-            uploadSectionLocation.addEventListener('dragleave', (e) => {
+            uploadSectionLocation.addEventListener('dragleave', (_e) => {
                 dragCounter--;
                 if (dragCounter <= 0) {
                     dragCounter = 0;
@@ -465,7 +465,7 @@ export class FileManagementModule {
                 }
             }, false);
 
-            uploadSectionTopology.addEventListener('dragleave', (e) => {
+            uploadSectionTopology.addEventListener('dragleave', (_e) => {
                 dragCounter--;
                 if (dragCounter <= 0) {
                     dragCounter = 0;
@@ -535,7 +535,7 @@ export class FileManagementModule {
                     addAnotherSection.style.backgroundColor = '#e3f2fd';
                 }
             }, false);
-            addAnotherSection.addEventListener('dragleave', (e) => {
+            addAnotherSection.addEventListener('dragleave', (_e) => {
                 dragCounter--;
                 if (dragCounter <= 0) {
                     dragCounter = 0;
@@ -579,7 +579,7 @@ export class FileManagementModule {
                     cyContainer.style.backgroundColor = '#e3f2fd';
                 }
             }, false);
-            cyContainer.addEventListener('dragleave', (e) => {
+            cyContainer.addEventListener('dragleave', (_e) => {
                 cyDragCounter--;
                 if (cyDragCounter <= 0) {
                     cyDragCounter = 0;

@@ -4,7 +4,7 @@
  */
 import { LAYOUT_CONSTANTS, CONNECTION_COLORS } from '../config/constants.js';
 import { verifyCytoscapeExtensions as verifyCytoscapeExtensionsUtil } from '../utils/cytoscape-utils.js';
-import { getShelfUHeight } from '../config/node-types.js';
+import { getShelfLayoutDimensions, getShelfUHeight } from '../config/node-types.js';
 
 export class UIDisplayModule {
     constructor(state, commonModule, locationModule, hierarchyModule, notificationManager, statusManager) {
@@ -1185,19 +1185,19 @@ export class UIDisplayModule {
                         // Update label to use location mode format: "Shelf {shelf_u} ({host_index}: hostname)"
                         const currentHostIndex = node.data('host_index') ?? node.data('host_id');
                         const currentHostname = node.data('hostname');
-                        const currentShelfU = node.data('shelf_u');
+                        const nodeShelfU = node.data('shelf_u');
 
-                        if (currentShelfU !== undefined && currentShelfU !== null && currentShelfU !== '') {
+                        if (nodeShelfU !== undefined && nodeShelfU !== null && nodeShelfU !== '') {
                             if (currentHostIndex !== undefined && currentHostIndex !== null) {
                                 if (currentHostname) {
-                                    node.data('label', `Shelf ${currentShelfU} (${currentHostIndex}: ${currentHostname})`);
+                                    node.data('label', `Shelf ${nodeShelfU} (${currentHostIndex}: ${currentHostname})`);
                                 } else {
-                                    node.data('label', `Shelf ${currentShelfU} (${currentHostIndex})`);
+                                    node.data('label', `Shelf ${nodeShelfU} (${currentHostIndex})`);
                                 }
                             } else if (currentHostname) {
-                                node.data('label', `Shelf ${currentShelfU} (${currentHostname})`);
+                                node.data('label', `Shelf ${nodeShelfU} (${currentHostname})`);
                             } else {
-                                node.data('label', `Shelf ${currentShelfU}`);
+                                node.data('label', `Shelf ${nodeShelfU}`);
                             }
                         }
 

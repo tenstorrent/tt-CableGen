@@ -2116,7 +2116,7 @@ export class LocationModule {
         if (!this.state.cy) return null;
         const selected = this.state.cy.nodes(':selected');
         for (let i = 0; i < selected.length; i++) {
-            let node = selected[i];
+            const node = selected[i];
             if (node.data('type') === 'shelf') return node;
             let parent = node.parent();
             while (parent && parent.length > 0) {

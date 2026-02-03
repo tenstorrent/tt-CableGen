@@ -191,7 +191,7 @@ export function getSelectedHierarchyNodes(cy) {
  * Serialize a node's data for hierarchy clipboard (exclude id/parent; include type-specific fields).
  */
 function serializeHierarchyNodeData(node) {
-    const type = node.data('type');
+    const _type = node.data('type');
     const d = node.data();
     const out = {};
     const keys = Object.keys(d);
