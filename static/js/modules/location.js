@@ -3,7 +3,7 @@
  * Extracted from visualizer.js to separate location-specific logic
  */
 import { CONNECTION_COLORS, LAYOUT_CONSTANTS } from '../config/constants.js';
-import { getNodeConfig, getShelfLayoutDimensions } from '../config/node-types.js';
+import { getNodeConfig, getShelfLayoutDimensions, getShelfUHeight } from '../config/node-types.js';
 
 export class LocationModule {
     constructor(state, commonModule) {
@@ -360,10 +360,9 @@ export class LocationModule {
 
         console.log(`Location layout: ${uniqueHalls.length} halls, ${allAisles.size} aisles (showing halls: ${shouldShowHalls}, aisles: ${shouldShowAisles})`);
 
-        // Stacked hall/aisle layout constants
+        // Stacked hall/aisle layout constants (rack horizontal spacing is from node inside width + RACK_MIN_GAP)
         const hallSpacing = 1200;
         const aisleSpacing = 800; // Vertical spacing between aisles (no horizontal offset)
-        const rackSpacing = 600;
         const baseX = 200;
         const baseY = 300;
 
@@ -463,9 +462,29 @@ export class LocationModule {
                     }
                 }
 
-                let rackX = aisleStartX;
-                rackHierarchy[hall][aisle].forEach((rackData) => {
+                // Precompute each rack's inside width (max shelf width) so adjacent racks don't overlap
+                const collapsedGraphs = this.state.ui?.collapsedGraphs;
+                const shelfIsCollapsed = (s) => collapsedGraphs && collapsedGraphs instanceof Set && collapsedGraphs.has(s.id());
+                const rackList = rackHierarchy[hall][aisle];
+                const rackInsideWidths = rackList.map((rackData) => {
                     const rack = rackData.node;
+                    const shelves = rack.children('[type="shelf"]');
+                    let maxW = 0;
+                    shelves.forEach((shelf) => {
+                        const nodeType = shelf.data('shelf_node_type') || 'WH_GALAXY';
+                        const w = getShelfLayoutDimensions(nodeType).width; // always full width for rack spacing
+                        maxW = Math.max(maxW, w);
+                    });
+                    return Math.max(maxW, 1); // avoid 0
+                });
+
+                // Rack X: first rack at aisleStartX; each next = prev + (prevWidth/2 + RACK_MIN_GAP + thisWidth/2) * RACK_ADVANCE_FACTOR
+                const RACK_MIN_GAP = LAYOUT_CONSTANTS.RACK_MIN_GAP ?? 40;
+                const RACK_ADVANCE_FACTOR = LAYOUT_CONSTANTS.RACK_ADVANCE_FACTOR ?? 1;
+                let rackX = aisleStartX;
+                rackList.forEach((rackData, rackIndex) => {
+                    const rack = rackData.node;
+                    const thisRackInsideWidth = rackInsideWidths[rackIndex];
 
                     // Determine rack parent: aisle if exists, otherwise hall if exists, otherwise null (top-level)
                     const rackParent = aisleId || hallId;
@@ -476,7 +495,12 @@ export class LocationModule {
                         rack.move({ parent: null });
                     }
 
-                    // Update rack position
+                    // Position rack (advance by less when RACK_ADVANCE_FACTOR < 1)
+                    if (rackIndex > 0) {
+                        const prevWidth = rackInsideWidths[rackIndex - 1];
+                        const step = (prevWidth / 2 + RACK_MIN_GAP + thisRackInsideWidth / 2) * RACK_ADVANCE_FACTOR;
+                        rackX += step;
+                    }
                     rack.position({ x: rackX, y: aisleStartY });
 
                     // Update rack label to show context (only include hall/aisle if they're shown)
@@ -511,8 +535,6 @@ export class LocationModule {
                         });
 
                         // Second pass: calculate dynamic spacing based on actual shelf heights (use larger minimum when shelf is collapsed)
-                        const collapsedGraphs = this.state.ui?.collapsedGraphs;
-                        const shelfIsCollapsed = (s) => collapsedGraphs && collapsedGraphs instanceof Set && collapsedGraphs.has(s.id());
                         let maxShelfHeight = 0;
                         let hasCollapsedShelf = false;
 
@@ -543,7 +565,9 @@ export class LocationModule {
                         });
                     }
 
-                    rackX += rackSpacing;
+                    // Advance for next rack (by less when RACK_ADVANCE_FACTOR < 1)
+                    const nextHalf = rackIndex + 1 < rackList.length ? rackInsideWidths[rackIndex + 1] / 2 : 0;
+                    rackX += (thisRackInsideWidth / 2 + RACK_MIN_GAP + nextHalf) * RACK_ADVANCE_FACTOR;
                 });
 
                 aisleIndex++;
@@ -556,10 +580,11 @@ export class LocationModule {
 
         console.log('Location-based layout applied with hall > aisle > rack > shelf hierarchy');
 
-        // Apply fcose layout to prevent overlaps in location mode
-        // This fine-tunes the positions calculated by the manual layout
+        // Apply fcose only to hall/aisle so rack positions from our manual layout are preserved.
+        // Rack X is computed as: for each rack, x = prevX + prevRackInsideWidth/2 + RACK_MIN_GAP + thisRackInsideWidth/2
+        // (so gap between rack content edges = RACK_MIN_GAP). If we included racks in fcose, it would overwrite those positions.
         setTimeout(() => {
-            const locationNodes = this.state.cy.nodes('[type="hall"], [type="aisle"], [type="rack"]');
+            const locationNodes = this.state.cy.nodes('[type="hall"], [type="aisle"]');
             if (locationNodes.length > 0) {
                 try {
                     const layout = this.state.cy.layout({
@@ -840,7 +865,6 @@ export class LocationModule {
             // Adaptive hierarchy: Hall > Aisle > Rack > Shelf (skip hall/aisle if singular or empty)
             const hallSpacing = 1200; // Vertical spacing between halls
             const aisleSpacing = 1000; // Vertical spacing between aisles (no horizontal offset) - increased for better separation
-            const rackSpacing = 800; // Horizontal spacing between racks within an aisle - increased for better separation
             const baseX = 200;
             const baseY = 300;
 
@@ -886,14 +910,37 @@ export class LocationModule {
                         });
                     }
 
-                    let rackX = aisleStartX;
                     // Sort racks in descending order (higher rack numbers to the left)
-                    Object.keys(locationHierarchy[hall][aisle]).sort((a, b) => {
+                    const sortedRackKeys = Object.keys(locationHierarchy[hall][aisle]).sort((a, b) => {
                         const rackA = parseInt(a) || 0;
                         const rackB = parseInt(b) || 0;
                         return rackB - rackA; // Descending order - rack 2 to the left of rack 1
-                    }).forEach(rackKey => {
+                    });
+                    // Precompute inside width per rack (from shelf node types) so adjacent racks don't overlap
+                    const createRackInsideWidths = sortedRackKeys.map(rackKey => {
                         const shelvesInRack = locationHierarchy[hall][aisle][rackKey];
+                        let maxW = 0;
+                        shelvesInRack.forEach(shelfInfo => {
+                            const nodeType = shelfInfo.data?.shelf_node_type || 'WH_GALAXY';
+                            const w = getShelfLayoutDimensions(nodeType).width;
+                            maxW = Math.max(maxW, w);
+                        });
+                        return Math.max(maxW, 1);
+                    });
+                    const createRackMinGap = LAYOUT_CONSTANTS.RACK_MIN_GAP ?? 40;
+                    const createRackAdvanceFactor = LAYOUT_CONSTANTS.RACK_ADVANCE_FACTOR ?? 1;
+
+                    let rackX = aisleStartX;
+                    sortedRackKeys.forEach((rackKey, rackIndex) => {
+                        const shelvesInRack = locationHierarchy[hall][aisle][rackKey];
+                        const thisRackInsideWidth = createRackInsideWidths[rackIndex];
+
+                        // Position rack (advance by less when RACK_ADVANCE_FACTOR < 1)
+                        if (rackIndex > 0) {
+                            const prevWidth = createRackInsideWidths[rackIndex - 1];
+                            const step = (prevWidth / 2 + createRackMinGap + thisRackInsideWidth / 2) * createRackAdvanceFactor;
+                            rackX += step;
+                        }
 
                         // Determine rack parent: aisle if exists, otherwise hall if exists, otherwise null (top-level)
                         const rackParent = aisleId || hallId || null;
@@ -997,7 +1044,8 @@ export class LocationModule {
                             });
                         });
 
-                        rackX += rackSpacing;
+                        const nextHalf = rackIndex + 1 < sortedRackKeys.length ? createRackInsideWidths[rackIndex + 1] / 2 : 0;
+                        rackX += (thisRackInsideWidth / 2 + createRackMinGap + nextHalf) * createRackAdvanceFactor;
                     });
 
                     aisleIndex++;
@@ -1731,6 +1779,50 @@ export class LocationModule {
     }
 
     /**
+     * Check if placing a shelf at (hall, aisle, rackNum, shelfU) with given nodeHeight would overlap
+     * any other shelf in the same rack. Node occupies U [shelfU, shelfU + nodeHeight - 1].
+     * @param {string} excludeNodeId - Node ID to exclude (the one being moved/edited)
+     * @param {string} hall - Hall
+     * @param {string} aisle - Aisle
+     * @param {number} rackNum - Rack number
+     * @param {number} shelfU - Starting U position
+     * @param {number} nodeHeight - shelf_u_height (U slots occupied)
+     * @returns {{ collision: boolean, otherLabel?: string }} collision true if overlap with another shelf; otherLabel for message
+     */
+    checkLocationCollision(excludeNodeId, hall, aisle, rackNum, shelfU, nodeHeight) {
+        if (!this.state.cy || shelfU == null || nodeHeight == null || nodeHeight < 1) {
+            return { collision: false };
+        }
+        const normRack = this._normalizeRackNum(rackNum);
+        const hallStr = (hall ?? '').toString().trim();
+        const aisleStr = (aisle ?? '').toString().trim();
+        const myStart = Number(shelfU);
+        const myEnd = myStart + Number(nodeHeight) - 1;
+
+        const shelves = this.state.cy.nodes('[type="shelf"]');
+        for (let i = 0; i < shelves.length; i++) {
+            const s = shelves[i];
+            if (s.id() === excludeNodeId) continue;
+            const sHall = (s.data('hall') ?? '').toString().trim();
+            const sAisle = (s.data('aisle') ?? '').toString().trim();
+            const sRack = this._normalizeRackNum(s.data('rack_num'));
+            if (sHall !== hallStr || sAisle !== aisleStr || sRack !== normRack) continue;
+
+            const sU = s.data('shelf_u');
+            if (sU === undefined || sU === null) continue;
+            const sStart = Number(sU);
+            const sHeight = getShelfUHeight(s.data('shelf_node_type') || 'WH_GALAXY');
+            const sEnd = sStart + sHeight - 1;
+            // Overlap: [myStart, myEnd] and [sStart, sEnd] overlap iff myStart <= sEnd && sStart <= myEnd
+            if (myStart <= sEnd && sStart <= myEnd) {
+                const otherLabel = s.data('label') || s.data('hostname') || s.id();
+                return { collision: true, otherLabel };
+            }
+        }
+        return { collision: false };
+    }
+
+    /**
      * Format rack number with padding
      * @private
      */
@@ -1813,10 +1905,17 @@ export class LocationModule {
                 return;
             }
         } else {
-            // Check for existing node with same location
-            const existingNode = this.state.cy.nodes(`[hall="${hall}"][aisle="${aisle}"][rack_num="${rack}"][shelf_u="${shelfU}"]`);
-            if (existingNode.length > 0) {
-                console.warn(`A node already exists at Hall: ${hall}, Aisle: ${aisle}, Rack: ${rack}, Shelf U: ${shelfU}. Please choose a different location.`);
+            // Check for U-range collision in this rack (node occupies shelf_u .. shelf_u + height - 1)
+            const nodeHeight = getShelfUHeight(nodeType);
+            const result = this.checkLocationCollision(null, hall, aisle, rack, shelfU, nodeHeight);
+            if (result.collision) {
+                const msg = result.otherLabel
+                    ? `Shelf U ${shelfU}–${shelfU + nodeHeight - 1} would overlap with "${result.otherLabel}" in this rack. Choose a different position.`
+                    : `Shelf U ${shelfU}–${shelfU + nodeHeight - 1} would overlap another shelf in this rack. Choose a different position.`;
+                if (window.showExportStatus && typeof window.showExportStatus === 'function') {
+                    window.showExportStatus(msg, 'error');
+                }
+                alert(msg);
                 return;
             }
         }
@@ -2393,6 +2492,27 @@ export class LocationModule {
         if (hostnameChanged && newHostname) {
             if (!this.common.validateShelfIdentifierUniqueness(newHostname, nodeId)) {
                 alert(`Hostname "${newHostname}" already exists on another shelf. Each shelf must have a unique hostname.`);
+                return;
+            }
+        }
+
+        // If location is being changed, check for U-range collision in the target rack
+        const effectiveHall = hallChanged ? newHall : oldHall;
+        const effectiveAisle = aisleChanged ? newAisle : oldAisle;
+        const effectiveRack = rackChanged ? newRack : oldRack;
+        const effectiveShelfU = shelfUChanged ? newShelfU : oldShelfU;
+        if ((hallChanged || aisleChanged || rackChanged || shelfUChanged) &&
+            effectiveHall !== undefined && effectiveRack !== undefined && effectiveShelfU !== undefined) {
+            const nodeType = node.data('shelf_node_type') || 'WH_GALAXY';
+            const nodeHeight = getShelfUHeight(nodeType);
+            const result = this.checkLocationCollision(
+                nodeId, effectiveHall, effectiveAisle, effectiveRack, effectiveShelfU, nodeHeight
+            );
+            if (result.collision) {
+                const msg = result.otherLabel
+                    ? `Shelf U ${effectiveShelfU}–${effectiveShelfU + nodeHeight - 1} would overlap with "${result.otherLabel}" in this rack. Choose a different position.`
+                    : `Shelf U ${effectiveShelfU}–${effectiveShelfU + nodeHeight - 1} would overlap another shelf in this rack. Choose a different position.`;
+                alert(msg);
                 return;
             }
         }

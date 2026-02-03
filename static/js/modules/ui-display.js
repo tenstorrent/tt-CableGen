@@ -4,6 +4,7 @@
  */
 import { LAYOUT_CONSTANTS, CONNECTION_COLORS } from '../config/constants.js';
 import { verifyCytoscapeExtensions as verifyCytoscapeExtensionsUtil } from '../utils/cytoscape-utils.js';
+import { getShelfUHeight } from '../config/node-types.js';
 
 export class UIDisplayModule {
     constructor(state, commonModule, locationModule, hierarchyModule, notificationManager, statusManager) {
@@ -19,9 +20,10 @@ export class UIDisplayModule {
      * Show export status message (redirects to notification banner)
      * @param {string} message - Message to display
      * @param {string} type - Type of message (info, success, warning, error)
+     * @param {string} [fullMessage] - Full message when user clicks (e.g. long or multi-line)
      */
-    showExportStatus(message, type) {
-        this.notificationManager.show(message, type);
+    showExportStatus(message, type, fullMessage = null) {
+        this.notificationManager.show(message, type, fullMessage);
     }
 
     /**
@@ -909,13 +911,17 @@ export class UIDisplayModule {
     /**
      * Build per-shelf (rack_num, shelf_u) assignments using the same for-loop order as Apply physical layout:
      * outer loop rack numbers, inner loop shelf U (rack × shelf_u). Ensures at least count slots by expanding
-     * shelf_u_list if needed, then takes first count slots.
+     * shelf_u_list if needed (incrementing by each shelf's shelf_u_height when extending). Takes first count slots.
+     * @param {Array<number>} rackNumbers
+     * @param {Array<number>} shelfUList
+     * @param {number} count
+     * @param {Array<{ shelf_node_type?: string }>} [shelves] - Optional list of pasted shelf nodes; used to get shelf_u_height per slot when extending list.
      */
-    _buildPasteShelfAssignments(rackNumbers, shelfUList, count) {
+    _buildPasteShelfAssignments(rackNumbers, shelfUList, count, shelves = null) {
         if (count <= 0 || !rackNumbers.length) return [];
         const racks = rackNumbers;
         const minShelfULength = Math.ceil(count / racks.length);
-        const shelfU = this._normalizePasteShelfUList(shelfUList, minShelfULength);
+        const shelfU = this._normalizePasteShelfUList(shelfUList, minShelfULength, shelves);
         const slots = [];
         for (let r = 0; r < racks.length; r++) {
             for (let u = 0; u < shelfU.length; u++) {
@@ -927,31 +933,49 @@ export class UIDisplayModule {
 
     /**
      * Expand or trim shelf_u_list to exactly count values so paste has one position per shelf.
-     * - Empty: use [1, 2, ..., count].
-     * - Single number: treat as starting U, use [start, start+1, ..., start+count-1].
-     * - Capacity (e.g. "4" parsed as [1,2,3,4]): take first count values.
-     * - Short list: extend by max+1, max+2, ... until length is count.
+     * When extending, increments by each shelf's shelf_u_height (node occupies shelf_u .. shelf_u + height - 1; next starts at shelf_u + height).
+     * - Empty: use [1, 1+h0, 1+h0+h1, ...] if shelves/heights provided, else [1, 2, ..., count].
+     * - Single number: treat as starting U, use [start, start+h0, start+h0+h1, ...] or [start, start+1, ...] if no heights.
+     * - Short list: extend using heights when available, else max+1, max+2, ...
+     * @param {Array<number>} shelfUList
+     * @param {number} count
+     * @param {Array<{ shelf_node_type?: string }>} [shelves] - Optional; used to get getShelfUHeight(shelf_node_type) for each index when extending.
      */
-    _normalizePasteShelfUList(shelfUList, count) {
+    _normalizePasteShelfUList(shelfUList, count, shelves = null) {
         if (count <= 0) return [];
         if (shelfUList.length >= count) {
             return shelfUList.slice(0, count);
         }
+        const heights = shelves && shelves.length >= count
+            ? shelves.slice(0, count).map((sh) => getShelfUHeight(sh.shelf_node_type || 'WH_GALAXY'))
+            : null;
         if (shelfUList.length === 0) {
             const out = [];
-            for (let u = 1; u <= count; u++) out.push(u);
+            let u = 1;
+            for (let i = 0; i < count; i++) {
+                out.push(u);
+                u += (heights && heights[i] != null) ? heights[i] : 1;
+            }
             return out;
         }
         if (shelfUList.length === 1) {
             const start = shelfUList[0];
             const out = [];
-            for (let i = 0; i < count; i++) out.push(start + i);
+            let next = start;
+            for (let i = 0; i < count; i++) {
+                out.push(next);
+                next += (heights && heights[i] != null) ? heights[i] : 1;
+            }
             return out;
         }
         const out = shelfUList.slice();
-        const max = Math.max.apply(null, out);
+        let next = Math.max.apply(null, out);
+        let idx = out.length;
         while (out.length < count) {
-            out.push(max + (out.length - shelfUList.length + 1));
+            const h = (heights && heights[idx - 1] != null) ? heights[idx - 1] : 1;
+            next += h;
+            out.push(next);
+            idx++;
         }
         return out;
     }
@@ -981,9 +1005,9 @@ export class UIDisplayModule {
             }));
         } else if (copyLevel === 'rack') {
             const shelfUFromClipboard = clipboard.shelves.map(s => (s.shelf_u != null ? s.shelf_u : 1));
-            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, shelfUFromClipboard, count);
+            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, shelfUFromClipboard, count, clipboard.shelves);
         } else {
-            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, destination.shelf_u_list, count);
+            destination.shelf_assignments = this._buildPasteShelfAssignments(destination.rack_numbers, destination.shelf_u_list, count, clipboard.shelves);
         }
         const result = this.locationModule.pasteFromClipboard(destination);
         this.cancelPasteDestinationModal();
@@ -1107,7 +1131,9 @@ export class UIDisplayModule {
             if (!proceed) return;
         }
 
-        // Assign physical locations using nested loops
+        // Assign physical locations using nested loops.
+        // Occupancy rule: a node with shelf_u and node_height (shelf_u_height) occupies U positions
+        // shelf_u through shelf_u + node_height - 1 (inclusive). The next node starts at shelf_u + node_height.
         let nodeIndex = 0;
         let assignedCount = 0;
 
@@ -1120,15 +1146,19 @@ export class UIDisplayModule {
 
                 for (let r = 0; r < rackNumbers.length; r++) {
                     const rackNum = rackNumbers[r];
+                    // Starting U for this rack: use first value or cycle by rack index
+                    const startU = shelfUnitNumbers[r % shelfUnitNumbers.length];
+                    let currentShelfU = startU;
 
                     for (let s = 0; s < shelfUnitNumbers.length; s++) {
-                        const shelfU = shelfUnitNumbers[s];
-
                         if (nodeIndex >= shelfNodes.length) {
                             break outerLoop;
                         }
 
                         const node = shelfNodes[nodeIndex];
+                        const nodeType = node.data('shelf_node_type') || 'WH_GALAXY';
+                        const nodeHeight = getShelfUHeight(nodeType);
+                        const shelfU = currentShelfU; // node occupies U shelf_u .. shelf_u + nodeHeight - 1
 
                         // Update node data with physical location
                         node.data('hall', hall);
@@ -1171,6 +1201,7 @@ export class UIDisplayModule {
                             }
                         }
 
+                        currentShelfU += nodeHeight; // next node starts at first free U
                         nodeIndex++;
                         assignedCount++;
                     }
@@ -1267,6 +1298,18 @@ export class UIDisplayModule {
         if (!cyLoading || !cyContainer) {
             console.error('Required DOM elements not found');
             return;
+        }
+
+        // Base rule: one connection per port (reject load if data violates it)
+        if (data?.elements?.length && typeof window.validateOneConnectionPerPort === 'function') {
+            const validation = window.validateOneConnectionPerPort(data.elements);
+            if (!validation.valid) {
+                const msg = validation.errors.length === 1
+                    ? validation.errors[0]
+                    : `${validation.errors.length} port(s) have more than one connection. Only one connection per port is allowed.`;
+                window.showExportStatus?.(msg, 'error');
+                return;
+            }
         }
 
         // Hide container until initialization is complete

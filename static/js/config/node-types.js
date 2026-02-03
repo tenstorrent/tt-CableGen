@@ -12,6 +12,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 2,
         tray_layout: 'horizontal',
+        shelf_u_height: 4,
         displayName: 'N300 LB',
         color: '#3498db'
     },
@@ -19,6 +20,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 2,
         tray_layout: 'horizontal',
+        shelf_u_height: 4,
         displayName: 'N300 QB',
         color: '#3498db'
     },
@@ -26,6 +28,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 6,
         tray_layout: 'vertical',
+        shelf_u_height: 6,
         displayName: 'Wormhole Galaxy',
         color: '#2ecc71'
     },
@@ -33,6 +36,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 14,
         tray_layout: 'vertical',
+        shelf_u_height: 6,
         displayName: 'Blackhole Galaxy',
         color: '#e74c3c'
     },
@@ -40,6 +44,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 4,
         tray_layout: 'horizontal',
+        shelf_u_height: 4,
         displayName: 'P150 QB Global',
         color: '#f39c12'
     },
@@ -47,6 +52,7 @@ export const NODE_TYPES = {
         tray_count: 4,
         ports_per_tray: 4,
         tray_layout: 'horizontal',
+        shelf_u_height: 4,
         displayName: 'P150 QB America',
         color: '#f39c12'
     },
@@ -54,6 +60,7 @@ export const NODE_TYPES = {
         tray_count: 8,
         ports_per_tray: 4,
         tray_layout: 'horizontal',
+        shelf_u_height: 8,
         displayName: 'P150 LB',
         color: '#9b59b6'
     }
@@ -198,6 +205,17 @@ export function getTotalPortCount(nodeType) {
     const config = getNodeConfig(nodeType);
     if (!config) return 0;
     return config.tray_count * config.ports_per_tray;
+}
+
+/**
+ * Get shelf U height (rack units) for a node type
+ *
+ * @param {string} nodeType - Node type identifier
+ * @returns {number} Shelf U height (default 1 if not set)
+ */
+export function getShelfUHeight(nodeType) {
+    const config = getNodeConfig(nodeType);
+    return config?.shelf_u_height ?? 1;
 }
 
 /**

@@ -19,14 +19,34 @@
  */
 
 import path from 'path';
+import fs from 'fs';
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import { callPythonImport } from './test-helpers.js';
 import { createHeadlessCyWithStyleMock } from '../cytoscape-test-helper.js';
-import { mergeCablingGuideData, sortElementsParentsBeforeChildren } from '../../static/js/visualizer.js';
+import { mergeCablingGuideData, sortElementsParentsBeforeChildren, validateMergedCablingGuide, validateOneConnectionPerPort } from '../../static/js/visualizer.js';
 
 const PROJECT_ROOT = process.cwd();
-const MESH_CSV = path.join(PROJECT_ROOT, 'defined_topologies', 'CablingGuides', 'cabling_guide_BH_8x8_mesh.csv');
-const TORUS_X_CSV = path.join(PROJECT_ROOT, 'defined_topologies', 'CablingGuides', 'cabling_guide_BH_8x8_torus-x.csv');
+const CABLING_GUIDES_DIR = path.join(PROJECT_ROOT, 'defined_topologies', 'CablingGuides');
+
+/** Convention: every *_mesh.csv has a counterpart *_torus-2d.csv; mesh is a subset of that torus-2d. */
+function getMeshTorus2dPairs() {
+    const dir = CABLING_GUIDES_DIR;
+    if (!fs.existsSync(dir)) return [];
+    const pairs = [];
+    for (const name of fs.readdirSync(dir)) {
+        if (!name.endsWith('_mesh.csv')) continue;
+        const torus2dName = name.replace(/_mesh\.csv$/, '_torus-2d.csv');
+        const meshPath = path.join(dir, name);
+        const torus2dPath = path.join(dir, torus2dName);
+        if (fs.existsSync(torus2dPath)) pairs.push({ meshPath, torus2dPath, label: name.replace('.csv', '') });
+    }
+    return pairs;
+}
+
+const MESH_TORUS2D_PAIRS = getMeshTorus2dPairs();
+
+const MESH_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_8x8_mesh.csv');
+const TORUS_X_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_8x8_torus-x.csv');
 
 function countByType(elements) {
     const byType = {};
@@ -341,5 +361,139 @@ describe('Merge debug (mesh + torus-x)', () => {
         shelves.forEach((shelf) => {
             expect(shelf.parent().length).toBe(0);
         });
+    });
+});
+
+describe('validateMergedCablingGuide', () => {
+    test('existing A-B, new A-B allowed (warning only)', () => {
+        const existing = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '1' } },
+                { data: { source: '0', target: '1' } }
+            ]
+        };
+        const newGuide = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '1' } },
+                { data: { source: '0', target: '1' } }
+            ]
+        };
+        const result = validateMergedCablingGuide(existing, newGuide);
+        expect(result.errors).toHaveLength(0);
+        expect(result.warnings).toHaveLength(1);
+        expect(result.warnings[0]).toMatch(/re-defined|same endpoints/);
+    });
+
+    test('existing A-B, new A-C not allowed (Guides disagree)', () => {
+        const existing = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '1' } },
+                { data: { source: '0', target: '1' } }
+            ]
+        };
+        const newGuide = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '2' } },
+                { data: { source: '0', target: '2' } }
+            ]
+        };
+        const result = validateMergedCablingGuide(existing, newGuide);
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors.some((e) => e.includes('Guides disagree') && e.includes('0'))).toBe(true);
+    });
+
+    test('new guide with port in two connections is invalid input (rejected)', () => {
+        const existing = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '1' } },
+                { data: { source: '0', target: '1' } }
+            ]
+        };
+        const newGuide = {
+            elements: [
+                { data: { id: '0' } },
+                { data: { id: '1' } },
+                { data: { id: '2' } },
+                { data: { source: '0', target: '1' } },
+                { data: { source: '0', target: '2' } }
+            ]
+        };
+        const result = validateMergedCablingGuide(existing, newGuide);
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors.some((e) => e.includes('more than one connection') && e.includes('0'))).toBe(true);
+    });
+});
+
+describe('merge validation with real CSVs (mesh ⊂ torus-2d convention)', () => {
+    /** Loaded data for each pair: key = meshPath, value = { meshData, torus2dData }. */
+    const pairData = new Map();
+    /** Pairs that successfully loaded (some CSVs may fail Python import in this env). */
+    let loadedPairs = [];
+
+    beforeAll(() => {
+        for (const pair of MESH_TORUS2D_PAIRS) {
+            try {
+                const meshData = callPythonImport(pair.meshPath);
+                const torus2dData = callPythonImport(pair.torus2dPath);
+                pairData.set(pair.meshPath, { meshData, torus2dData });
+                loadedPairs.push(pair);
+            } catch (_) {
+                // skip pair if import fails (e.g. different CSV format / env)
+            }
+        }
+    });
+
+    test('every mesh + same-base torus-2d allowed (mesh is subset of torus-2d)', () => {
+        expect(loadedPairs.length).toBeGreaterThan(0);
+        for (const { meshPath } of loadedPairs) {
+            const { meshData, torus2dData } = pairData.get(meshPath);
+            const existing = { elements: meshData.elements, metadata: meshData.metadata || {} };
+            const newData = { elements: torus2dData.elements, metadata: torus2dData.metadata || {} };
+            const result = validateMergedCablingGuide(existing, newData);
+            expect(result.errors).toHaveLength(0);
+        }
+    });
+
+    test('mesh + different-base torus-2d fails (Guides disagree)', () => {
+        if (loadedPairs.length < 2) return;
+        const [pairA, pairB] = loadedPairs;
+        const { meshData } = pairData.get(pairA.meshPath);
+        const { torus2dData } = pairData.get(pairB.meshPath);
+        const existing = { elements: meshData.elements, metadata: meshData.metadata || {} };
+        const newData = { elements: torus2dData.elements, metadata: torus2dData.metadata || {} };
+        const result = validateMergedCablingGuide(existing, newData);
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors.some((e) => e.includes('Guides disagree'))).toBe(true);
+    });
+});
+
+describe('validateOneConnectionPerPort (load / base rule)', () => {
+    test('elements with port in two connections fail validation', () => {
+        const elements = [
+            { data: { id: '0' } },
+            { data: { id: '1' } },
+            { data: { id: '2' } },
+            { data: { source: '0', target: '1' } },
+            { data: { source: '0', target: '2' } }
+        ];
+        const result = validateOneConnectionPerPort(elements);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.includes('0') && e.includes('more than one connection'))).toBe(true);
+    });
+
+    test('elements with one connection per port pass validation', () => {
+        const elements = [
+            { data: { id: '0' } },
+            { data: { id: '1' } },
+            { data: { source: '0', target: '1' } }
+        ];
+        const result = validateOneConnectionPerPort(elements);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
     });
 });

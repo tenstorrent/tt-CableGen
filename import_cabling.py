@@ -64,6 +64,9 @@ class NetworkCablingCytoscapeVisualizer:
       Rack → Shelf → Tray → Port
     """
 
+    # Default shelf U height (rack units) for node types when not specified
+    DEFAULT_SHELF_U_HEIGHT = 1
+
     # Common dimensions used by all node types
     DEFAULT_SHELF_DIMENSIONS = {
         "width": "auto",  # Will be calculated based on tray layout
@@ -207,6 +210,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 6,  # WH_GALAXY has 6 QSFP-DD ports per tray
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 6,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
@@ -216,6 +220,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -225,6 +230,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -234,6 +240,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (T1 at bottom, T4 at top)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -243,6 +250,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -252,6 +260,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -261,6 +270,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T8 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' 
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -270,6 +280,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 14,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 6,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
@@ -537,6 +548,7 @@ class NetworkCablingCytoscapeVisualizer:
             "port_count": max_port,
             "tray_layout": tray_layout,
             "port_layout": port_layout,
+            "shelf_u_height": self.DEFAULT_SHELF_U_HEIGHT,
             "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
             "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
             "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -1592,12 +1604,13 @@ class NetworkCablingCytoscapeVisualizer:
             "tray_count": tray_count,
             "port_count": port_count,
             "tray_layout": tray_layout,
+            "shelf_u_height": self.DEFAULT_SHELF_U_HEIGHT,
             "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
             "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
             "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
         }
-        
-        
+
+
         return config
 
     def parse_csv(self, csv_file):
@@ -2940,8 +2953,8 @@ class NetworkCablingCytoscapeVisualizer:
                         # This ensures _generate_port_ids can find the hostname when creating edges
                         self._update_connections_with_hostname(hall, aisle, rack_num, shelf_u, hostname)
                         
-                        # Create trays and ports (use numeric shelf_id)
-                        self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter)
+                        # Create trays and ports (use numeric shelf_id); pass hall/aisle so port nodes get label for merge validation
+                        self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter, hall=hall, aisle=aisle)
                         host_index_counter += 1
 
     def _get_shelf_location_by_hostname(self, hostname):
@@ -3053,10 +3066,10 @@ class NetworkCablingCytoscapeVisualizer:
             # Create trays and ports
             self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname, host_id=shelf_idx)
 
-    def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, 
-                               shelf_node_type, hostname, host_id=None, node_name=None):
+    def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u,
+                               shelf_node_type, hostname, host_id=None, node_name=None, hall=None, aisle=None):
         """Create trays and ports for a shelf
-        
+
         Args:
             shelf_id: ID of the shelf parent node
             shelf_config: Configuration dict for the shelf
@@ -3067,6 +3080,8 @@ class NetworkCablingCytoscapeVisualizer:
             hostname: Hostname for the shelf
             host_id: Optional host ID (for descriptor format)
             node_name: Optional node name (for descriptor format)
+            hall: Optional hall (CSV format; used for port label so merge validation uses label-based keys)
+            aisle: Optional aisle (CSV format; used for port label)
         """
         # Create trays based on this shelf's specific configuration
         tray_count = shelf_config["tray_count"]
@@ -3128,12 +3143,22 @@ class NetworkCablingCytoscapeVisualizer:
                     port_data["shelf_node_type"] = shelf_node_type
                 if hostname is not None:
                     port_data["hostname"] = hostname
+                # Add hall/aisle and label for CSV format so merge validation uses label-based port keys
+                if hall is not None and aisle is not None and rack_num is not None and shelf_u is not None:
+                    port_data["hall"] = hall
+                    port_data["aisle"] = aisle
+                    # Label format matches CSV: 120A03U02-2-3 (hall+aisle+rack+U+shelf-tray-port)
+                    rack_padded = self.normalize_rack(str(rack_num))
+                    shelf_padded = self.normalize_shelf_u(str(shelf_u))
+                    port_label = f"{hall}{aisle}{rack_padded}U{shelf_padded}-{tray_id}-{port_id}"
+                else:
+                    port_label = f"P{port_id}"
                 # Add descriptor format data if provided
                 if host_id is not None:
                     port_data["host_index"] = host_id  # Globally unique index
                 if node_name is not None:
                     port_data["node_name"] = node_name
-                
+
                 # Use the same shelf_id format as tray for consistency
                 # (tray_shelf_id is already calculated above: numeric host_id if available, else shelf_id)
                 port_node_id = self.generate_node_id("port", tray_shelf_id, tray_id, port_id)
@@ -3141,7 +3166,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "port",
                     port_node_id,
                     tray_node_id,
-                    f"P{port_id}",
+                    port_label,
                     port_x,
                     port_y,
                     **port_data

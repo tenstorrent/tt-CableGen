@@ -2867,15 +2867,6 @@ export class CommonModule {
 
         edges.forEach((edge) => {
             const styleProps = this._computeEdgeCurveStyle(edge, controlPointStepSize);
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] applyCurveStylesToEdges', {
-                    edgeId: edge.id(),
-                    source: edge.source().id(),
-                    target: edge.target().id(),
-                    isRerouted: edge.data('isRerouted'),
-                    style: styleProps
-                });
-            }
             edge.style(styleProps);
         });
 
@@ -2911,11 +2902,7 @@ export class CommonModule {
         const FLAT_MAX_DISTANCE = 180;   // Only flat for shorter edges; longer (e.g. cross-shelf) get curve
         const useFlat = bothPorts && differentTrayNum && differentPortNum && edgeDistance <= FLAT_MAX_DISTANCE;
         if (useFlat) {
-            const style = { 'curve-style': 'unbundled-bezier', 'control-point-distance': 0, 'control-point-weight': 0.5 };
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: source.id(), target: target.id(), branch: 'port-to-port flat', style });
-            }
-            return style;
+            return { 'curve-style': 'unbundled-bezier', 'control-point-distance': 0, 'control-point-weight': 0.5 };
         }
 
         const isSole = this.isSoleConnection(edge);
@@ -2924,17 +2911,9 @@ export class CommonModule {
             const UNBUNDLED_MIN = 35;   // Lower = gentler curve for short edges (~10% bump)
             const UNBUNDLED_MAX = 137;
             const controlPointDistance = Math.max(UNBUNDLED_MIN, Math.min(UNBUNDLED_MAX, edgeDistance * UNBUNDLED_DISTANCE_FACTOR));
-            const style = { 'curve-style': 'unbundled-bezier', 'control-point-distance': controlPointDistance, 'control-point-weight': 0.5 };
-            if (window.__DEBUG_CURVE_STYLES) {
-                console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: source.id(), target: target.id(), branch: 'sole', edgeDistance, controlPointDistance, style });
-            }
-            return style;
+            return { 'curve-style': 'unbundled-bezier', 'control-point-distance': controlPointDistance, 'control-point-weight': 0.5 };
         }
-        const style = { 'curve-style': 'bezier', 'control-point-step-size': controlPointStepSize };
-        if (window.__DEBUG_CURVE_STYLES) {
-            console.log('[curve-style] _computeEdgeCurveStyle', { edgeId: edge.id(), source: edge.source().id(), target: edge.target().id(), branch: 'many', style });
-        }
-        return style;
+        return { 'curve-style': 'bezier', 'control-point-step-size': controlPointStepSize };
     }
 
     /**
@@ -2946,11 +2925,6 @@ export class CommonModule {
 
         const edges = this.state.cy.edges();
         const controlPointStepSize = 28;   // Bezier step (multiple connections); smaller = tighter spread
-
-        console.log('[curve-style] forceApplyCurveStyles called', {
-            edgeCount: edges.length,
-            debugPerEdge: !!window.__DEBUG_CURVE_STYLES
-        });
 
         try {
             this.state.cy.startBatch();

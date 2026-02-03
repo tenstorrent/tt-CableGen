@@ -1043,7 +1043,113 @@ function getEndpointKey(nodeData, nodeId) {
 }
 
 /**
+ * Format rack number for label (match location buildLabel: 2-digit).
+ * @param {*} rackNum
+ * @returns {string}
+ */
+function formatRackNumForLabel(rackNum) {
+    return rackNum !== undefined && rackNum !== null ? String(rackNum).padStart(2, '0') : '';
+}
+
+/**
+ * Format shelf U for label (match location: strip leading U then 2-digit).
+ * @param {*} shelfU
+ * @returns {string}
+ */
+function formatShelfUForLabel(shelfU) {
+    if (shelfU === undefined || shelfU === null) return '';
+    const s = String(shelfU).replace(/^U?/i, '');
+    return s === '' ? '' : s.padStart(2, '0');
+}
+
+/**
+ * Build shelf label key (same structure as location buildLabel): hall+aisle+rack+U+shelf.
+ * @param {string} hall
+ * @param {string} aisle
+ * @param {*} rackNum
+ * @param {*} shelfU
+ * @returns {string} e.g. "120A03U02" or "" if missing parts
+ */
+function buildShelfLabelKey(hall, aisle, rackNum, shelfU) {
+    if (!hall || !aisle || rackNum === undefined || rackNum === null) return '';
+    const rackPadded = formatRackNumForLabel(rackNum);
+    const label = `${hall}${aisle}${rackPadded}`;
+    if (shelfU !== null && shelfU !== undefined && shelfU !== '') {
+        const shelfUPadded = formatShelfUForLabel(shelfU);
+        return `${label}U${shelfUPadded}`;
+    }
+    return label;
+}
+
+/**
+ * Port-level key for matching connection endpoints (host_index/host_id + tray + port).
+ * Returns empty string if node is not a port (missing tray or port).
+ */
+function getPortKey(nodeData) {
+    if (!nodeData) return '';
+    const h = nodeData.host_index ?? nodeData.host_id;
+    const tray = nodeData.tray;
+    const port = nodeData.port;
+    if (h === undefined || h === null || tray === undefined || tray === null || port === undefined || port === null) return '';
+    return `${h}_t${tray}_p${port}`;
+}
+
+/**
+ * Build port key in label style (same as CSV Label / location): shelfLabel-tray-port, e.g. "120A03U02-3-3".
+ * @param {Object} nodeData - port node data (may have hall, aisle, rack_num, shelf_u, tray, port or label)
+ * @returns {string} label-style port key or '' if not enough data
+ */
+function buildPortLabelKey(nodeData) {
+    if (!nodeData) return '';
+    if (nodeData.label != null && nodeData.label !== '' && /^.+-.+-.+$/.test(String(nodeData.label))) {
+        return String(nodeData.label);
+    }
+    const hall = nodeData.hall;
+    const aisle = nodeData.aisle;
+    const rackNum = nodeData.rack_num;
+    const shelfU = nodeData.shelf_u;
+    const tray = nodeData.tray;
+    const port = nodeData.port;
+    if (hall === undefined || hall === null || aisle === undefined || aisle === null ||
+        rackNum === undefined || rackNum === null || shelfU === undefined || shelfU === null ||
+        tray === undefined || tray === null || port === undefined || port === null) return '';
+    const shelfLabel = buildShelfLabelKey(hall, aisle, rackNum, shelfU);
+    if (shelfLabel === '') return '';
+    return `${shelfLabel}-${tray}-${port}`;
+}
+
+/**
+ * Parse host_index, tray, port from node id like "0:t1:p3" (used when node data lacks tray/port).
+ * @param {string} nodeId - node id
+ * @returns {{ h: string, tray: string, port: string }|null}
+ */
+function parsePortFromNodeId(nodeId) {
+    if (nodeId == null || typeof nodeId !== 'string') return null;
+    const m = nodeId.match(/^(\d+):t(\d+):p(\d+)$/);
+    if (m) return { h: m[1], tray: m[2], port: m[3] };
+    return null;
+}
+
+/**
+ * Key for one connection endpoint in peer map / validation. Use label-style (shelfLabel-tray-port) when
+ * available so port keys match how we do labels; else host_index_tray_port; else parsed node id; else endpoint key.
+ * @param {Object} nodeData - element.data for a node
+ * @param {string} nodeId - node id (fallback / parse)
+ * @returns {string} Key unique per port
+ */
+function getConnectionEndpointKey(nodeData, nodeId) {
+    const labelKey = buildPortLabelKey(nodeData);
+    if (labelKey !== '') return labelKey;
+    const portKey = getPortKey(nodeData);
+    if (portKey !== '') return portKey;
+    const parsed = parsePortFromNodeId(nodeId);
+    if (parsed) return `${parsed.h}_t${parsed.tray}_p${parsed.port}`;
+    return getEndpointKey(nodeData, nodeId);
+}
+
+/**
  * Build connection sets and peer map from cytoscape elements.
+ * Uses port-level keys when available so each physical port is one key (required for real CSVs).
  * @param {Array} elements - cytoscape elements array
  * @returns {{ connectionKeys: Set<string>, peerMap: Map<string, Set<string>>, nodeById: Map<string, Object> }}
  */
@@ -1066,8 +1172,8 @@ function buildConnectionMaps(elements) {
         if (src == null || tgt == null) return;
         const srcData = nodeById.get(src);
         const tgtData = nodeById.get(tgt);
-        const k1 = getEndpointKey(srcData, src);
-        const k2 = getEndpointKey(tgtData, tgt);
+        const k1 = getConnectionEndpointKey(srcData, src);
+        const k2 = getConnectionEndpointKey(tgtData, tgt);
         if (k1 === '' || k2 === '') return;
         const key = k1 <= k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
         connectionKeys.add(key);
@@ -1081,19 +1187,45 @@ function buildConnectionMaps(elements) {
 }
 
 /**
- * Validate a secondary cabling guide against the current visualization:
- * - Warn if a connection re-defines the same endpoints (both match); e.g. when importing a superset CSV.
- * Does not error on new connections from existing nodes (superset imports are allowed).
+ * Base rule: one connection per port. Validates that no port (by endpoint key) appears in more than one connection.
+ * Used on load and for merge validation.
+ * @param {Array} elements - cytoscape elements array (nodes + edges)
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+function validateOneConnectionPerPort(elements) {
+    const errors = [];
+    const { peerMap } = buildConnectionMaps(elements || []);
+    peerMap.forEach((peers, portKey) => {
+        if (peers.size > 1) {
+            const peerList = [...peers].join(', ');
+            errors.push(`Port ${portKey} has more than one connection (${peerList}). Only one connection per port is allowed.`);
+        }
+    });
+    return { valid: errors.length === 0, errors: [...new Set(errors)] };
+}
+
+/**
+ * Validate a secondary cabling guide against the current visualization.
+ * Rules:
+ * - New guide must be valid: one connection per port (invalid new guide → error).
+ * - existing A–B, new A–B → allowed (warn re-defined).
+ * - existing A–B, new A–C → not allowed; error "Guides disagree".
+ * - existing A–B, new has both A–B and A–C → invalid new guide (one port, two connections) → error.
  * @param {Object} existingData - Current cytoscape data
  * @param {Object} newData - New guide cytoscape data (before merge)
  * @returns {{ warnings: string[], errors: string[] }}
  */
 function validateMergedCablingGuide(existingData, newData) {
     const warnings = [];
+    const errors = [];
     const existingEls = existingData?.elements || [];
     const newEls = newData?.elements || [];
-    const { connectionKeys: existingConnections } = buildConnectionMaps(existingEls);
-    const { nodeById: newNodeById } = buildConnectionMaps(newEls);
+    // New guide must be valid: one connection per port
+    const newPortValidation = validateOneConnectionPerPort(newEls);
+    if (!newPortValidation.valid) errors.push(...newPortValidation.errors);
+
+    const { connectionKeys: existingConnections, peerMap: existingPeerMap } = buildConnectionMaps(existingEls);
+    const { peerMap: newPeerMap, nodeById: newNodeById } = buildConnectionMaps(newEls);
 
     newEls.forEach((el) => {
         const d = el.data || {};
@@ -1102,8 +1234,8 @@ function validateMergedCablingGuide(existingData, newData) {
         if (src == null || tgt == null) return;
         const srcData = newNodeById.get(src);
         const tgtData = newNodeById.get(tgt);
-        const k1 = getEndpointKey(srcData, src);
-        const k2 = getEndpointKey(tgtData, tgt);
+        const k1 = getConnectionEndpointKey(srcData, src);
+        const k2 = getConnectionEndpointKey(tgtData, tgt);
         if (k1 === '' || k2 === '') return;
         const key = k1 <= k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
 
@@ -1112,20 +1244,19 @@ function validateMergedCablingGuide(existingData, newData) {
         }
     });
 
-    return { warnings: [...new Set(warnings)], errors: [] };
-}
+    // existing A–B, new A–C: not allowed (guides disagree on that port)
+    existingPeerMap.forEach((existingPeers, portKey) => {
+        if (!newPeerMap.has(portKey)) return;
+        const newPeers = newPeerMap.get(portKey);
+        const missing = [...existingPeers].filter((p) => !newPeers.has(p));
+        if (missing.length > 0) {
+            const existingList = [...existingPeers].join(', ');
+            const newList = [...newPeers].join(', ');
+            errors.push(`Guides disagree on connections for port ${portKey}: current has ${existingList}, new guide has ${newList} (missing: ${missing.join(', ')}).`);
+        }
+    });
 
-/**
- * Port-level key for matching connection endpoints (host_index/host_id + tray + port).
- * Returns empty string if node is not a port (missing tray or port).
- */
-function getPortKey(nodeData) {
-    if (!nodeData) return '';
-    const h = nodeData.host_index ?? nodeData.host_id;
-    const tray = nodeData.tray;
-    const port = nodeData.port;
-    if (h === undefined || h === null || tray === undefined || tray === null || port === undefined || port === null) return '';
-    return `${h}_t${tray}_p${port}`;
+    return { warnings: [...new Set(warnings)], errors: [...new Set(errors)] };
 }
 
 /**
@@ -1559,12 +1690,6 @@ async function addAnotherCablingGuideLocation(file) {
             window.showExportStatus?.(errMsg, 'error');
             return;
         }
-        if (validation.warnings.length > 0) {
-            const warnMsg = validation.warnings.length === 1
-                ? validation.warnings[0]
-                : `${validation.warnings.length} connection(s) re-defined (same endpoints).`;
-            window.showExportStatus?.(warnMsg, 'warning');
-        }
 
         const mergePrefix = 'm' + ((existingData?.metadata?.merged_guide_count || 1) + 1);
         const merged = mergeCablingGuideData(existingData, newData, mergePrefix);
@@ -1586,8 +1711,17 @@ async function addAnotherCablingGuideLocation(file) {
         }
         updateConnectionLegend(state.data.currentData);
 
-        const msg = result.message ? `${result.message} Merged into visualization.` : 'Cabling guide added.';
-        window.showExportStatus?.(msg, 'success');
+        let msg = result.message ? `${result.message} Merged into visualization.` : 'Cabling guide added.';
+        if (validation.warnings.length > 0) {
+            const warnSummary = validation.warnings.length === 1
+                ? validation.warnings[0]
+                : `${validation.warnings.length} connection(s) re-defined (same endpoints).`;
+            msg += ' ' + warnSummary;
+            const fullWarn = validation.warnings.length > 1 ? msg + '\n\n' + validation.warnings.join('\n') : null;
+            window.showExportStatus?.(msg, 'warning', fullWarn);
+        } else {
+            window.showExportStatus?.(msg, 'success');
+        }
         if (fileInput) fileInput.value = '';
     } catch (err) {
         console.error('Add another cabling guide error:', err);
@@ -1944,6 +2078,7 @@ const otherFunctions = {
     addAnotherCablingGuideLocation,
     mergeCablingGuideData,
     validateMergedCablingGuide,
+    validateOneConnectionPerPort,
 };
 
 // Combine and expose all functions
@@ -1953,4 +2088,4 @@ Object.keys(functionsToExpose).forEach(key => {
 });
 
 // Named exports for tests (merge debugging)
-export { mergeCablingGuideData, sortElementsParentsBeforeChildren };
+export { mergeCablingGuideData, sortElementsParentsBeforeChildren, validateMergedCablingGuide, validateOneConnectionPerPort };

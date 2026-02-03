@@ -55,6 +55,7 @@ def index():
                 "tray_count": config["tray_count"],
                 "ports_per_tray": config["port_count"],
                 "tray_layout": config["tray_layout"],
+                "shelf_u_height": config.get("shelf_u_height", 1),
             }
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
@@ -1108,6 +1109,7 @@ def get_node_configs():
                 "tray_count": config["tray_count"],
                 "ports_per_tray": config["port_count"],
                 "tray_layout": config["tray_layout"],
+                "shelf_u_height": config.get("shelf_u_height", 1),
             }
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config

@@ -86,6 +86,19 @@ export const LAYOUT_CONSTANTS = {
     SHELF_VERTICAL_SPACING_FACTOR: 0.75,   // tight vertical spacing when all expanded (location mode)
     COLLAPSED_SHELF_LOCATION_SPACING_FACTOR: 1.25,
 
+    // Minimum horizontal gap between adjacent racks (so node content does not overlap)
+    RACK_MIN_GAP: 6,
+    // Multiply rack-to-rack advance by this (<= 1 = advance by less, racks closer)
+    RACK_ADVANCE_FACTOR: 0.5,
+
+};
+
+/**
+ * Connection rules (enforced on load, merge, and when creating connections in the UI)
+ * - ONE_CONNECTION_PER_PORT: each port may be part of at most one connection.
+ */
+export const CONNECTION_RULES = {
+    ONE_CONNECTION_PER_PORT: true
 };
 
 /**
