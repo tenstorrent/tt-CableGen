@@ -1096,11 +1096,15 @@ function getPortKey(nodeData) {
 
 /**
  * Build port key in label style (same as CSV Label / location): shelfLabel-tray-port, e.g. "120A03U02-3-3".
- * @param {Object} nodeData - port node data (may have hall, aisle, rack_num, shelf_u, tray, port or label)
+ * Used to identify ports for validation/merge. Prefers port_key (CSV label stored for keying), then builds from components.
+ * @param {Object} nodeData - port node data (may have port_key, hall, aisle, rack_num, shelf_u, tray, port or label)
  * @returns {string} label-style port key or '' if not enough data
  */
 function buildPortLabelKey(nodeData) {
     if (!nodeData) return '';
+    if (nodeData.port_key != null && nodeData.port_key !== '' && /^.+-.+-.+$/.test(String(nodeData.port_key))) {
+        return String(nodeData.port_key);
+    }
     if (nodeData.label != null && nodeData.label !== '' && /^.+-.+-.+$/.test(String(nodeData.label))) {
         return String(nodeData.label);
     }

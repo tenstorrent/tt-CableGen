@@ -588,6 +588,24 @@ export class UIDisplayModule {
     }
 
     /**
+     * Parse shelf U input for paste destination only: range or list, no capacity.
+     * A single number is returned as [n] (one position), not expanded to 1..n.
+     * @param {string} input - Input text
+     * @returns {Array<number>} Array of shelf U numbers
+     */
+    parseFlexibleInputShelfUPasteOnly(input) {
+        if (!input) return [];
+        input = input.trim();
+        if (!input) return [];
+        const rangeResult = this.parseRange(input);
+        if (rangeResult && rangeResult.length > 0) return rangeResult.map(x => (typeof x === 'number' ? x : parseInt(x, 10) || 1));
+        const items = this.parseList(input);
+        const allNumeric = items.every(item => !isNaN(parseInt(item)));
+        if (allNumeric && items.length > 0) return items.map(item => parseInt(item) || 1);
+        return items.length > 0 ? items.map(item => (typeof item === 'number' ? item : parseInt(item, 10) || 1)) : [];
+    }
+
+    /**
      * Parse hall names from textarea (one per line or comma-separated)
      * @returns {Array<string>} Array of hall names (empty string if not specified)
      */
@@ -790,7 +808,7 @@ export class UIDisplayModule {
         };
 
         if (header) header.textContent = 'Paste destination';
-        if (subheader) subheader.textContent = 'Paste destination: ' + this._pasteDestinationContext.label + '. Enter location attributes below. Shelf U: use capacity (e.g. 4 for 4 positions) or range/list; we assign one position per pasted shelf.';
+        if (subheader) subheader.textContent = 'Paste destination: ' + this._pasteDestinationContext.label + '. Enter location attributes below. Shelf U: use a range or list (e.g. 1-4 or 24,18,12,6); one position per pasted shelf.';
         if (tabs) tabs.style.display = 'none';
         if (capacityRow) capacityRow.style.display = 'none';
         if (applyBtn) applyBtn.textContent = 'Paste';
@@ -876,7 +894,9 @@ export class UIDisplayModule {
         const parseShelfUList = () => {
             const el = document.getElementById('shelfUnitNumbers');
             if (!el) return [];
-            const raw = this.parseFlexibleInput((el.value || '').trim());
+            const input = (el.value || '').trim();
+            if (!input) return [];
+            const raw = this.parseFlexibleInputShelfUPasteOnly(input);
             return raw.map(x => (typeof x === 'number' ? x : parseInt(x, 10) || 1));
         };
 
@@ -1443,6 +1463,7 @@ export class UIDisplayModule {
                 this.state.cy.startBatch();
                 this.state.cy.elements().remove();
                 this.state.cy.add(data.elements);
+                this.commonModule.normalizePortLabels();
                 this.state.cy.endBatch();
 
                 // In location mode, ensure shelves with racking data are in hall/aisle/rack compound nodes

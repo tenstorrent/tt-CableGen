@@ -17,12 +17,14 @@ This document covers the specifics of interacting with tt-CableGen in **Location
   - [5. Node Management](#5-node-management)
 - [Common Workflows](#common-workflows)
   - [Importing a CSV with Location Data](#importing-a-csv-with-location-data)
+  - [Multiple File Import / Merge](#multiple-file-import--merge)
   - [Assigning Physical Locations](#assigning-physical-locations)
   - [Filtering Connections by Type](#filtering-connections-by-type)
   - [Adding Nodes in Location Mode](#adding-nodes-in-location-mode)
   - [Adding Connections](#adding-connections)
   - [Collapsing/Expanding Racks](#collapsingexpanding-racks)
   - [Editing Node Properties](#editing-node-properties)
+  - [Copy and Paste](#copy-and-paste)
 - [UI Elements Specific to Location Mode](#ui-elements-specific-to-location-mode)
   - [Visible Elements](#visible-elements)
   - [Hidden Elements](#hidden-elements)
@@ -127,6 +129,28 @@ Can also filter by endpoint nodes.
 3. The system automatically detects location columns and enters Location Mode
 4. Nodes are organized by their physical location hierarchy
 
+### Multiple File Import / Merge
+
+In Location Mode you can **merge a second (or subsequent) cabling guide CSV** into the current visualization without replacing it. This is useful when you have multiple CSVs for the same physical deployment (e.g. one for mesh connections, another for torus-x) and want a single view with all connections.
+
+**Requirements:**
+- You must be in **Physical Location View** (Location Mode).
+- A visualization must already be loaded (import a first CSV as in [Importing a CSV with Location Data](#importing-a-csv-with-location-data)).
+
+**Flow:**
+1. In the sidebar, find the **"➕ Add another cabling guide"** section (shown only in Location Mode).
+2. Drag and drop a CSV onto that area, or use the file input to choose a CSV.
+3. Click **"📊 Add CSV to visualization"** (or the merge is triggered when you select a file, depending on setup).
+4. The new CSV is parsed and **merged** with the current graph:
+   - **Nodes** are matched by identity (hostname, or hall/aisle/rack/shelf U). Existing nodes that match are reused; any new nodes from the second file are added with a merge prefix (e.g. `m2`, `m3`).
+   - **Connections** from the new CSV are added. If a connection duplicates an existing one (same endpoints), you get a warning; if a port would get a second connection (conflict), the merge is rejected with an error.
+
+**Result:** The same rack/shelf layout is preserved; the visualization gains the additional connections from the merged CSV. You can export a single Cabling Guide that includes all merged connections.
+
+**Notes:**
+- Merge is only available when the session started from a CSV import (Location Mode). You cannot merge into a visualization that was loaded from a TextProto or created from an empty canvas in Hierarchy Mode and then switched to Location.
+- If the new CSV references nodes that do not exist in the current graph (e.g. different hall/aisle/rack/shelf), those nodes are added as new elements under the same hierarchy rules.
+
 ### Assigning Physical Locations
 
 1. Switch from Hierarchy Mode (if applicable)
@@ -200,6 +224,26 @@ Right-click any node to edit its properties. This feature requires **Cabling Edi
 - **Shelf U**: Edit the shelf unit position 
 
 **Note**: Changes to parent nodes (hall, aisle, rack) automatically propagate to all child nodes, making it easy to reorganize large sections of your deployment.
+
+### Copy and Paste
+
+Copy and paste in Location Mode duplicates shelves and their **internal connections** (connections where both endpoints are in the copied set). Paste is only available when the session started in Location Mode (e.g. from a CSV import).
+
+**Copy flow:**
+1. Enable **Cabling Editing** mode.
+2. Select one or more shelves, or select a hall/aisle/rack to copy all shelves under it (use **Shift+Click** or **Ctrl/Cmd+Click** for multi-select).
+3. Press **Ctrl+C** (or **Cmd+C** on Mac). Shelves and connections between them are copied to the clipboard.
+
+**Paste flow:**
+1. Ensure you have copied content (Ctrl+C) and **Cabling Editing** is enabled.
+2. Optionally select a **destination**: click a rack (or hall/aisle) to paste into that location; if nothing is selected, paste destination is "Canvas", and you will be prompted to enter full location attributes for the pasted shelves.
+3. Press **Ctrl+V** (or **Cmd+V** on Mac). The **Paste destination** modal opens.
+4. In the modal, the destination is shown (e.g. a specific rack or "Canvas"). Enter or adjust:
+   - **Hall** / **Aisle** / **Rack** as needed for the destination.
+   - **Shelf U**: use a range or list (e.g. `1-4` or `24,18,12,6`); one position is assigned per pasted shelf.
+5. Click **Paste** to create the shelves and their connections at the chosen location. New host indices and hostnames are assigned automatically.
+
+**Note**: You cannot paste in Location Mode when the session started from a Hierarchy Mode import (e.g. TextProto). Use Hierarchy Mode for pasting in that case.
 
 ## UI Elements Specific to Location Mode
 

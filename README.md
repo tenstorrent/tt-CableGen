@@ -13,6 +13,7 @@ For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this t
 - [Basic Usage](#basic-usage-1)
   - [Importing a Topology](#importing-a-topology)
   - [Editing](#editing)
+  - [Copy and Paste](#copy-and-paste)
   - [Exporting](#exporting)
 - [Docker Deployment](#docker-deployment)
 - [Detailed Documentation](#detailed-documentation)
@@ -74,6 +75,18 @@ Please regularly hard refresh the page (Ctrl+Shift+R / Cmd+Shift+R) to ensure yo
 - **Edit nodes**: Double-click any shelf node to edit the node properties.
 - **Delete**: Select item + press Delete/Backspace.
 
+### Copy and Paste
+
+Copy and paste works in both **Physical Deployment** (Location) and **Logical Hierarchy** modes when **Cabling Editing** is enabled. Use **Ctrl+C** (or **Cmd+C** on Mac) to copy and **Ctrl+V** (or **Cmd+V** on Mac) to paste.
+
+| Mode | Copy | Paste |
+|------|------|--------|
+| **Location** | Select one or more shelves, or a hall/aisle/rack to copy all shelves under it. Connections between nodes in the selection are included. | **Ctrl+V** opens a **Paste destination** modal. Choose where to place the pasted shelves (e.g. hall, aisle, rack, shelf U). You can paste into a selected rack or at a new location. |
+| **Hierarchy** | Select one or more graph instances or shelves. Full subtrees and connections between nodes in the selection are included. | **Ctrl+V** pastes under the currently selected graph instance (or at root if no graph selected). New instances use the prefix `copy`. No modal. |
+
+- **Multi-select**: Use **Shift+Click** or **Ctrl/Cmd+Click** to select multiple nodes before copying.
+- **Paste requirements**: Paste is only available when Cabling Editing is enabled. In Location mode, paste is only allowed when the session started in Location mode (e.g. from a CSV import).
+
 ### Exporting
 
 - **Cabling Descriptor**: Topology definition (hierarchy-based)
@@ -96,6 +109,7 @@ The visualizer has 2 distinct modes which expose different information but there
 2. Node/Connection Info: In both modes clicking on the a connected port will show the connection info panel with details about the connection and the endpoints. 
 3. Connection Creation: In both modes clicking on an unconnected port will allow the user to create a connection to another unconnected port.
 4. Element Deletion: In both modes, selcting an element and clicking the delete button (or pressing Backspace/Delete) will delete the element. This will delete any contained nodes/connections. Multiple elements can be selected and deleted at once by holding Shift/Cmd/Ctrl and clicking on the elements to select them.
+5. Copy and Paste: In both modes, **Ctrl+C** / **Cmd+C** copies the current selection (shelves and internal connections in Location mode; graph instances/shelves and subtrees in Hierarchy mode). **Ctrl+V** / **Cmd+V** pastes: in Location mode a paste-destination modal appears to choose hall/aisle/rack/shelf U; in Hierarchy mode content is pasted under the selected graph or at root. See [Copy and Paste](#copy-and-paste) and the mode-specific READMEs for usage flows.
 
 **📖 For detailed Location Mode documentation, see [README-LOCATION.md](README-LOCATION.md)**
 

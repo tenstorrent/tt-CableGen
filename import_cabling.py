@@ -2953,7 +2953,7 @@ class NetworkCablingCytoscapeVisualizer:
                         # This ensures _generate_port_ids can find the hostname when creating edges
                         self._update_connections_with_hostname(hall, aisle, rack_num, shelf_u, hostname)
                         
-                        # Create trays and ports (use numeric shelf_id); pass hall/aisle so port nodes get label for merge validation
+                        # Create trays and ports (use numeric shelf_id); pass hall/aisle so port nodes get location data for merge validation
                         self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter, hall=hall, aisle=aisle)
                         host_index_counter += 1
 
@@ -3080,8 +3080,8 @@ class NetworkCablingCytoscapeVisualizer:
             hostname: Hostname for the shelf
             host_id: Optional host ID (for descriptor format)
             node_name: Optional node name (for descriptor format)
-            hall: Optional hall (CSV format; used for port label so merge validation uses label-based keys)
-            aisle: Optional aisle (CSV format; used for port label)
+            hall: Optional hall (CSV format; used for port location data so merge validation can build keys)
+            aisle: Optional aisle (CSV format; used for port location data)
         """
         # Create trays based on this shelf's specific configuration
         tray_count = shelf_config["tray_count"]
@@ -3143,16 +3143,16 @@ class NetworkCablingCytoscapeVisualizer:
                     port_data["shelf_node_type"] = shelf_node_type
                 if hostname is not None:
                     port_data["hostname"] = hostname
-                # Add hall/aisle and label for CSV format so merge validation uses label-based port keys
+                # Add hall/aisle for CSV format (merge validation builds port keys from these)
                 if hall is not None and aisle is not None and rack_num is not None and shelf_u is not None:
                     port_data["hall"] = hall
                     port_data["aisle"] = aisle
-                    # Label format matches CSV: 120A03U02-2-3 (hall+aisle+rack+U+shelf-tray-port)
+                    # Preserve CSV-style key for port identification (label-style: shelfLabel-tray-port)
                     rack_padded = self.normalize_rack(str(rack_num))
                     shelf_padded = self.normalize_shelf_u(str(shelf_u))
-                    port_label = f"{hall}{aisle}{rack_padded}U{shelf_padded}-{tray_id}-{port_id}"
-                else:
-                    port_label = f"P{port_id}"
+                    port_data["port_key"] = f"{hall}{aisle}{rack_padded}U{shelf_padded}-{tray_id}-{port_id}"
+                # Visualizer port labels are always "P<port # on tray>"; do not use CSV label for display
+                port_label = f"P{port_id}"
                 # Add descriptor format data if provided
                 if host_id is not None:
                     port_data["host_index"] = host_id  # Globally unique index

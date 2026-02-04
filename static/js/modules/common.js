@@ -200,6 +200,20 @@ export class CommonModule {
     }
 
     /**
+     * Ensure all port nodes have label "P<port # on tray>". Call after loading graph data
+     * so port labels are never identifiers or other values.
+     */
+    normalizePortLabels() {
+        if (!this.state.cy) return;
+        this.state.cy.nodes('[type="port"]').forEach(port => {
+            const portNum = port.data('port');
+            if (portNum != null && portNum !== undefined) {
+                port.data('label', `P${portNum}`);
+            }
+        });
+    }
+
+    /**
      * Position graph children (shelves and nested graphs) in a grid layout
      * Shared between location and hierarchy modes
      * @param {Object} graphNode - Cytoscape graph node
@@ -1224,9 +1238,11 @@ export class CommonModule {
         });
 
         // Port hover handlers - show labels on hover, hide on mouseout; raise port above connections
+        // Port labels are always "P<port # on tray>", not identifiers
         this.state.cy.on('mouseover', 'node.port', (evt) => {
             const port = evt.target;
-            const labelValue = port.data('label') || '';
+            const portNum = port.data('port');
+            const labelValue = (portNum != null && portNum !== undefined) ? `P${portNum}` : (port.data('label') || '');
             port.style('label', labelValue);
             port.addClass('port-hover');
         });
@@ -1241,8 +1257,19 @@ export class CommonModule {
     }
 
     /**
+     * Get current curve magnitude multiplier from the slider (0 = flat, 1 = default, up to 4).
+     * Used as multiplier for control-point-distance (unbundled-bezier) and divisor for control-point-step-size (bezier).
+     */
+    getCurveMagnitude() {
+        const slider = document.getElementById('curveMagnitudeSlider');
+        if (!slider) return 1.0;
+        const value = parseFloat(slider.value);
+        return Number.isFinite(value) ? value : 1.0;
+    }
+
+    /**
      * Add event handler for curve magnitude slider
-     * Controls the curve strength for cross-host connections
+     * Controls the curve strength for cross-host connections (multiplier on bezier and unbundled-bezier)
      */
     addCurveMagnitudeSliderHandler() {
         const slider = document.getElementById('curveMagnitudeSlider');
@@ -2276,7 +2303,9 @@ export class CommonModule {
             return;
         }
 
-        let html = `<strong>${data.label || data.id}</strong><br>`;
+        // Port labels are always "P<port # on tray>", not identifiers
+        const displayLabel = (data.type === 'port' && data.port != null) ? `P${data.port}` : (data.label || data.id);
+        let html = `<strong>${displayLabel}</strong><br>`;
         html += `Type: ${data.type || 'Unknown'}<br>`;
 
         // Determine current visualization mode
@@ -2876,15 +2905,18 @@ export class CommonModule {
 
     /**
      * Compute curve style properties for a single edge.
+     * Curve magnitude slider multiplies curve strength: unbundled-bezier control-point-distance and
+     * bezier effective step (smaller step = stronger curve). 0 = flat, 1 = default, >1 = stronger curve.
      * Rules (in order):
      * 1. Port-to-port with different tray and different port → flat (control-point-distance: 0).
-     * 2. Sole connection between same pair → unbundled-bezier, distance-scaled control-point-distance.
-     * 3. One of many between same pair → bezier with fixed control-point-step-size.
+     * 2. Sole connection between same pair → unbundled-bezier, distance-scaled control-point-distance × magnitude.
+     * 3. One of many between same pair → bezier with control-point-step-size / magnitude.
      * @param {Object} edge - Cytoscape edge
      * @param {number} controlPointStepSize - Base step size for bezier curves
      * @returns {Object} Style properties to apply
      */
     _computeEdgeCurveStyle(edge, controlPointStepSize) {
+        const magnitude = this.getCurveMagnitude();
         const source = edge.source();
         const target = edge.target();
 
@@ -2910,10 +2942,13 @@ export class CommonModule {
             const UNBUNDLED_DISTANCE_FACTOR = 0.147;
             const UNBUNDLED_MIN = 35;   // Lower = gentler curve for short edges (~10% bump)
             const UNBUNDLED_MAX = 137;
-            const controlPointDistance = Math.max(UNBUNDLED_MIN, Math.min(UNBUNDLED_MAX, edgeDistance * UNBUNDLED_DISTANCE_FACTOR));
+            const baseDistance = Math.max(UNBUNDLED_MIN, Math.min(UNBUNDLED_MAX, edgeDistance * UNBUNDLED_DISTANCE_FACTOR));
+            const controlPointDistance = magnitude <= 0 ? 0 : baseDistance * magnitude;
             return { 'curve-style': 'unbundled-bezier', 'control-point-distance': controlPointDistance, 'control-point-weight': 0.5 };
         }
-        return { 'curve-style': 'bezier', 'control-point-step-size': controlPointStepSize };
+        // Bezier: smaller step = stronger curve. magnitude 0 → very large step (flat); magnitude 1 = base step
+        const effectiveStepSize = magnitude <= 0 ? 500 : controlPointStepSize / magnitude;
+        return { 'curve-style': 'bezier', 'control-point-step-size': effectiveStepSize };
     }
 
     /**
@@ -3740,13 +3775,17 @@ export class CommonModule {
         const sourceConnections = this.state.cy.edges(`[source="${sourceId}"], [target="${sourceId}"]`);
         const targetConnections = this.state.cy.edges(`[source="${targetId}"], [target="${targetId}"]`);
 
+        // Port display labels are "P<port # on tray>"
+        const sourcePortLabel = (sourceNode.data('port') != null) ? `P${sourceNode.data('port')}` : (sourceNode.data('label') || sourceNode.id());
+        const targetPortLabel = (targetNode.data('port') != null) ? `P${targetNode.data('port')}` : (targetNode.data('label') || targetNode.id());
+
         if (sourceConnections.length > 0) {
-            console.warn(`Cannot create connection: Source port "${sourceNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            console.warn(`Cannot create connection: Source port "${sourcePortLabel}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
             return;
         }
 
         if (targetConnections.length > 0) {
-            console.warn(`Cannot create connection: Target port "${targetNode.data('label')}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
+            console.warn(`Cannot create connection: Target port "${targetPortLabel}" is already connected.\n\nEach port can only have one connection. Please disconnect the existing connection first.`);
             return;
         }
 
