@@ -64,6 +64,9 @@ class NetworkCablingCytoscapeVisualizer:
       Rack → Shelf → Tray → Port
     """
 
+    # Default shelf U height (rack units) for node types when not specified
+    DEFAULT_SHELF_U_HEIGHT = 1
+
     # Common dimensions used by all node types
     DEFAULT_SHELF_DIMENSIONS = {
         "width": "auto",  # Will be calculated based on tray layout
@@ -207,6 +210,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 6,  # WH_GALAXY has 6 QSFP-DD ports per tray
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 6,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
@@ -216,6 +220,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -225,6 +230,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 2,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -234,6 +240,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (T1 at bottom, T4 at top)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -243,6 +250,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -252,6 +260,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' from horizontal tray_layout
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -261,6 +270,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T8 arranged horizontally (left to right)
                 # port_layout auto-inferred as 'vertical' 
+                "shelf_u_height": 4,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -270,6 +280,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "port_count": 14,
                 "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
                 # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "shelf_u_height": 6,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
@@ -340,7 +351,7 @@ class NetworkCablingCytoscapeVisualizer:
                     if self.current_config["tray_layout"] == "vertical"
                     else "horizontal_sequence",
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -396,7 +407,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "dimensions": self.current_config["tray_dimensions"],
                     "position_type": tray_position,  # From config (same as CSV)
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -425,7 +436,7 @@ class NetworkCablingCytoscapeVisualizer:
                     if self.current_config["tray_layout"] == "vertical"
                     else "horizontal_sequence",
                     "child_type": "port",
-                    "style_class": f"tray tray-{self.shelf_unit_type}",
+                    "style_class": "tray",
                 },
                 "port": {
                     "dimensions": self.current_config["port_dimensions"],
@@ -537,6 +548,7 @@ class NetworkCablingCytoscapeVisualizer:
             "port_count": max_port,
             "tray_layout": tray_layout,
             "port_layout": port_layout,
+            "shelf_u_height": self.DEFAULT_SHELF_U_HEIGHT,
             "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
             "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
             "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
@@ -1592,12 +1604,13 @@ class NetworkCablingCytoscapeVisualizer:
             "tray_count": tray_count,
             "port_count": port_count,
             "tray_layout": tray_layout,
+            "shelf_u_height": self.DEFAULT_SHELF_U_HEIGHT,
             "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
             "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
             "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
         }
-        
-        
+
+
         return config
 
     def parse_csv(self, csv_file):
@@ -2940,8 +2953,8 @@ class NetworkCablingCytoscapeVisualizer:
                         # This ensures _generate_port_ids can find the hostname when creating edges
                         self._update_connections_with_hostname(hall, aisle, rack_num, shelf_u, hostname)
                         
-                        # Create trays and ports (use numeric shelf_id)
-                        self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter)
+                        # Create trays and ports (use numeric shelf_id); pass hall/aisle so port nodes get location data for merge validation
+                        self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, shelf_node_type, hostname, host_id=host_index_counter, hall=hall, aisle=aisle)
                         host_index_counter += 1
 
     def _get_shelf_location_by_hostname(self, hostname):
@@ -3053,10 +3066,10 @@ class NetworkCablingCytoscapeVisualizer:
             # Create trays and ports
             self._create_trays_and_ports(shelf_id, shelf_config, shelf_x, shelf_y, None, None, shelf_node_type, hostname, host_id=shelf_idx)
 
-    def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u, 
-                               shelf_node_type, hostname, host_id=None, node_name=None):
+    def _create_trays_and_ports(self, shelf_id, shelf_config, shelf_x, shelf_y, rack_num, shelf_u,
+                               shelf_node_type, hostname, host_id=None, node_name=None, hall=None, aisle=None):
         """Create trays and ports for a shelf
-        
+
         Args:
             shelf_id: ID of the shelf parent node
             shelf_config: Configuration dict for the shelf
@@ -3067,6 +3080,8 @@ class NetworkCablingCytoscapeVisualizer:
             hostname: Hostname for the shelf
             host_id: Optional host ID (for descriptor format)
             node_name: Optional node name (for descriptor format)
+            hall: Optional hall (CSV format; used for port location data so merge validation can build keys)
+            aisle: Optional aisle (CSV format; used for port location data)
         """
         # Create trays based on this shelf's specific configuration
         tray_count = shelf_config["tray_count"]
@@ -3128,12 +3143,22 @@ class NetworkCablingCytoscapeVisualizer:
                     port_data["shelf_node_type"] = shelf_node_type
                 if hostname is not None:
                     port_data["hostname"] = hostname
+                # Add hall/aisle for CSV format (merge validation builds port keys from these)
+                if hall is not None and aisle is not None and rack_num is not None and shelf_u is not None:
+                    port_data["hall"] = hall
+                    port_data["aisle"] = aisle
+                    # Preserve CSV-style key for port identification (label-style: shelfLabel-tray-port)
+                    rack_padded = self.normalize_rack(str(rack_num))
+                    shelf_padded = self.normalize_shelf_u(str(shelf_u))
+                    port_data["port_key"] = f"{hall}{aisle}{rack_padded}U{shelf_padded}-{tray_id}-{port_id}"
+                # Visualizer port labels are always "P<port # on tray>"; do not use CSV label for display
+                port_label = f"P{port_id}"
                 # Add descriptor format data if provided
                 if host_id is not None:
                     port_data["host_index"] = host_id  # Globally unique index
                 if node_name is not None:
                     port_data["node_name"] = node_name
-                
+
                 # Use the same shelf_id format as tray for consistency
                 # (tray_shelf_id is already calculated above: numeric host_id if available, else shelf_id)
                 port_node_id = self.generate_node_id("port", tray_shelf_id, tray_id, port_id)
@@ -3141,7 +3166,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "port",
                     port_node_id,
                     tray_node_id,
-                    f"P{port_id}",
+                    port_label,
                     port_x,
                     port_y,
                     **port_data
@@ -3254,7 +3279,7 @@ class NetworkCablingCytoscapeVisualizer:
                     "source_hostname": src_node_name if src_node_name else f"host_{src_host_id}",
                     "destination_hostname": dst_node_name if dst_node_name else f"host_{dst_host_id}",
                 },
-                "classes": f"connection depth-{depth}",
+                "classes": "connection",
             }
             
             self.edges.append(edge_data)
@@ -3916,6 +3941,266 @@ def main():
     # Generate hierarchical nodes using the template system
     visualizer.create_diagram(args.output)
     print(f"Visualization data written to: {args.output}")
+
+
+# ---------------------------------------------------------------------------
+# Merge cabling guide data (server-side, used by POST /merge_csv).
+# Matches JS merge logic: identity-based node matching, parent resolution, edge dedup.
+# ---------------------------------------------------------------------------
+
+def _merge_get_shelf_identity(data):
+    """Shelf identity for same-node matching: hostname if non-empty, else hall|aisle|rack_num|shelf_u."""
+    if not data:
+        return ""
+    hostname = (data.get("hostname") or "").strip() if isinstance(data.get("hostname"), str) else ""
+    if hostname:
+        return hostname
+    hall = (data.get("hall") or "").strip() if isinstance(data.get("hall"), str) else ""
+    aisle = (data.get("aisle") or "").strip() if isinstance(data.get("aisle"), str) else ""
+    rack = "" if data.get("rack_num") is None else str(data["rack_num"])
+    shelf_u = "" if data.get("shelf_u") is None else str(data["shelf_u"])
+    return f"{hall}|{aisle}|{rack}|{shelf_u}"
+
+
+def _merge_node_by_id(elements):
+    """Return dict id -> data for non-edge elements."""
+    out = {}
+    for el in elements or []:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if "source" not in d and "target" not in d and d.get("id") is not None:
+            out[d["id"]] = d
+    return out
+
+
+def _merge_build_existing_identity_maps(elements):
+    """Build maps from existing elements: shelf identity -> shelf id; tray/port keys -> ids."""
+    node_by_id = _merge_node_by_id(elements)
+    shelf_identity_to_shelf_id = {}
+    tray_key_to_id = {}
+    port_key_to_id = {}
+
+    for el in elements or []:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if "source" in d or "target" in d:
+            continue
+        nid = d.get("id")
+        if nid is None:
+            continue
+        t = d.get("type") or "node"
+        if t == "shelf":
+            identity = _merge_get_shelf_identity(d)
+            if identity:
+                shelf_identity_to_shelf_id[identity] = nid
+            continue
+        if t == "tray":
+            parent = d.get("parent")
+            shelf_data = node_by_id.get(parent) if parent else None
+            identity = _merge_get_shelf_identity(shelf_data) if shelf_data else ""
+            tray = "" if d.get("tray") is None else str(d["tray"])
+            if identity and tray:
+                tray_key_to_id[f"{identity}_t{tray}"] = nid
+            continue
+        if t == "port":
+            parent = d.get("parent")
+            tray_data = node_by_id.get(parent) if parent else None
+            shelf_data = node_by_id.get(tray_data.get("parent")) if tray_data else None
+            identity = _merge_get_shelf_identity(shelf_data) if shelf_data else ""
+            tray = "" if not tray_data or tray_data.get("tray") is None else str(tray_data["tray"])
+            port = "" if d.get("port") is None else str(d["port"])
+            if identity and tray and port:
+                port_key_to_id[f"{identity}_t{tray}_p{port}"] = nid
+
+    return {
+        "shelf_identity_to_shelf_id": shelf_identity_to_shelf_id,
+        "tray_key_to_id": tray_key_to_id,
+        "port_key_to_id": port_key_to_id,
+        "node_by_id": node_by_id,
+    }
+
+
+def merge_cabling_guide_data(existing_data, new_data, prefix):
+    """
+    Merge new cabling guide (cytoscape elements + metadata) into existing.
+    Returns merged { "elements": [...], "metadata": {...} }.
+    Matches client logic: identity-based node matching, only add new nodes/edges,
+    resolve parent ids to existing graph.
+    """
+    existing_els = (existing_data or {}).get("elements") or []
+    new_els = (new_data or {}).get("elements") or []
+    make_id = lambda i: f"{prefix}_{i}" if i else i
+
+    existing_ids = set()
+    for el in existing_els:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if d.get("id") is not None and "source" not in d and "target" not in d:
+            existing_ids.add(d["id"])
+
+    existing_edge_keys = set()
+    for el in existing_els:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        src, tgt = d.get("source"), d.get("target")
+        if src is not None and tgt is not None:
+            key = f"{src}|{tgt}" if src <= tgt else f"{tgt}|{src}"
+            existing_edge_keys.add(key)
+
+    maps = _merge_build_existing_identity_maps(existing_els)
+    shelf_id_map = maps["shelf_identity_to_shelf_id"]
+    tray_key_map = maps["tray_key_to_id"]
+    port_key_map = maps["port_key_to_id"]
+    new_node_by_id = _merge_node_by_id(new_els)
+
+    existing_node_id_map = {}
+    for el in new_els:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if "source" in d or "target" in d:
+            continue
+        nid = d.get("id")
+        if nid is None:
+            continue
+        t = d.get("type") or "node"
+        if t == "shelf":
+            identity = _merge_get_shelf_identity(d)
+            if identity and identity in shelf_id_map:
+                existing_node_id_map[nid] = shelf_id_map[identity]
+            continue
+        if t == "tray":
+            parent = d.get("parent")
+            shelf_data = new_node_by_id.get(parent) if parent else None
+            identity = _merge_get_shelf_identity(shelf_data) if shelf_data else ""
+            tray = "" if d.get("tray") is None else str(d["tray"])
+            key = f"{identity}_t{tray}" if identity and tray else ""
+            if key and key in tray_key_map:
+                existing_node_id_map[nid] = tray_key_map[key]
+            continue
+        if t == "port":
+            parent = d.get("parent")
+            tray_data = new_node_by_id.get(parent) if parent else None
+            shelf_data = new_node_by_id.get(tray_data.get("parent")) if tray_data else None
+            identity = _merge_get_shelf_identity(shelf_data) if shelf_data else ""
+            tray = "" if not tray_data or tray_data.get("tray") is None else str(tray_data["tray"])
+            port = "" if d.get("port") is None else str(d["port"])
+            key = f"{identity}_t{tray}_p{port}" if identity and tray and port else ""
+            if key and key in port_key_map:
+                existing_node_id_map[nid] = port_key_map[key]
+
+    id_map = {}
+    for el in new_els:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if d.get("id") is None or "source" in d or "target" in d:
+            continue
+        if d["id"] in existing_node_id_map:
+            continue
+        id_map[d["id"]] = make_id(d["id"])
+
+    def resolve_parent_id(parent_id):
+        if parent_id is None:
+            return parent_id
+        if parent_id in existing_ids:
+            return parent_id
+        if parent_id in existing_node_id_map:
+            return existing_node_id_map[parent_id]
+        return id_map.get(parent_id) or make_id(parent_id)
+
+    new_nodes_to_add = []
+    for el in new_els:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if "source" in d or "target" in d:
+            continue
+        nid = d.get("id")
+        if nid is None or nid in existing_node_id_map:
+            continue
+        data = dict(d)
+        new_id = id_map.get(nid) or make_id(nid)
+        data["id"] = new_id
+        if data.get("parent") is not None:
+            data["parent"] = resolve_parent_id(data["parent"])
+        new_nodes_to_add.append({"data": data, "group": (el.get("group") or "nodes"), **{k: v for k, v in el.items() if k not in ("data", "group")}})
+
+    merged_node_ids = set(existing_ids)
+    for node_el in new_nodes_to_add:
+        nid = (node_el.get("data") or {}).get("id")
+        if nid is not None:
+            merged_node_ids.add(nid)
+
+    added_edge_keys = set(existing_edge_keys)
+    new_edges_to_add = []
+    for i, el in enumerate(new_els):
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        src, tgt = d.get("source"), d.get("target")
+        if src is None or tgt is None:
+            continue
+        source_id = existing_node_id_map.get(src) or id_map.get(src)
+        target_id = existing_node_id_map.get(tgt) or id_map.get(tgt)
+        if source_id is None or target_id is None:
+            continue
+        if source_id not in merged_node_ids or target_id not in merged_node_ids:
+            continue
+        edge_key = f"{source_id}|{target_id}" if source_id <= target_id else f"{target_id}|{source_id}"
+        if edge_key in added_edge_keys:
+            continue
+        added_edge_keys.add(edge_key)
+        edge_data = dict(d)
+        edge_data["id"] = f"add_{prefix}_{i}"
+        edge_data["source"] = source_id
+        edge_data["target"] = target_id
+        new_edges_to_add.append({"group": "edges", "data": edge_data})
+
+    # Return existing elements unchanged (same refs) so client-sent parent refs are preserved
+    merged_elements = list(existing_els) + new_nodes_to_add + new_edges_to_add
+
+    existing_meta = (existing_data or {}).get("metadata") or {}
+    new_meta = (new_data or {}).get("metadata") or {}
+    existing_unknown = set(existing_meta.get("unknown_node_types") or [])
+    for t in new_meta.get("unknown_node_types") or []:
+        existing_unknown.add(t)
+    merged_metadata = {
+        **existing_meta,
+        "connection_count": (existing_meta.get("connection_count") or 0) + (new_meta.get("connection_count") or 0),
+        "merged_guide_count": (existing_meta.get("merged_guide_count") or 1) + 1,
+    }
+    if existing_unknown:
+        merged_metadata["unknown_node_types"] = list(existing_unknown)
+
+    return {"elements": merged_elements, "metadata": merged_metadata}
+
+
+def sort_elements_parents_before_children(elements):
+    """Sort so parent nodes come before children (Cytoscape compound requirement)."""
+    if not elements:
+        return elements
+    from functools import cmp_to_key
+    type_order = {"hall": 0, "aisle": 1, "rack": 2, "shelf": 3, "tray": 4, "port": 5}
+    nodes = []
+    edges = []
+    for el in elements:
+        d = (el.get("data") or {}) if isinstance(el, dict) else {}
+        if el.get("group") == "edges" or "source" in d or "target" in d:
+            edges.append(el)
+        else:
+            nodes.append(el)
+
+    def cmp_nodes(a, b):
+        da = (a.get("data") or {}) if isinstance(a, dict) else {}
+        db = (b.get("data") or {}) if isinstance(b, dict) else {}
+        ta, tb = da.get("type") or "", db.get("type") or ""
+        oa, ob = type_order.get(ta, 6), type_order.get(tb, 6)
+        if oa != ob:
+            return oa - ob
+        pa, pb = da.get("parent"), db.get("parent")
+        if not pa and pb:
+            return -1
+        if pa and not pb:
+            return 1
+        if pa and pb and pa != pb:
+            ida, idb = da.get("id"), db.get("id")
+            if ida == pb:
+                return 1
+            if idb == pa:
+                return -1
+        return 0
+
+    nodes.sort(key=cmp_to_key(cmp_nodes))
+    return nodes + edges
 
 
 if __name__ == "__main__":

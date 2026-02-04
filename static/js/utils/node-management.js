@@ -46,7 +46,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
     // For single connection, use detailed message with source/target info
     if (isSingleEdge) {
         const edge = singleEdge;
-        
+
         // Check if edge still exists and is valid
         if (!edge || !edge.cy() || edge.removed()) {
             console.warn('Selected connection is no longer valid.');
@@ -134,6 +134,10 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
                     graphParent = graphParent.parent();
                 }
             }
+        }
+
+        if (node.data('instance_only')) {
+            isTemplateChild = false;
         }
 
         // Build detailed description for single node
@@ -259,7 +263,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
                 }
             }
 
-            if (isTemplateChild) {
+            if (isTemplateChild && !node.data('instance_only')) {
                 templateChildNodes.push({
                     node: node,
                     nodeType: nodeType,
@@ -288,13 +292,14 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             }
         });
 
-        // Delete standalone nodes
+        // Delete standalone nodes (and their descendants so pasted subgraphs are fully removed)
         standaloneNodes.forEach(node => {
             const nodeId = node.id();
             const isOriginalRoot = state.data.currentData && state.data.currentData.metadata &&
                 state.data.currentData.metadata.initialRootId === nodeId;
 
-            node.remove();
+            const toRemove = node.descendants().length > 0 ? node.union(node.descendants()) : node;
+            toRemove.remove();
 
             // Track original root deletion for export optimization
             if (isOriginalRoot && state.data.currentData && state.data.currentData.metadata) {
@@ -318,7 +323,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         } else if (window.commonModule && window.commonModule.recalculateHostIndices && typeof window.commonModule.recalculateHostIndices === 'function') {
             window.commonModule.recalculateHostIndices();
         }
-        
+
         // Rename graph instances in hierarchy mode (location mode doesn't have graph instances)
         if (state.mode === 'hierarchy') {
             const hModule = hierarchyModule || window.hierarchyModule;
@@ -337,7 +342,7 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         state.editing.selectedNode = null;
         state.editing.selectedConnection = null;
     }
-    
+
     // Update UI state
     if (window.updateDeleteNodeButtonState && typeof window.updateDeleteNodeButtonState === 'function') {
         window.updateDeleteNodeButtonState();

@@ -2,19 +2,24 @@
  * Notification Manager - Centralized notification/alert handling
  * Extracted from visualizer.js to separate UI concerns
  */
+import { MESSAGE_TYPE_STYLES } from '../config/constants.js';
+
 export class NotificationManager {
     constructor() {
         this.notificationTimer = null;
         this.banner = document.getElementById('notificationBanner');
         this.content = document.getElementById('notificationContent');
+        this._fullMessage = '';
+        this._clickHandler = null;
     }
-    
+
     /**
      * Show notification banner
-     * @param {string} message - Message to display
+     * @param {string} message - Message to display (can be truncated)
      * @param {string} type - Type: 'success', 'error', 'warning', 'info'
+     * @param {string} [fullMessage] - Full message to show when user clicks (defaults to message)
      */
-    show(message, type = 'success') {
+    show(message, type = 'success', fullMessage = null) {
         if (!this.banner || !this.content) {
             console.log(`${type}:`, message);
             return;
@@ -25,8 +30,23 @@ export class NotificationManager {
             clearTimeout(this.notificationTimer);
         }
 
-        // Set content
-        this.content.innerHTML = message;
+        this._fullMessage = fullMessage != null ? String(fullMessage) : String(message);
+
+        // Set content: show message and hint to click when full text is longer or has newlines
+        const hasMore = this._fullMessage.length > (message || '').length || /\n/.test(this._fullMessage);
+        this.content.innerHTML = message + (hasMore ? ' <span style="opacity:0.85; font-size:12px;">(click for full message)</span>' : '');
+        this.content.style.cursor = hasMore ? 'pointer' : 'default';
+        this.content.title = hasMore ? 'Click to see full message' : '';
+
+        // Remove previous click listener
+        if (this._clickHandler) {
+            this.content.removeEventListener('click', this._clickHandler);
+            this._clickHandler = null;
+        }
+        if (hasMore) {
+            this._clickHandler = () => this._showFullMessage();
+            this.content.addEventListener('click', this._clickHandler);
+        }
 
         // Set colors based on type
         const styles = this._getStylesForType(type);
@@ -42,7 +62,34 @@ export class NotificationManager {
             this.hide();
         }, dismissTime);
     }
-    
+
+    /**
+     * Show full message in a dialog (for copy/paste)
+     * @private
+     */
+    _showFullMessage() {
+        if (!this._fullMessage) return;
+        const overlay = document.getElementById('notificationFullMessageOverlay');
+        const pre = document.getElementById('notificationFullMessageText');
+        const closeBtn = document.getElementById('notificationFullMessageClose');
+        if (overlay && pre) {
+            pre.textContent = this._fullMessage;
+            overlay.style.display = 'flex';
+        }
+        if (closeBtn && !closeBtn._bound) {
+            closeBtn._bound = true;
+            closeBtn.addEventListener('click', () => {
+                if (overlay) overlay.style.display = 'none';
+            });
+        }
+        if (overlay && !overlay._bound) {
+            overlay._bound = true;
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) overlay.style.display = 'none';
+            });
+        }
+    }
+
     /**
      * Hide notification banner
      */
@@ -61,7 +108,7 @@ export class NotificationManager {
             this.banner.style.display = 'none';
         }, 300);
     }
-    
+
     /**
      * Show error notification
      * @param {string} message - Error message
@@ -69,7 +116,7 @@ export class NotificationManager {
     error(message) {
         this.show(message, 'error');
     }
-    
+
     /**
      * Show success notification
      * @param {string} message - Success message
@@ -77,7 +124,7 @@ export class NotificationManager {
     success(message) {
         this.show(message, 'success');
     }
-    
+
     /**
      * Show warning notification
      * @param {string} message - Warning message
@@ -85,7 +132,7 @@ export class NotificationManager {
     warning(message) {
         this.show(message, 'warning');
     }
-    
+
     /**
      * Show info notification
      * @param {string} message - Info message
@@ -93,36 +140,13 @@ export class NotificationManager {
     info(message) {
         this.show(message, 'info');
     }
-    
+
     /**
      * Get styles for notification type
      * @private
      */
     _getStylesForType(type) {
-        const styles = {
-            success: {
-                backgroundColor: '#d4edda',
-                borderLeft: '4px solid #28a745',
-                color: '#155724'
-            },
-            error: {
-                backgroundColor: '#f8d7da',
-                borderLeft: '4px solid #dc3545',
-                color: '#721c24'
-            },
-            warning: {
-                backgroundColor: '#fff3cd',
-                borderLeft: '4px solid #ffc107',
-                color: '#856404'
-            },
-            info: {
-                backgroundColor: '#d1ecf1',
-                borderLeft: '4px solid #17a2b8',
-                color: '#0c5460'
-            }
-        };
-        
-        return styles[type] || styles.success;
+        return MESSAGE_TYPE_STYLES[type] || MESSAGE_TYPE_STYLES.success;
     }
 }
 

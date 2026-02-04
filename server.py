@@ -19,7 +19,11 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import our existing templating system
-from import_cabling import NetworkCablingCytoscapeVisualizer
+from import_cabling import (
+    NetworkCablingCytoscapeVisualizer,
+    merge_cabling_guide_data,
+    sort_elements_parents_before_children,
+)
 
 # Import export functionality
 try:
@@ -51,6 +55,7 @@ def index():
                 "tray_count": config["tray_count"],
                 "ports_per_tray": config["port_count"],
                 "tray_layout": config["tray_layout"],
+                "shelf_u_height": config.get("shelf_u_height", 1),
             }
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
@@ -422,6 +427,77 @@ def upload_csv():
         error_msg = f"Error processing file: {str(e)}"
         traceback.print_exc()  # Print full traceback for debugging
         return jsonify({"success": False, "error": error_msg})
+
+
+@app.route("/merge_csv", methods=["POST"])
+def merge_csv():
+    """Merge a new CSV with existing visualization data. Client sends existing_data (current graph)
+    and csv_file; server parses CSV, merges using identity-based matching, returns merged result.
+    """
+    try:
+        if "csv_file" not in request.files:
+            return jsonify({"success": False, "error": "No CSV file uploaded"})
+        existing_data_str = request.form.get("existing_data")
+        if not existing_data_str:
+            return jsonify({"success": False, "error": "Missing existing_data (current graph JSON)"})
+
+        try:
+            existing_data = json.loads(existing_data_str)
+        except (json.JSONDecodeError, TypeError) as e:
+            return jsonify({"success": False, "error": f"Invalid existing_data JSON: {e}"})
+
+        if not isinstance(existing_data.get("elements"), list):
+            return jsonify({"success": False, "error": "existing_data must include elements array"})
+
+        file = request.files["csv_file"]
+        if file.filename == "":
+            return jsonify({"success": False, "error": "No file selected"})
+        if not file.filename.lower().endswith(".csv"):
+            return jsonify({"success": False, "error": "Merge only accepts CSV files"})
+
+        prefix = f"m{((existing_data.get('metadata') or {}).get('merged_guide_count') or 1) + 1}"
+        tmp_prefix = f"cablegen_merge_{int(time.time())}_{threading.get_ident()}_"
+        with tempfile.NamedTemporaryFile(mode="w+b", suffix=".csv", delete=False, prefix=tmp_prefix) as tmp_file:
+            file.save(tmp_file.name)
+            tmp_file_path = tmp_file.name
+
+        try:
+            visualizer = NetworkCablingCytoscapeVisualizer()
+            connections = visualizer.parse_csv(tmp_file_path)
+            if not connections:
+                return jsonify({"success": False, "error": "No valid connections found in CSV file"})
+
+            visualization_data = visualizer.generate_visualization_data()
+            connection_count = len(connections)
+            visualization_data["metadata"]["connection_count"] = connection_count
+            unknown_types = visualizer.get_unknown_node_types()
+            if unknown_types:
+                visualization_data["metadata"]["unknown_node_types"] = unknown_types
+
+            new_data = visualization_data
+            merged = merge_cabling_guide_data(existing_data, new_data, prefix)
+            sorted_elements = sort_elements_parents_before_children(merged["elements"])
+            response_data = {"elements": sorted_elements, "metadata": merged["metadata"]}
+
+            message = f"Merged {file.filename}: {connection_count} connections added"
+            return jsonify({
+                "success": True,
+                "data": response_data,
+                "message": message,
+                "unknown_types": unknown_types or [],
+                "file_type": "csv",
+            })
+        finally:
+            try:
+                os.unlink(tmp_file_path)
+            except OSError:
+                pass
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)})
 
 
 @app.route("/export_cabling_descriptor", methods=["POST"])
@@ -1033,6 +1109,7 @@ def get_node_configs():
                 "tray_count": config["tray_count"],
                 "ports_per_tray": config["port_count"],
                 "tray_layout": config["tray_layout"],
+                "shelf_u_height": config.get("shelf_u_height", 1),
             }
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config

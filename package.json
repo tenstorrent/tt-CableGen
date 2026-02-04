@@ -23,6 +23,7 @@
     "@babel/preset-env": "^7.20.0",
     "@testing-library/dom": "^8.20.0",
     "babel-jest": "^26.6.3",
+    "baseline-browser-mapping": "^2.9.19",
     "cytoscape": "^3.33.1",
     "eslint": "^7.32.0",
     "jest": "^26.6.3",

@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
-import cytoscape from 'cytoscape';
+import { createHeadlessCy, cytoscape } from '../cytoscape-test-helper.js';
 import { VisualizerState } from '../../static/js/state/visualizer-state.js';
 import { CommonModule } from '../../static/js/modules/common.js';
 import { HierarchyModule } from '../../static/js/modules/hierarchy.js';
@@ -232,12 +232,9 @@ describe('Filter Tests - Cytoscape Visualization', () => {
         global.window.hierarchyModule = hierarchyModule;
         global.window.locationModule = locationModule;
 
-        // Create Cytoscape instance with test data
+        // Create Cytoscape instance with test data (shared headless helper)
         const elements = createTestData();
-        state.cy = cytoscape({
-            headless: true,
-            elements: elements
-        });
+        state.cy = createHeadlessCy(elements);
 
         // Reset all filters
         resetFilters();

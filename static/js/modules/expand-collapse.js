@@ -607,18 +607,11 @@ export class ExpandCollapseModule {
 
         this._curveStylesTimer = setTimeout(() => {
             if (this.state && this.state.commonModule) {
-                if (this._pendingEdgesToStyle && this._pendingEdgesToStyle.size > 0) {
-                    // Apply styles only to affected edges
-                    const edgeIds = Array.from(this._pendingEdgesToStyle);
-                    const edges = this.state.cy.edges().filter(e => edgeIds.includes(e.id()));
-                    if (edges.length > 0) {
-                        this.state.commonModule.applyCurveStylesToEdges(edges);
-                    }
-                    this._pendingEdgesToStyle = null;
-                } else {
-                    // Fallback: apply to all edges
-                    this.state.commonModule.forceApplyCurveStyles();
-                }
+                // Always use forceApplyCurveStyles to ensure edges between collapsed nodes
+                // get proper distance-based curve styling
+                // This handles both regular edges and edges between collapsed shelves/graphs
+                this.state.commonModule.forceApplyCurveStyles();
+                this._pendingEdgesToStyle = null;
             }
             this._curveStylesTimer = null;
         }, 50);
@@ -680,6 +673,22 @@ export class ExpandCollapseModule {
 
         // Schedule layout refresh (debounced)
         this._scheduleLayoutRefresh();
+    }
+
+    /**
+     * Expand all levels: expand every collapsed node until the visualization is fully expanded.
+     * Used before switching to location mode so the graph has no rerouted edges and all nodes are visible.
+     */
+    expandAllLevels() {
+        if (!this.state.cy) {
+            return;
+        }
+        const maxIterations = 200; // safety limit
+        let iterations = 0;
+        while (this.state.ui.collapsedGraphs.size > 0 && iterations < maxIterations) {
+            this.expandOneLevel();
+            iterations++;
+        }
     }
 
     /**

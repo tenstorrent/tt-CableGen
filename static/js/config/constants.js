@@ -13,7 +13,7 @@ export const LAYOUT = {
     GRAPH_SPACING: 800,
     PORT_SPACING: 20,
     TRAY_SPACING: 15,
-    
+
     // Element dimensions
     RACK_WIDTH: 450,
     RACK_HEIGHT: 600,
@@ -23,21 +23,21 @@ export const LAYOUT = {
     TRAY_HEIGHT: 30,
     PORT_WIDTH: 15,
     PORT_HEIGHT: 25,
-    
+
     // Default positions
     NEW_RACK_DEFAULT_X: 200,
     NEW_RACK_DEFAULT_Y: 200,
     NEW_GRAPH_DEFAULT_X: 0,
     NEW_GRAPH_DEFAULT_Y: 0,
     NEW_SHELF_OFFSET: 500,
-    
+
     // Grid layout
     GRID_COLUMNS: 8,
     GRID_SPACING_X: 400,
     GRID_SPACING_Y: 300,
     GRID_START_X: 100,
     GRID_START_Y: 100,
-    
+
     // Collapse/expand
     COLLAPSED_NODE_SIZE: 50,
     EXPANDED_NODE_MIN_SIZE: 100
@@ -62,10 +62,9 @@ export const LAYOUT_CONSTANTS = {
     GRAPH_VERTICAL_SPACING_FACTOR: 1.05,   // 5% extra space below each graph (tight)
     GRAPH_PADDING_TOP_FACTOR: 0.05,        // 5% of parent height as top padding
 
-    // Shelf node spacing (percentage-based)
-    SHELF_HORIZONTAL_SPACING_FACTOR: 1.03, // 3% extra space between shelves (tight)
-    SHELF_PADDING_LEFT_FACTOR: 0.03,       // 3% of parent width as left padding
-    SHELF_PADDING_TOP_FACTOR: 0.08,        // 8% of parent height as top padding
+    // Shelf layout inside a graph: one gap and one margin (px)
+    SHELF_LAYOUT_GAP: 12,      // px between shelves (tight vertical spacing)
+    SHELF_LAYOUT_MARGIN: 24,   // px margin around the grid
 
     // Starting positions for top-level nodes
     TOP_LEVEL_START_X: 200,
@@ -73,7 +72,33 @@ export const LAYOUT_CONSTANTS = {
 
     // Fallback dimensions when node size cannot be determined
     FALLBACK_GRAPH_HEIGHT: 450,
-    FALLBACK_SHELF_WIDTH: 200
+    FALLBACK_SHELF_WIDTH: 200,
+
+    // Minimum cell size for collapsed graph nodes in layout (room for connection curves between nodes)
+    COLLAPSED_GRAPH_LAYOUT_MIN_WIDTH: 580,
+    COLLAPSED_GRAPH_LAYOUT_MIN_HEIGHT: 420,
+
+    // Minimum spacing for collapsed shelf nodes in layout (room for connection curves between shelves)
+    COLLAPSED_SHELF_LAYOUT_MIN_WIDTH: 320,
+    COLLAPSED_SHELF_LAYOUT_MIN_HEIGHT: 280,
+
+    // Vertical spacing between shelves in location mode: tight vs when any shelf in rack is collapsed
+    SHELF_VERTICAL_SPACING_FACTOR: 0.75,   // tight vertical spacing when all expanded (location mode)
+    COLLAPSED_SHELF_LOCATION_SPACING_FACTOR: 1.25,
+
+    // Minimum horizontal gap between adjacent racks (so node content does not overlap)
+    RACK_MIN_GAP: 6,
+    // Multiply rack-to-rack advance by this (<= 1 = advance by less, racks closer)
+    RACK_ADVANCE_FACTOR: 0.5,
+
+};
+
+/**
+ * Connection rules (enforced on load, merge, and when creating connections in the UI)
+ * - ONE_CONNECTION_PER_PORT: each port may be part of at most one connection.
+ */
+export const CONNECTION_RULES = {
+    ONE_CONNECTION_PER_PORT: true
 };
 
 /**
@@ -85,6 +110,33 @@ export const ANIMATION = {
     NOTIFICATION_DURATION: 3000,
     FADE_DURATION: 200,
     DEBOUNCE_DELAY: 300
+};
+
+/**
+ * Message/notification type styles (success, error, warning, info)
+ * Used by NotificationManager and can be referenced for status UI
+ */
+export const MESSAGE_TYPE_STYLES = {
+    success: {
+        backgroundColor: '#d4edda',
+        borderLeft: '4px solid #28a745',
+        color: '#155724'
+    },
+    error: {
+        backgroundColor: '#f8d7da',
+        borderLeft: '4px solid #dc3545',
+        color: '#721c24'
+    },
+    warning: {
+        backgroundColor: '#fff3cd',
+        borderLeft: '4px solid #ffc107',
+        color: '#856404'
+    },
+    info: {
+        backgroundColor: '#d1ecf1',
+        borderLeft: '4px solid #17a2b8',
+        color: '#0c5460'
+    }
 };
 
 /**
@@ -119,7 +171,6 @@ export const LIMITS = {
 export const CYTOSCAPE_CONFIG = {
     minZoom: 0.1,
     maxZoom: 3,
-    wheelSensitivity: 0.2,
     boxSelectionEnabled: true,
     autounselectify: false,
     autoungrabify: false,
@@ -154,7 +205,7 @@ export const LAYOUT_CONFIG = {
         gravityCompound: 1.0,
         gravityRange: 3.8
     },
-    
+
     // Grid layout settings
     GRID: {
         name: 'grid',
@@ -162,7 +213,7 @@ export const LAYOUT_CONFIG = {
         padding: 30,
         rows: undefined,
         cols: undefined,
-        position: function(node) { return node; },
+        position: function (node) { return node; },
         sort: undefined,
         animate: false,
         animationDuration: 500,
@@ -185,12 +236,12 @@ export const VISUAL = {
     SELECTED_COLOR: '#0074D9',
     HIGHLIGHTED_COLOR: '#FF4136',
     CONNECTED_PORT_COLOR: '#2ECC40',
-    
+
     // Edge styles
     EDGE_WIDTH: 2,
     SELECTED_EDGE_WIDTH: 4,
     EDGE_CURVE_STYLE: 'bezier',
-    
+
     // Node styles
     NODE_BORDER_WIDTH: 2,
     SELECTED_NODE_BORDER_WIDTH: 4

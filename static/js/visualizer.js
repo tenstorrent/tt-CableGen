@@ -37,6 +37,7 @@ import { UIDisplayModule } from './modules/ui-display.js';
 import { FileManagementModule } from './modules/file-management.js';
 import { deleteMultipleSelected as deleteMultipleSelectedUtil, deleteConnectionFromAllTemplateInstances as deleteConnectionFromAllTemplateInstancesUtil } from './utils/node-management.js';
 import { verifyCytoscapeExtensions as verifyCytoscapeExtensionsUtil } from './utils/cytoscape-utils.js';
+import { copySelection as copySelectionUtil, hasClipboard as hasClipboardUtil } from './utils/copy-paste.js';
 import { ApiClient } from './api/api-client.js';
 import { NotificationManager } from './ui/notification-manager.js';
 import { ModalManager } from './ui/modal-manager.js';
@@ -90,6 +91,8 @@ const fileManagementModule = new FileManagementModule(state, apiClient, uiDispla
 
 // Expose commonModule for debugging
 window.commonModule = commonModule;
+window.resetLayout = resetLayout;
+window.saveDefaultLayout = saveDefaultLayout;
 
 // Expose modalManager to window for module access
 window.modalManager = modalManager;
@@ -143,6 +146,60 @@ function getNextConnectionNumber() { return commonModule.getNextConnectionNumber
 function getEthChannelMapping(nodeType, portNumber) { return commonModule.getEthChannelMapping(nodeType, portNumber); }
 function updateDeleteButtonState() { return uiDisplayModule.updateDeleteButtonState(); }
 function updateDeleteNodeButtonState() { return uiDisplayModule.updateDeleteButtonState(); }
+function copySelection() {
+    const result = copySelectionUtil(state);
+    if (result.success) {
+        window.showExportStatus?.(result.message, 'success');
+    } else if (result.message) {
+        window.showExportStatus?.(result.message, 'warning');
+    }
+}
+/**
+ * Resolve the selected node(s) in hierarchy mode to the parent graph id for paste.
+ * If a graph is selected, use it; if a shelf/tray/port is selected, use its containing graph; else null (paste at root).
+ * @param {Object} selected - Cytoscape collection of selected nodes
+ * @returns {string|null}
+ */
+function getParentGraphIdFromSelection(selected) {
+    if (!selected || selected.length === 0) return null;
+    let current = selected[0];
+    while (current && current.length > 0) {
+        if (current.data('type') === 'graph') return current.id();
+        current = current.parent();
+    }
+    return null;
+}
+
+function pasteSelection() {
+    if (!state.editing.isEdgeCreationMode) {
+        window.showExportStatus?.('Enable connection editing to paste.', 'warning');
+        return;
+    }
+    if (state.mode !== 'location' && state.mode !== 'hierarchy') {
+        window.showExportStatus?.('Paste is supported in location or hierarchy mode only.', 'warning');
+        return;
+    }
+    if (!hasClipboardUtil(state)) {
+        window.showExportStatus?.(state.mode === 'hierarchy' ? 'Nothing to paste. Copy graph instances or shelves first (Ctrl+C).' : 'Nothing to paste. Copy shelves first (Ctrl+C).', 'warning');
+        return;
+    }
+    if (state.mode === 'hierarchy') {
+        const selected = state.cy.nodes(':selected');
+        const parentId = getParentGraphIdFromSelection(selected);
+        const result = hierarchyModule.pasteFromClipboardHierarchy({
+            parentId,
+            instanceNamePrefix: 'copy'
+        });
+        if (result.success) {
+            window.showExportStatus?.(result.message, 'success');
+            window.updateDeleteButtonState?.();
+        } else if (result.message) {
+            window.showExportStatus?.(result.message, 'warning');
+        }
+        return;
+    }
+    showPasteDestinationModal();
+}
 
 function formatRackNum(rackNum) {
     return locationModule.formatRackNum(rackNum);
@@ -155,22 +212,26 @@ function location_buildLabel(hall, aisle, rackNum, shelfU = null) {
 }
 
 /**
- * LOCATION MODE: Get location data from a node or its parent hierarchy
+ * LOCATION MODE: Get location data from a node or its parent hierarchy.
+ * Includes host_index/host_id for bi-directional association with racking info.
  * @param {Object} node - Cytoscape node
- * @returns {Object} Location data {hall, aisle, rack_num, shelf_u, hostname}
+ * @returns {Object} Location data {hall, aisle, rack_num, shelf_u, hostname, host_index?, host_id?}
  */
 function location_getNodeData(node) {
     const data = node.data();
 
-    // If node has all location data, return it
+    // If node has all location data, return it (include host_index/host_id when present)
     if (data.hall && data.aisle && data.rack_num !== undefined) {
-        return {
+        const out = {
             hall: data.hall,
             aisle: data.aisle,
             rack_num: data.rack_num,
             shelf_u: data.shelf_u,
             hostname: data.hostname || ''
         };
+        if (data.host_index !== undefined && data.host_index !== null) out.host_index = data.host_index;
+        if (data.host_id !== undefined && data.host_id !== null) out.host_id = data.host_id;
+        return out;
     }
 
     // Try to get from parent hierarchy (for tray/port nodes)
@@ -190,14 +251,17 @@ function location_getNodeData(node) {
         }
     }
 
-    // Return whatever we have
-    return {
+    // Return whatever we have (include host_index/host_id when present)
+    const out = {
         hall: data.hall || '',
         aisle: data.aisle || '',
         rack_num: data.rack_num,
         shelf_u: data.shelf_u,
         hostname: data.hostname || ''
     };
+    if (data.host_index !== undefined && data.host_index !== null) out.host_index = data.host_index;
+    if (data.host_id !== undefined && data.host_id !== null) out.host_id = data.host_id;
+    return out;
 }
 
 function getNodeDisplayLabel(nodeData) {
@@ -213,6 +277,18 @@ function handlePortClickViewMode(node, evt) { return commonModule.handlePortClic
 function clearAllSelections() { return commonModule.clearAllSelections(); }
 function getPortLocationInfo(portNode) {
     return commonModule.getPortLocationInfo(portNode, locationModule);
+}
+/** Bi-directional: host_index → racking info (hall, aisle, rack_num, shelf_u, hostname). */
+function getLocationByHostIndex(hostIndexOrId) {
+    return locationModule.getLocationByHostIndex(hostIndexOrId);
+}
+/** Bi-directional: location → host_index. */
+function getHostIndexByLocation(location) {
+    return locationModule.getHostIndexByLocation(location);
+}
+/** Bi-directional: hostname → host_index. */
+function getHostIndexByHostname(hostname) {
+    return locationModule.getHostIndexByHostname(hostname);
 }
 function updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel) {
     return hierarchyModule.updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel);
@@ -276,6 +352,9 @@ function parseRackNumbers() { return uiDisplayModule.parseRackNumbers(); }
 function parseShelfUnitNumbers() { return uiDisplayModule.parseShelfUnitNumbers(); }
 function updateTotalCapacity() { return uiDisplayModule.updateTotalCapacity(); }
 function applyPhysicalLayout() { return uiDisplayModule.applyPhysicalLayout(); }
+function showPasteDestinationModal() { return uiDisplayModule.showPasteDestinationModal(); }
+function cancelPasteDestinationModal() { return uiDisplayModule.cancelPasteDestinationModal(); }
+function applyPasteDestination() { return uiDisplayModule.applyPasteDestination(); }
 
 
 
@@ -289,6 +368,7 @@ function createConnectionInAllTemplateInstances(sourceNode, targetNode, template
 function updateAddNodeButtonState() { return uiDisplayModule.updateAddNodeButtonState(); }
 function createEmptyVisualization() { return uiDisplayModule.createEmptyVisualization(); }
 function resetLayout() { return uiDisplayModule.resetLayout(); }
+function saveDefaultLayout() { return uiDisplayModule.saveDefaultLayout(); }
 
 
 function addNewNode() {
@@ -562,6 +642,22 @@ document.addEventListener('keydown', function (event) {
         }
     }
 
+    // Ctrl+C (or Cmd+C on Mac) to copy (location: shelves + connections; hierarchy: graph instances/shelves + connections)
+    if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+        if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && state.cy && (state.mode === 'location' || state.mode === 'hierarchy')) {
+            event.preventDefault();
+            copySelection();
+        }
+    }
+
+    // Ctrl+V (or Cmd+V on Mac) to paste (location or hierarchy mode, only when editing mode is enabled)
+    if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+        if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && state.cy && (state.mode === 'location' || state.mode === 'hierarchy')) {
+            event.preventDefault();
+            pasteSelection();
+        }
+    }
+
     // Ctrl+S (or Cmd+S on Mac) to save/export based on mode
     if ((event.ctrlKey || event.metaKey) && event.key === 's') {
         // Prevent default browser save dialog
@@ -616,16 +712,35 @@ setupFileUploadDragAndDrop();
 
 // Setup global drag-and-drop handlers for initial site start
 // This allows dragging files anywhere on the window before initialization
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+function initializeGlobalDragAndDrop() {
+    if (!fileManagementModule) {
+        console.warn('[Visualizer] fileManagementModule is not available');
+        return;
+    }
+
+    if (typeof fileManagementModule.setupGlobalDragAndDrop !== 'function') {
+        console.warn('[Visualizer] fileManagementModule.setupGlobalDragAndDrop is not a function');
+        return;
+    }
+
+    try {
+        // Use a longer delay to ensure DOM is fully ready
         setTimeout(() => {
-            fileManagementModule.setupGlobalDragAndDrop();
-        }, 100);
-    });
+            try {
+                fileManagementModule.setupGlobalDragAndDrop();
+            } catch (error) {
+                console.error('[Visualizer] Error setting up global drag-and-drop:', error);
+            }
+        }, 200);
+    } catch (error) {
+        console.error('[Visualizer] Error initializing global drag-and-drop:', error);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeGlobalDragAndDrop);
 } else {
-    setTimeout(() => {
-        fileManagementModule.setupGlobalDragAndDrop();
-    }, 100);
+    initializeGlobalDragAndDrop();
 }
 
 // Check for URL parameters and auto-load external files
@@ -676,7 +791,7 @@ function setupEventListeners() {
     const locationTab = document.getElementById('locationTab');
     const topologyTab = document.getElementById('topologyTab');
     if (locationTab) {
-        locationTab.addEventListener('click', function(e) {
+        locationTab.addEventListener('click', function (e) {
             e.preventDefault();
             console.log('[Tab] Location tab clicked');
             if (typeof switchTab === 'function') {
@@ -689,7 +804,7 @@ function setupEventListeners() {
         console.warn('[EventListeners] locationTab not found');
     }
     if (topologyTab) {
-        topologyTab.addEventListener('click', function(e) {
+        topologyTab.addEventListener('click', function (e) {
             e.preventDefault();
             console.log('[Tab] Topology tab clicked');
             if (typeof switchTab === 'function') {
@@ -747,12 +862,23 @@ function setupEventListeners() {
     attachEventListener('generateCablingGuideBtn', 'click', () => generateCablingGuide().catch(err => console.error('Error generating guide:', err)));
     attachEventListener('generateFSDBtn', 'click', () => generateFSD().catch(err => console.error('Error generating FSD:', err)));
 
+    // Add another cabling guide (location mode)
+    const addAnotherCablingGuideBtn = document.getElementById('addAnotherCablingGuideBtn');
+    const addAnotherCablingGuideFile = document.getElementById('addAnotherCablingGuideFile');
+    if (addAnotherCablingGuideBtn && addAnotherCablingGuideFile) {
+        addAnotherCablingGuideBtn.addEventListener('click', () => {
+            const file = addAnotherCablingGuideFile?.files?.[0];
+            if (file) addAnotherCablingGuideLocation(file).catch(err => console.error('Error adding cabling guide:', err));
+            else window.showExportStatus?.('Please select a CSV file first.', 'error');
+        });
+    }
+
     // Modal buttons
     attachEventListener('cancelConnectionPlacementBtn', 'click', () => cancelConnectionPlacement().catch(err => console.error('Error canceling connection placement:', err)));
     attachEventListener('manualLayoutTab', 'click', () => switchLayoutTab('manual'));
     attachEventListener('uploadLayoutTab', 'click', () => switchLayoutTab('upload'));
     attachEventListener('cancelPhysicalLayoutModalBtn', 'click', () => cancelPhysicalLayoutModal());
-    attachEventListener('applyLayoutBtn', 'click', () => applyPhysicalLayout());
+    attachEventListener('applyLayoutBtn', 'click', () => uiDisplayModule.applyPhysicalLayoutModalAction());
     attachEventListener('applyUploadBtn', 'click', () => applyDeploymentDescriptorFromModal().catch(err => console.error('Error applying deployment descriptor:', err)));
 
     // Collapsible headers
@@ -769,22 +895,7 @@ function setupEventListeners() {
 // Setup event listeners when DOM is ready
 setupEventListeners();
 
-// Initialize default tab on page load
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            if (typeof switchTab === 'function') {
-                switchTab('location');
-            }
-        }, 100);
-    });
-} else {
-    setTimeout(() => {
-        if (typeof switchTab === 'function') {
-            switchTab('location');
-        }
-    }, 100);
-}
+// On initial screen, neither CSV nor textproto tab content is shown; user chooses a tab to reveal content.
 
 // Tab-specific empty visualization functions
 function createEmptyVisualizationLocation() {
@@ -917,6 +1028,717 @@ function hideInitializationShowControls() {
     }
 }
 
+/**
+ * Build endpoint key for a node (for connection validation).
+ * Uses host_index or host_id when present (shelf identity), otherwise node id.
+ * @param {Object} nodeData - element.data for a node
+ * @param {string} nodeId - node id (fallback)
+ * @returns {string} Stable key for this endpoint
+ */
+function getEndpointKey(nodeData, nodeId) {
+    if (!nodeData) return String(nodeId ?? '');
+    const h = nodeData.host_index ?? nodeData.host_id;
+    if (h !== undefined && h !== null) return String(h);
+    return String(nodeData.id ?? nodeId ?? '');
+}
+
+/**
+ * Format rack number for label (match location buildLabel: 2-digit).
+ * @param {*} rackNum
+ * @returns {string}
+ */
+function formatRackNumForLabel(rackNum) {
+    return rackNum !== undefined && rackNum !== null ? String(rackNum).padStart(2, '0') : '';
+}
+
+/**
+ * Format shelf U for label (match location: strip leading U then 2-digit).
+ * @param {*} shelfU
+ * @returns {string}
+ */
+function formatShelfUForLabel(shelfU) {
+    if (shelfU === undefined || shelfU === null) return '';
+    const s = String(shelfU).replace(/^U?/i, '');
+    return s === '' ? '' : s.padStart(2, '0');
+}
+
+/**
+ * Build shelf label key (same structure as location buildLabel): hall+aisle+rack+U+shelf.
+ * @param {string} hall
+ * @param {string} aisle
+ * @param {*} rackNum
+ * @param {*} shelfU
+ * @returns {string} e.g. "120A03U02" or "" if missing parts
+ */
+function buildShelfLabelKey(hall, aisle, rackNum, shelfU) {
+    if (!hall || !aisle || rackNum === undefined || rackNum === null) return '';
+    const rackPadded = formatRackNumForLabel(rackNum);
+    const label = `${hall}${aisle}${rackPadded}`;
+    if (shelfU !== null && shelfU !== undefined && shelfU !== '') {
+        const shelfUPadded = formatShelfUForLabel(shelfU);
+        return `${label}U${shelfUPadded}`;
+    }
+    return label;
+}
+
+/**
+ * Port-level key for matching connection endpoints (host_index/host_id + tray + port).
+ * Returns empty string if node is not a port (missing tray or port).
+ */
+function getPortKey(nodeData) {
+    if (!nodeData) return '';
+    const h = nodeData.host_index ?? nodeData.host_id;
+    const tray = nodeData.tray;
+    const port = nodeData.port;
+    if (h === undefined || h === null || tray === undefined || tray === null || port === undefined || port === null) return '';
+    return `${h}_t${tray}_p${port}`;
+}
+
+/**
+ * Build port key in label style (same as CSV Label / location): shelfLabel-tray-port, e.g. "120A03U02-3-3".
+ * Used to identify ports for validation/merge. Prefers port_key (CSV label stored for keying), then builds from components.
+ * @param {Object} nodeData - port node data (may have port_key, hall, aisle, rack_num, shelf_u, tray, port or label)
+ * @returns {string} label-style port key or '' if not enough data
+ */
+function buildPortLabelKey(nodeData) {
+    if (!nodeData) return '';
+    if (nodeData.port_key != null && nodeData.port_key !== '' && /^.+-.+-.+$/.test(String(nodeData.port_key))) {
+        return String(nodeData.port_key);
+    }
+    if (nodeData.label != null && nodeData.label !== '' && /^.+-.+-.+$/.test(String(nodeData.label))) {
+        return String(nodeData.label);
+    }
+    const hall = nodeData.hall;
+    const aisle = nodeData.aisle;
+    const rackNum = nodeData.rack_num;
+    const shelfU = nodeData.shelf_u;
+    const tray = nodeData.tray;
+    const port = nodeData.port;
+    if (hall === undefined || hall === null || aisle === undefined || aisle === null ||
+        rackNum === undefined || rackNum === null || shelfU === undefined || shelfU === null ||
+        tray === undefined || tray === null || port === undefined || port === null) return '';
+    const shelfLabel = buildShelfLabelKey(hall, aisle, rackNum, shelfU);
+    if (shelfLabel === '') return '';
+    return `${shelfLabel}-${tray}-${port}`;
+}
+
+/**
+ * Parse host_index, tray, port from node id like "0:t1:p3" (used when node data lacks tray/port).
+ * @param {string} nodeId - node id
+ * @returns {{ h: string, tray: string, port: string }|null}
+ */
+function parsePortFromNodeId(nodeId) {
+    if (nodeId == null || typeof nodeId !== 'string') return null;
+    const m = nodeId.match(/^(\d+):t(\d+):p(\d+)$/);
+    if (m) return { h: m[1], tray: m[2], port: m[3] };
+    return null;
+}
+
+/**
+ * Key for one connection endpoint in peer map / validation. Use label-style (shelfLabel-tray-port) when
+ * available so port keys match how we do labels; else host_index_tray_port; else parsed node id; else endpoint key.
+ * @param {Object} nodeData - element.data for a node
+ * @param {string} nodeId - node id (fallback / parse)
+ * @returns {string} Key unique per port
+ */
+function getConnectionEndpointKey(nodeData, nodeId) {
+    const labelKey = buildPortLabelKey(nodeData);
+    if (labelKey !== '') return labelKey;
+    const portKey = getPortKey(nodeData);
+    if (portKey !== '') return portKey;
+    const parsed = parsePortFromNodeId(nodeId);
+    if (parsed) return `${parsed.h}_t${parsed.tray}_p${parsed.port}`;
+    return getEndpointKey(nodeData, nodeId);
+}
+
+/**
+ * Build connection sets and peer map from cytoscape elements.
+ * Uses port-level keys when available so each physical port is one key (required for real CSVs).
+ * @param {Array} elements - cytoscape elements array
+ * @returns {{ connectionKeys: Set<string>, peerMap: Map<string, Set<string>>, nodeById: Map<string, Object> }}
+ */
+function buildConnectionMaps(elements) {
+    const nodeById = new Map();
+    const connectionKeys = new Set();
+    const peerMap = new Map();
+
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source === undefined && d.target === undefined && d.id !== undefined) {
+            nodeById.set(d.id, d);
+        }
+    });
+
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        const src = d.source;
+        const tgt = d.target;
+        if (src == null || tgt == null) return;
+        const srcData = nodeById.get(src);
+        const tgtData = nodeById.get(tgt);
+        const k1 = getConnectionEndpointKey(srcData, src);
+        const k2 = getConnectionEndpointKey(tgtData, tgt);
+        if (k1 === '' || k2 === '') return;
+        const key = k1 <= k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+        connectionKeys.add(key);
+        if (!peerMap.has(k1)) peerMap.set(k1, new Set());
+        peerMap.get(k1).add(k2);
+        if (!peerMap.has(k2)) peerMap.set(k2, new Set());
+        peerMap.get(k2).add(k1);
+    });
+
+    return { connectionKeys, peerMap, nodeById };
+}
+
+/**
+ * Base rule: one connection per port. Validates that no port (by endpoint key) appears in more than one connection.
+ * Used on load and for merge validation.
+ * @param {Array} elements - cytoscape elements array (nodes + edges)
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+function validateOneConnectionPerPort(elements) {
+    const errors = [];
+    const { peerMap } = buildConnectionMaps(elements || []);
+    peerMap.forEach((peers, portKey) => {
+        if (peers.size > 1) {
+            const peerList = [...peers].join(', ');
+            errors.push(`Port ${portKey} has more than one connection (${peerList}). Only one connection per port is allowed.`);
+        }
+    });
+    return { valid: errors.length === 0, errors: [...new Set(errors)] };
+}
+
+/**
+ * Validate a secondary cabling guide against the current visualization.
+ * Rules:
+ * - New guide must be valid: one connection per port (invalid new guide → error).
+ * - existing A–B, new A–B → allowed (warn re-defined).
+ * - existing A–B, new A–C → not allowed; error "Guides disagree".
+ * - existing A–B, new has both A–B and A–C → invalid new guide (one port, two connections) → error.
+ * @param {Object} existingData - Current cytoscape data
+ * @param {Object} newData - New guide cytoscape data (before merge)
+ * @returns {{ warnings: string[], errors: string[] }}
+ */
+function validateMergedCablingGuide(existingData, newData) {
+    const warnings = [];
+    const errors = [];
+    const existingEls = existingData?.elements || [];
+    const newEls = newData?.elements || [];
+    // New guide must be valid: one connection per port
+    const newPortValidation = validateOneConnectionPerPort(newEls);
+    if (!newPortValidation.valid) errors.push(...newPortValidation.errors);
+
+    const { connectionKeys: existingConnections, peerMap: existingPeerMap } = buildConnectionMaps(existingEls);
+    const { peerMap: newPeerMap, nodeById: newNodeById } = buildConnectionMaps(newEls);
+
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        const src = d.source;
+        const tgt = d.target;
+        if (src == null || tgt == null) return;
+        const srcData = newNodeById.get(src);
+        const tgtData = newNodeById.get(tgt);
+        const k1 = getConnectionEndpointKey(srcData, src);
+        const k2 = getConnectionEndpointKey(tgtData, tgt);
+        if (k1 === '' || k2 === '') return;
+        const key = k1 <= k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+
+        if (existingConnections.has(key)) {
+            warnings.push(`Connection re-defined (same endpoints): ${k1} — ${k2}`);
+        }
+    });
+
+    // existing A–B, new A–C: not allowed (guides disagree on that port)
+    existingPeerMap.forEach((existingPeers, portKey) => {
+        if (!newPeerMap.has(portKey)) return;
+        const newPeers = newPeerMap.get(portKey);
+        const missing = [...existingPeers].filter((p) => !newPeers.has(p));
+        if (missing.length > 0) {
+            const existingList = [...existingPeers].join(', ');
+            const newList = [...newPeers].join(', ');
+            errors.push(`Guides disagree on connections for port ${portKey}: current has ${existingList}, new guide has ${newList} (missing: ${missing.join(', ')}).`);
+        }
+    });
+
+    return { warnings: [...new Set(warnings)], errors: [...new Set(errors)] };
+}
+
+/**
+ * Build map from port key (host_index_tray_port) to existing port node id.
+ * Used to resolve new CSV edge source/target to actual port ids (not shelf ids).
+ */
+function buildPortKeyToNodeId(elements) {
+    const map = new Map();
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined) return;
+        const key = getPortKey(d);
+        if (key !== '' && d.id != null) map.set(key, d.id);
+    });
+    return map;
+}
+
+/**
+ * Shelf identity for "same node" matching: hostname if non-empty, else hall|aisle|rack_num|shelf_u.
+ * Used so we do not create duplicate shelves when the new CSV describes the same deployment.
+ */
+function getShelfIdentity(nodeData) {
+    if (!nodeData) return '';
+    const hostname = (nodeData.hostname ?? '').toString().trim();
+    if (hostname !== '') return hostname;
+    const hall = (nodeData.hall ?? '').toString().trim();
+    const aisle = (nodeData.aisle ?? '').toString().trim();
+    const rack = nodeData.rack_num !== undefined && nodeData.rack_num !== null ? String(nodeData.rack_num) : '';
+    const shelfU = nodeData.shelf_u !== undefined && nodeData.shelf_u !== null ? String(nodeData.shelf_u) : '';
+    return `${hall}|${aisle}|${rack}|${shelfU}`;
+}
+
+/**
+ * Build maps from existing elements: shelf identity -> shelf id; (identity, tray, port) -> port id.
+ * Used to resolve "already present" nodes when merging a CSV that describes the same deployment.
+ */
+function buildExistingIdentityMaps(elements) {
+    const nodeById = new Map();
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source === undefined && d.target === undefined && d.id != null) nodeById.set(d.id, d);
+    });
+    const shelfIdentityToShelfId = new Map();
+    const portKeyToId = new Map(); // key = identity_t{tray}_p{port}
+    const trayKeyToId = new Map(); // key = identity_t{tray}
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined || d.id == null) return;
+        if (d.type === 'shelf') {
+            const identity = getShelfIdentity(d);
+            if (identity !== '') shelfIdentityToShelfId.set(identity, d.id);
+            return;
+        }
+        if (d.type === 'tray') {
+            const shelfData = d.parent != null ? nodeById.get(d.parent) : null;
+            const identity = shelfData ? getShelfIdentity(shelfData) : '';
+            const tray = d.tray !== undefined && d.tray !== null ? String(d.tray) : '';
+            if (identity !== '' && tray !== '') trayKeyToId.set(`${identity}_t${tray}`, d.id);
+            return;
+        }
+        if (d.type === 'port') {
+            const trayData = d.parent != null ? nodeById.get(d.parent) : null;
+            const shelfData = trayData && trayData.parent != null ? nodeById.get(trayData.parent) : null;
+            const identity = shelfData ? getShelfIdentity(shelfData) : '';
+            const tray = trayData && trayData.tray !== undefined && trayData.tray !== null ? String(trayData.tray) : '';
+            const port = d.port !== undefined && d.port !== null ? String(d.port) : '';
+            if (identity !== '' && tray !== '' && port !== '') portKeyToId.set(`${identity}_t${tray}_p${port}`, d.id);
+        }
+    });
+    return { shelfIdentityToShelfId, trayKeyToId, portKeyToId, nodeById };
+}
+
+/**
+ * Build map from endpoint key (host_index/host_id or id) to existing node id.
+ * Used to match new-guide nodes to already-present nodes so we add only edges when possible.
+ */
+function buildEndpointToNodeId(elements) {
+    const map = new Map();
+    const nodeById = new Map();
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source === undefined && d.target === undefined && d.id !== undefined) {
+            nodeById.set(d.id, d);
+        }
+    });
+    (elements || []).forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined) return;
+        const id = d.id;
+        if (id == null) return;
+        const key = getEndpointKey(d, id);
+        if (key !== '') map.set(key, id);
+    });
+    return map;
+}
+
+
+/**
+ * Merge a second cabling guide's cytoscape data into existing data.
+ * When all nodes from the new guide are already present (matched by endpoint key), only new
+ * connections (edges) are added. When the new guide has nodes not in the graph, those nodes
+ * are added with a prefix and their connections are remapped.
+ * @param {Object} existingData - Current cytoscape data (elements + metadata)
+ * @param {Object} newData - Cytoscape data from the new CSV
+ * @param {string} prefix - Unique prefix for the new guide (e.g. 'm2', 'm3')
+ * @returns {Object} Merged { elements, metadata }
+ */
+function mergeCablingGuideData(existingData, newData, prefix) {
+    const existingEls = existingData?.elements || [];
+    const newEls = newData?.elements || [];
+
+    const makeId = (id) => (id ? `${prefix}_${id}` : id);
+
+    const newConnectionMaps = buildConnectionMaps(newEls);
+    const newElsNodeById = newConnectionMaps.nodeById;
+
+    const existingEdgeKeysByNodeId = new Set();
+    (existingEls || []).forEach((el) => {
+        const d = el.data || {};
+        const src = d.source;
+        const tgt = d.target;
+        if (src == null || tgt == null) return;
+        const key = src <= tgt ? `${src}|${tgt}` : `${tgt}|${src}`;
+        existingEdgeKeysByNodeId.add(key);
+    });
+
+    // Set of existing node ids so we can keep parent refs to existing compound nodes (hall/aisle/rack)
+    const existingIds = new Set();
+    (existingEls || []).forEach((el) => {
+        const id = el.data?.id;
+        if (id != null) existingIds.add(id);
+    });
+    // Identity-based "already present": match by hostname or (hall, aisle, rack_num, shelf_u) so we don't create duplicate shelves when the new CSV describes the same deployment.
+    // Also map hall/aisle/rack by id when they already exist so we don't add duplicate compound nodes.
+    const { shelfIdentityToShelfId, trayKeyToId, portKeyToId } = buildExistingIdentityMaps(existingEls);
+    const existingNodeIdMap = new Map(); // new CSV node id -> existing graph node id when the node is the same (same identity)
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined) return;
+        const id = d.id;
+        if (id == null) return;
+        if (d.type === 'hall' || d.type === 'aisle' || d.type === 'rack') {
+            if (existingIds.has(id)) existingNodeIdMap.set(id, id);
+            return;
+        }
+        if (d.type === 'shelf') {
+            const identity = getShelfIdentity(d);
+            if (identity !== '' && shelfIdentityToShelfId.has(identity)) {
+                existingNodeIdMap.set(id, shelfIdentityToShelfId.get(identity));
+            }
+            return;
+        }
+        if (d.type === 'tray') {
+            const shelfData = d.parent != null ? newElsNodeById.get(d.parent) : null;
+            const identity = shelfData ? getShelfIdentity(shelfData) : '';
+            const tray = d.tray !== undefined && d.tray !== null ? String(d.tray) : '';
+            const key = identity !== '' && tray !== '' ? `${identity}_t${tray}` : '';
+            if (key !== '' && trayKeyToId.has(key)) existingNodeIdMap.set(id, trayKeyToId.get(key));
+            return;
+        }
+        if (d.type === 'port') {
+            const trayData = d.parent != null ? newElsNodeById.get(d.parent) : null;
+            const shelfData = trayData && trayData.parent != null ? newElsNodeById.get(trayData.parent) : null;
+            const identity = shelfData ? getShelfIdentity(shelfData) : '';
+            const tray = trayData && trayData.tray !== undefined && trayData.tray !== null ? String(trayData.tray) : '';
+            const port = d.port !== undefined && d.port !== null ? String(d.port) : '';
+            const key = identity !== '' && tray !== '' && port !== '' ? `${identity}_t${tray}_p${port}` : '';
+            if (key !== '' && portKeyToId.has(key)) existingNodeIdMap.set(id, portKeyToId.get(key));
+        }
+    });
+
+    // idMap: only for new nodes we're adding (not already present by identity)
+    const idMap = new Map();
+    newEls.forEach((el) => {
+        const id = el.data?.id;
+        if (id == null) return;
+        if (el.data && ('source' in el.data || 'target' in el.data)) return;
+        if (existingNodeIdMap.has(id)) return;
+        idMap.set(id, makeId(id));
+    });
+
+    // Resolve parent id: use existing id only when that parent was matched (existingNodeIdMap), else prefixed new id.
+    // Do not use existingIds.has(parentId): for a disjoint merge, new graph's "0" is not the same node as existing "0".
+    const resolveParentId = (parentId) => {
+        if (parentId == null) return parentId;
+        const matched = existingNodeIdMap.get(parentId);
+        if (matched != null) return matched;
+        return idMap.get(parentId) ?? makeId(parentId);
+    };
+
+    // New node elements to add (prefixed) — only nodes not already present (same identity in existing graph)
+    const newNodesToAdd = [];
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined) return;
+        const id = d.id;
+        if (id == null) return;
+        if (existingNodeIdMap.has(id)) return;
+        const data = { ...d };
+        const newId = idMap.get(id) ?? makeId(id);
+        data.id = newId;
+        if (data.parent != null) {
+            data.parent = resolveParentId(data.parent);
+        }
+        newNodesToAdd.push({ ...el, data });
+    });
+
+    // New edges: resolve source/target to existing node id (when same identity) or prefixed new id; only add if both endpoints exist in merged graph
+    const newEdgesToAdd = [];
+    let edgeIndex = 0;
+    const addedEdgeKeys = new Set(existingEdgeKeysByNodeId);
+    const mergedNodeIds = new Set(existingIds);
+    newNodesToAdd.forEach((el) => {
+        const id = el.data?.id;
+        if (id != null) mergedNodeIds.add(id);
+    });
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        const src = d.source;
+        const tgt = d.target;
+        if (src == null || tgt == null) return;
+        const sourceId = existingNodeIdMap.get(src) ?? idMap.get(src);
+        const targetId = existingNodeIdMap.get(tgt) ?? idMap.get(tgt);
+        if (sourceId == null || targetId == null) return;
+        if (!mergedNodeIds.has(sourceId) || !mergedNodeIds.has(targetId)) return;
+
+        const edgeKey = sourceId <= targetId ? `${sourceId}|${targetId}` : `${targetId}|${sourceId}`;
+        if (addedEdgeKeys.has(edgeKey)) return;
+        addedEdgeKeys.add(edgeKey);
+
+        const edgeId = `add_${prefix}_${edgeIndex++}`;
+        newEdgesToAdd.push({
+            group: 'edges',
+            data: {
+                ...d,
+                id: edgeId,
+                source: sourceId,
+                target: targetId
+            }
+        });
+    });
+
+    // When new is a superset of existing, result should match new (same nodes + edges, with ids resolved to existing where applicable)
+    const seenNodeIds = new Set();
+    const mergedNodesFromNew = [];
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        if (d.source !== undefined || d.target !== undefined) return;
+        const id = d.id;
+        if (id == null) return;
+        const resolvedId = existingNodeIdMap.get(id) ?? idMap.get(id) ?? makeId(id);
+        if (seenNodeIds.has(resolvedId)) return;
+        seenNodeIds.add(resolvedId);
+        const data = { ...d, id: resolvedId };
+        if (d.parent != null) data.parent = resolveParentId(d.parent);
+        mergedNodesFromNew.push({ ...el, data });
+    });
+    const mergedEdgesFromNew = [];
+    newEls.forEach((el) => {
+        const d = el.data || {};
+        const src = d.source;
+        const tgt = d.target;
+        if (src == null || tgt == null) return;
+        const sourceId = existingNodeIdMap.get(src) ?? idMap.get(src) ?? makeId(src);
+        const targetId = existingNodeIdMap.get(tgt) ?? idMap.get(tgt) ?? makeId(tgt);
+        mergedEdgesFromNew.push({
+            group: 'edges',
+            data: { ...d, id: d.id || `e_${src}_${tgt}`, source: sourceId, target: targetId }
+        });
+    });
+    // When new is a superset (no new nodes), result matches new. When disjoint or partial, keep existing + add new so we don't drop the original graph.
+    const mergedElements =
+        newNodesToAdd.length === 0
+            ? [...mergedNodesFromNew, ...mergedEdgesFromNew]
+            : [...existingEls, ...newNodesToAdd, ...newEdgesToAdd];
+    const existingMeta = existingData?.metadata || {};
+    const newMeta = newData?.metadata || {};
+    const existingUnknown = new Set(existingMeta.unknown_node_types || []);
+    const newUnknown = newMeta.unknown_node_types || [];
+    newUnknown.forEach((t) => existingUnknown.add(t));
+    const mergedMetadata = {
+        ...existingMeta,
+        connection_count: (existingMeta.connection_count || 0) + (newMeta.connection_count || 0),
+        merged_guide_count: (existingMeta.merged_guide_count || 1) + 1,
+        ...(existingUnknown.size > 0 && { unknown_node_types: [...existingUnknown] })
+    };
+    return {
+        elements: mergedElements,
+        metadata: mergedMetadata,
+        newNodesToAdd,
+        newEdgesToAdd
+    };
+}
+
+/**
+ * Apply merged data incrementally to the existing graph: add only new nodes and new edges
+ * (no remove/re-add). Keeps existing elements and their parent/child relationships intact.
+ * @param {Object} mergeResult - Result from mergeCablingGuideData: { elements, metadata, newNodesToAdd, newEdgesToAdd }
+ */
+function applyMergeToGraph(mergeResult) {
+    if (!state.cy) return;
+    const { newNodesToAdd, newEdgesToAdd, elements: mergedElements } = mergeResult;
+    state.cy.startBatch();
+    if (newNodesToAdd?.length > 0 || newEdgesToAdd?.length > 0) {
+        const sortedNewElements = sortElementsParentsBeforeChildren([...newNodesToAdd, ...newEdgesToAdd]);
+        const sortedNewNodes = sortedNewElements.filter((el) => el.group !== 'edges' && !(el.data && ('source' in (el.data || {}) || 'target' in (el.data || {}))));
+        const sortedNewEdges = sortedNewElements.filter((el) => el.group === 'edges' || (el.data && (('source' in (el.data || {})) || ('target' in (el.data || {})))));
+        if (sortedNewNodes.length > 0) state.cy.add(sortedNewNodes);
+        if (sortedNewEdges.length > 0) state.cy.add(sortedNewEdges);
+    }
+    // Sync every node's parent in the graph to match merged data (so shelves end up in correct rack/hall/aisle)
+    if (mergedElements?.length) {
+        const sortedNodes = sortElementsParentsBeforeChildren(mergedElements).filter(
+            (el) => el.group !== 'edges' && !(el.data && ('source' in (el.data || {}) || 'target' in (el.data || {})))
+        );
+        sortedNodes.forEach((el) => {
+            const id = el.data?.id;
+            const wantParent = el.data?.parent ?? null;
+            if (id == null) return;
+            const node = state.cy.getElementById(String(id));
+            if (node.length === 0 || !node.isNode()) return;
+            const currentParent = node.parent().length ? node.parent().id() : null;
+            if (currentParent !== wantParent) node.move({ parent: wantParent != null ? wantParent : null });
+        });
+    }
+    state.cy.endBatch();
+}
+
+/**
+ * Sort elements so parent nodes are added before their children (Cytoscape requires this for compound nodes).
+ * Preserves racking hierarchy when re-adding serialized elements (e.g. after merge).
+ * Order: hall -> aisle -> rack -> shelf -> tray -> port, then other nodes, then edges.
+ */
+function sortElementsParentsBeforeChildren(elements) {
+    if (!elements || !elements.length) return elements;
+    const typeOrder = { hall: 0, aisle: 1, rack: 2, shelf: 3, tray: 4, port: 5 };
+    const nodes = [];
+    const edges = [];
+    elements.forEach((el) => {
+        if (el.group === 'edges' || (el.data && ('source' in el.data || 'target' in el.data))) {
+            edges.push(el);
+        } else {
+            nodes.push(el);
+        }
+    });
+    nodes.sort((a, b) => {
+        const typeA = (a.data && a.data.type) || '';
+        const typeB = (b.data && b.data.type) || '';
+        const orderA = typeOrder[typeA] !== undefined ? typeOrder[typeA] : 6;
+        const orderB = typeOrder[typeB] !== undefined ? typeOrder[typeB] : 6;
+        if (orderA !== orderB) return orderA - orderB;
+        const parentA = a.data && a.data.parent;
+        const parentB = b.data && b.data.parent;
+        if (!parentA && parentB) return -1;
+        if (parentA && !parentB) return 1;
+        if (parentA && parentB && parentA !== parentB) {
+            const idA = a.data && a.data.id;
+            const idB = b.data && b.data.id;
+            if (idA === parentB) return 1;
+            if (idB === parentA) return -1;
+        }
+        return 0;
+    });
+    return [...nodes, ...edges];
+}
+
+/**
+ * Add another cabling guide (CSV) to the current location-mode visualization.
+ * Uploads the CSV, merges with current data, and adds only new nodes/edges to the existing graph
+ * (no full re-init), so existing parent/child relationships stay intact.
+ * @param {File} file - CSV file
+ */
+async function addAnotherCablingGuideLocation(file) {
+    if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+        window.showExportStatus?.('Please select a CSV file.', 'error');
+        return;
+    }
+    if (getVisualizationMode() !== 'location') {
+        window.showExportStatus?.('Add another guide is only available in Physical Deployment mode.', 'error');
+        return;
+    }
+    if (!state.data.currentData?.elements?.length) {
+        window.showExportStatus?.('Load a cabling guide first, then add another.', 'error');
+        return;
+    }
+
+    const loadingEl = document.getElementById('loadingAddAnotherLocation');
+    const btn = document.getElementById('addAnotherCablingGuideBtn');
+    const fileInput = document.getElementById('addAnotherCablingGuideFile');
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('csv_file', file);
+
+        const response = await fetch('/upload_csv', { method: 'POST', body: formData });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            window.showExportStatus?.(result.error || 'Failed to process CSV', 'error');
+            return;
+        }
+
+        const newData = result.data;
+        // Use live graph (with parent patched) so merge preserves compound hierarchy
+        let existingData = state.data.currentData;
+        if (state.cy && state.cy.elements().length > 0) {
+            const rawElements = state.cy.elements().jsons();
+            const elementsWithParent = rawElements.map((el) => {
+                if (el.group === 'edges' || (el.data && ('source' in (el.data || {})))) return el;
+                const id = el.data?.id;
+                const node = state.cy.getElementById(id != null ? String(id) : '');
+                const parentId = (node.length && node.isNode()) ? (node.parent().length ? node.parent().id() : null) : null;
+                return { ...el, data: { ...el.data, parent: parentId !== undefined && parentId !== null ? parentId : undefined } };
+            });
+            existingData = {
+                elements: elementsWithParent,
+                metadata: state.data.currentData?.metadata ? { ...state.data.currentData.metadata } : {}
+            };
+        }
+
+        const validation = validateMergedCablingGuide(existingData, newData);
+        if (validation.errors.length > 0) {
+            const errMsg = validation.errors.length === 1
+                ? validation.errors[0]
+                : `${validation.errors.length} conflict(s): ${validation.errors.slice(0, 2).join(' ')}${validation.errors.length > 2 ? '…' : ''}`;
+            window.showExportStatus?.(errMsg, 'error');
+            return;
+        }
+
+        const mergePrefix = 'm' + ((existingData?.metadata?.merged_guide_count || 1) + 1);
+        const merged = mergeCablingGuideData(existingData, newData, mergePrefix);
+        const sortedElements = sortElementsParentsBeforeChildren(merged.elements);
+        state.data.currentData = { elements: sortedElements, metadata: merged.metadata };
+        // Add only new nodes/edges to the existing graph (no full re-init) so existing parent/child relationships stay intact
+        applyMergeToGraph(merged);
+        if (state.cy) {
+            commonModule.applyDragRestrictions();
+            commonModule.forceApplyCurveStyles();
+            if (getVisualizationMode() === 'location') {
+                locationModule.calculateLayout();
+                // Do not call organizeInGrid() when we have racks: it moves every shelf to parent null and breaks compounds
+                const hasRacks = state.cy.nodes('[type="rack"]').length > 0;
+                if (!hasRacks) locationModule?.organizeInGrid?.();
+            } else {
+                locationModule?.organizeInGrid?.();
+            }
+        }
+        updateConnectionLegend(state.data.currentData);
+
+        let msg = result.message ? `${result.message} Merged into visualization.` : 'Cabling guide added.';
+        if (validation.warnings.length > 0) {
+            const warnSummary = validation.warnings.length === 1
+                ? validation.warnings[0]
+                : `${validation.warnings.length} connection(s) re-defined (same endpoints).`;
+            msg += ' ' + warnSummary;
+            const fullWarn = validation.warnings.length > 1 ? msg + '\n\n' + validation.warnings.join('\n') : null;
+            window.showExportStatus?.(msg, 'warning', fullWarn);
+        } else {
+            window.showExportStatus?.(msg, 'success');
+        }
+        if (fileInput) fileInput.value = '';
+    } catch (err) {
+        console.error('Add another cabling guide error:', err);
+        window.showExportStatus?.('Upload failed: ' + err.message, 'error');
+    } finally {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '📊 Add CSV to visualization';
+        }
+    }
+}
+
 async function uploadFileGeneric(file, mode) {
     const loadingId = mode === 'location' ? 'loadingLocation' : 'loadingTopology';
     const uploadBtnId = mode === 'location' ? 'uploadBtnLocation' : 'uploadBtnTopology';
@@ -1007,37 +1829,41 @@ async function applyDeploymentDescriptor(file) {
     uploadBtn.textContent = 'Processing...';
     hideMessagesForMode('location');
 
+    // Use live graph (cy) when available so all nodes are included regardless of collapse state.
+    // Exclude rerouted edges (collapse view-state) so they are never sent or stored; they reference
+    // collapsed parents and would cause "nonexistant source" when payload is reloaded.
+    let cytoscapePayload = state.data.currentData;
+    if (state.cy && state.cy.elements) {
+        const raw = state.cy.elements().jsons();
+        const withoutRerouted = raw.filter((el) => {
+            if (el.group === 'edges' && el.data) {
+                if (el.data.isRerouted === true) return false;
+                if (typeof el.data.id === 'string' && el.data.id.startsWith('rerouted_')) return false;
+            }
+            return true;
+        });
+        const sanitized = exportModule?.sanitizeForJSON ? exportModule.sanitizeForJSON(withoutRerouted) : withoutRerouted;
+        cytoscapePayload = {
+            elements: Array.isArray(sanitized) ? sanitized : withoutRerouted,
+            ...(state.data.currentData?.metadata && { metadata: state.data.currentData.metadata })
+        };
+    }
+
     const formData = new FormData();
     formData.append('deployment_file', file);
-    formData.append('cytoscape_data', JSON.stringify(state.data.currentData));
+    formData.append('cytoscape_data', JSON.stringify(cytoscapePayload));
 
     try {
         const response = await fetch('/apply_deployment_descriptor', { method: 'POST', body: formData });
         const result = await response.json();
         if (response.ok && result.success) {
+            // Keep in-memory snapshot in sync with full graph (important when payload was built from cy)
+            if (result.data?.elements) {
+                state.data.currentData = result.data;
+            }
             if (locationModule?.updateShelfLocations) {
                 const updatedCount = locationModule.updateShelfLocations(result.data);
                 console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
-                if (state.data.currentData?.elements && result.data?.elements) {
-                    const locationUpdateMap = new Map();
-                    result.data.elements.forEach(element => {
-                        if (element.data?.type === 'shelf') {
-                            locationUpdateMap.set(element.data.id, {
-                                hall: element.data.hall || '',
-                                aisle: element.data.aisle || '',
-                                rack_num: element.data.rack_num || 0,
-                                shelf_u: element.data.shelf_u || 0,
-                                hostname: element.data.hostname || ''
-                            });
-                        }
-                    });
-                    state.data.currentData.elements.forEach(element => {
-                        if (element.data?.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
-                            const locationData = locationUpdateMap.get(element.data.id);
-                            Object.assign(element.data, locationData);
-                        }
-                    });
-                }
             } else {
                 console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                 initVisualization(result.data);
@@ -1089,38 +1915,38 @@ async function applyDeploymentDescriptorFromModal() {
     applyBtn.disabled = true;
     applyBtn.textContent = 'Processing...';
 
+    // Use live graph (cy) when available; exclude rerouted edges to avoid "nonexistant source" on reload
+    let cytoscapePayload = state.data.currentData;
+    if (state.cy && state.cy.elements) {
+        const raw = state.cy.elements().jsons();
+        const withoutRerouted = raw.filter((el) => {
+            if (el.group === 'edges' && el.data) {
+                if (el.data.isRerouted === true) return false;
+                if (typeof el.data.id === 'string' && el.data.id.startsWith('rerouted_')) return false;
+            }
+            return true;
+        });
+        const sanitized = exportModule?.sanitizeForJSON ? exportModule.sanitizeForJSON(withoutRerouted) : withoutRerouted;
+        cytoscapePayload = {
+            elements: Array.isArray(sanitized) ? sanitized : withoutRerouted,
+            ...(state.data.currentData?.metadata && { metadata: state.data.currentData.metadata })
+        };
+    }
+
     const formData = new FormData();
     formData.append('deployment_file', file);
-    formData.append('cytoscape_data', JSON.stringify(state.data.currentData));
+    formData.append('cytoscape_data', JSON.stringify(cytoscapePayload));
 
     try {
         const response = await fetch('/apply_deployment_descriptor', { method: 'POST', body: formData });
         const result = await response.json();
         if (response.ok && result.success) {
-            state.data.currentData = result.data;
+            if (result.data?.elements) {
+                state.data.currentData = result.data;
+            }
             if (locationModule?.updateShelfLocations) {
                 const updatedCount = locationModule.updateShelfLocations(result.data);
                 console.log(`[applyDeploymentDescriptor] Updated ${updatedCount} shelf nodes with location data`);
-                if (state.data.currentData?.elements && result.data?.elements) {
-                    const locationUpdateMap = new Map();
-                    result.data.elements.forEach(element => {
-                        if (element.data?.type === 'shelf') {
-                            locationUpdateMap.set(element.data.id, {
-                                hall: element.data.hall || '',
-                                aisle: element.data.aisle || '',
-                                rack_num: element.data.rack_num || 0,
-                                shelf_u: element.data.shelf_u || 0,
-                                hostname: element.data.hostname || ''
-                            });
-                        }
-                    });
-                    state.data.currentData.elements.forEach(element => {
-                        if (element.data?.type === 'shelf' && locationUpdateMap.has(element.data.id)) {
-                            const locationData = locationUpdateMap.get(element.data.id);
-                            Object.assign(element.data, locationData);
-                        }
-                    });
-                }
             } else {
                 console.warn('[applyDeploymentDescriptor] locationModule.updateShelfLocations not available, falling back to initVisualization');
                 initVisualization(result.data);
@@ -1250,6 +2076,13 @@ const otherFunctions = {
     hideInitializationShowControls,
     updateNodeVariationOptions,
     getPortLocationInfo,
+    getLocationByHostIndex,
+    getHostIndexByLocation,
+    getHostIndexByHostname,
+    addAnotherCablingGuideLocation,
+    mergeCablingGuideData,
+    validateMergedCablingGuide,
+    validateOneConnectionPerPort,
 };
 
 // Combine and expose all functions
@@ -1258,3 +2091,5 @@ Object.keys(functionsToExpose).forEach(key => {
     window[key] = functionsToExpose[key];
 });
 
+// Named exports for tests (merge debugging)
+export { mergeCablingGuideData, sortElementsParentsBeforeChildren, validateMergedCablingGuide, validateOneConnectionPerPort };

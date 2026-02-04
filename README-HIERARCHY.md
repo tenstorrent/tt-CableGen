@@ -20,6 +20,7 @@ This document covers the specifics of interacting with tt-CableGen in **Hierarch
   - [Collapsing/Expanding Graph Instances](#collapsingexpanding-graph-instances)
   - [Adding Connections](#adding-connections)
   - [Editing Node Properties](#editing-node-properties)
+  - [Copy and Paste](#copy-and-paste)
   - [Switching to Location Mode](#switching-to-location-mode)
 - [UI Elements Specific to Hierarchy Mode](#ui-elements-specific-to-hierarchy-mode)
   - [Visible Elements](#visible-elements)
@@ -176,6 +177,23 @@ Right-click any node to edit its properties. This feature requires **Cabling Edi
 - **Add A New Template**: Add a new graph template instance. This will create a new named template you can place in the hierarchy.
 
 **Note**: Template operations affect all instances of the template. Use these features to refine your topology design as you iterate on the layout.
+
+### Copy and Paste
+
+Copy and paste in Hierarchy Mode duplicates **graph instances** and/or **shelf nodes** with their full subtrees and **internal connections** (connections where both endpoints are in the copied set). New graph instances are named with the prefix `copy` (or the selected graph’s instance name prefix when pasting under it).
+
+**Copy flow:**
+1. Enable **Cabling Editing** mode.
+2. Select one or more graph instances or shelf nodes (use **Shift+Click** or **Ctrl/Cmd+Click** for multi-select). Selecting a graph instance copies its entire subtree; selecting a shelf copies that shelf and its trays/ports.
+3. Press **Ctrl+C** (or **Cmd+C** on Mac). The selection and connections between nodes in the selection are copied to the clipboard.
+
+**Paste flow:**
+1. Ensure you have copied content (Ctrl+C) and **Cabling Editing** is enabled.
+2. Optionally select a **parent graph node** where the paste should go. If no graph is selected, paste happens at **root** (top level).
+3. Press **Ctrl+V** (or **Cmd+V** on Mac). The clipboard content is pasted immediately—no modal. New graph instances appear under the chosen parent (or at root) with new IDs and the `copy` prefix.
+
+**Restrictions:**
+- You cannot paste if it would create a **circular dependency**: e.g. pasting a template inside an instance of that same template, or pasting a template that contains the destination template. If that happens, a warning explains the issue; choose a different parent or paste at root.
 
 ### Switching to Location Mode
 <p align="center">
