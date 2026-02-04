@@ -60,18 +60,21 @@ def index():
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
 
-        # Generate cache-busting version based on main JS file modification time
-        # This ensures browsers fetch new versions when files are updated
+        # Generate cache-busting version from all JS files under static/js
+        # So any change to any module updates the version and all JS gets cache busting
         try:
-            main_js_path = os.path.join("static", "js", "visualizer.js")
-            if os.path.exists(main_js_path):
-                file_mtime = int(os.path.getmtime(main_js_path))
-                cache_version = str(file_mtime)
+            js_dir = os.path.join("static", "js")
+            if os.path.isdir(js_dir):
+                max_mtime = 0
+                for root, _dirs, files in os.walk(js_dir):
+                    for f in files:
+                        if f.endswith(".js"):
+                            path = os.path.join(root, f)
+                            max_mtime = max(max_mtime, int(os.path.getmtime(path)))
+                cache_version = str(max_mtime) if max_mtime else str(int(time.time()))
             else:
-                # Fallback to current timestamp if file doesn't exist
                 cache_version = str(int(time.time()))
         except Exception:
-            # Fallback to current timestamp on any error
             cache_version = str(int(time.time()))
 
         html_content = render_template("index.html", node_configs=node_configs, cache_version=cache_version)
