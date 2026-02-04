@@ -2199,8 +2199,10 @@ export class LocationModule {
             : null;
 
         if (destination && (destination.hall !== undefined || destination.aisle !== undefined || destination.rack_num != null)) {
-            hall = destination.hall != null ? destination.hall : firstClipboardShelf.hall || '';
-            aisle = destination.aisle != null ? destination.aisle : firstClipboardShelf.aisle || '';
+            // Use clipboard hall/aisle when destination has empty string so we target the same location hierarchy
+            // (e.g. paste into "Rack 3" with empty modal fields still uses SC_Floor_5 / A and finds rack_SC_Floor_5_A_3)
+            hall = (destination.hall != null && destination.hall !== '') ? destination.hall : (firstClipboardShelf.hall || '');
+            aisle = (destination.aisle != null && destination.aisle !== '') ? destination.aisle : (firstClipboardShelf.aisle || '');
             rackNum = destination.rack_num != null ? this._normalizeRackNum(destination.rack_num) : (firstClipboardShelf.rack_num != null ? this._normalizeRackNum(firstClipboardShelf.rack_num) : 1);
             if (!shelfAssignments) {
                 shelfUList = destination.shelf_u_list && destination.shelf_u_list.length > 0 ? destination.shelf_u_list : null;
@@ -2217,6 +2219,21 @@ export class LocationModule {
         const forceShowHalls = hall.length > 0;
         const forceShowAisles = aisle.length > 0;
         const shelfSpacing = 140;
+
+        // Ensure we never reuse an existing shelf id: paste must create new nodes, not replace originals.
+        // Sync globalHostCounter so the next id is above any existing shelf (by id or host_index).
+        const existingShelves = this.state.cy.nodes('[type="shelf"]');
+        let maxExistingShelfIndex = -1;
+        existingShelves.forEach((shelf) => {
+            const hi = shelf.data('host_index');
+            const idNum = parseInt(shelf.id(), 10);
+            const n = (typeof hi === 'number' && !isNaN(hi)) ? hi : (Number.isInteger(idNum) ? idNum : -1);
+            if (n > maxExistingShelfIndex) maxExistingShelfIndex = n;
+        });
+        const nextFree = maxExistingShelfIndex + 1;
+        if (this.state.data.globalHostCounter < nextFree) {
+            this.state.data.globalHostCounter = nextFree;
+        }
 
         let singleRackParentId = null;
         let singleRackBaseX = 300;
@@ -2241,6 +2258,44 @@ export class LocationModule {
         }
 
         const newShelfIdsByIndex = [];
+        /** When using shelfAssignments, precompute base position and next slot per rack so all pasted shelves in one rack use a consistent baseY. Key uses string rack num so lookups never fail due to number vs string. */
+        const rackPasteStateByKey = new Map();
+        const rackKeyString = (rNum) => {
+            const n = this._normalizeRackNum(rNum);
+            return `${hall}\0${aisle}\0${n != null ? String(n) : ''}`;
+        };
+        if (shelfAssignments && shelfAssignments.length > 0) {
+            const pastedCountByRack = new Map();
+            for (let idx = 0; idx < shelfAssignments.length; idx++) {
+                const rNum = shelfAssignments[idx].rack_num;
+                const key = rackKeyString(rNum);
+                if (key) pastedCountByRack.set(key, (pastedCountByRack.get(key) || 0) + 1);
+            }
+            pastedCountByRack.forEach((pastedCount, key) => {
+                const parts = key.split('\0');
+                const rNumPart = parts[2];
+                const rNum = rNumPart !== '' ? (parseInt(rNumPart, 10) || null) : null;
+                if (rNum == null) return;
+                const { rackNode } = this._findOrCreateLocationNodes(
+                    { hall, aisle, rackNum: rNum },
+                    { shouldShowHalls: forceShowHalls, shouldShowAisles: forceShowAisles }
+                );
+                if (rackNode && rackNode.length > 0) {
+                    const shelvesInRack = rackNode.children('[type="shelf"]');
+                    const existingCount = shelvesInRack.length;
+                    const totalCount = existingCount + pastedCount;
+                    const rackPos = rackNode.position();
+                    const baseY = rackPos.y - (totalCount - 1) * (shelfSpacing / 2);
+                    rackPasteStateByKey.set(key, {
+                        rackParentId: rackNode.id(),
+                        baseX: rackPos.x,
+                        baseY,
+                        nextSlotIndex: existingCount
+                    });
+                }
+            });
+        }
+
         this.state.cy.startBatch();
 
         for (let i = 0; i < clipboard.shelves.length; i++) {
@@ -2255,17 +2310,33 @@ export class LocationModule {
             if (shelfAssignments) {
                 thisRackNum = this._normalizeRackNum(shelfAssignments[i].rack_num);
                 thisShelfU = shelfAssignments[i].shelf_u;
-                const { rackNode } = this._findOrCreateLocationNodes(
-                    { hall, aisle, rackNum: thisRackNum },
-                    { shouldShowHalls: forceShowHalls, shouldShowAisles: forceShowAisles }
-                );
-                if (rackNode && rackNode.length > 0) {
-                    rackParentId = rackNode.id();
-                    const shelvesInRack = rackNode.children('[type="shelf"]');
-                    const rackPos = rackNode.position();
-                    baseX = rackPos.x;
-                    baseY = rackPos.y - (shelvesInRack.length * shelfSpacing / 2);
-                    slotIndexInRack = shelvesInRack.length;
+                const key = rackKeyString(thisRackNum);
+                let rackState = key ? rackPasteStateByKey.get(key) : undefined;
+                if (!rackState && thisRackNum != null) {
+                    const { rackNode } = this._findOrCreateLocationNodes(
+                        { hall, aisle, rackNum: thisRackNum },
+                        { shouldShowHalls: forceShowHalls, shouldShowAisles: forceShowAisles }
+                    );
+                    if (rackNode && rackNode.length > 0) {
+                        const shelvesInRack = rackNode.children('[type="shelf"]');
+                        const existingCount = shelvesInRack.length;
+                        const rackPos = rackNode.position();
+                        const baseYVal = rackPos.y - (existingCount - 1) * (shelfSpacing / 2);
+                        rackState = {
+                            rackParentId: rackNode.id(),
+                            baseX: rackPos.x,
+                            baseY: baseYVal,
+                            nextSlotIndex: existingCount
+                        };
+                        if (key) rackPasteStateByKey.set(key, rackState);
+                    }
+                }
+                if (rackState) {
+                    rackParentId = rackState.rackParentId;
+                    baseX = rackState.baseX;
+                    baseY = rackState.baseY;
+                    slotIndexInRack = rackState.nextSlotIndex;
+                    rackState.nextSlotIndex += 1;
                 }
             } else {
                 thisRackNum = rackNum;

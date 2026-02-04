@@ -549,10 +549,8 @@ export class UIDisplayModule {
 
     /**
      * Parse input that could be:
-     * - A number (e.g., "5" -> generate range 1-5)
      * - A range (e.g., "1-10" -> [1,2,3,...,10])
-     * - A comma-separated list (e.g., "1,2,5,10" -> [1,2,5,10])
-     * - A text list (e.g., "A,B,C" -> ["A","B","C"])
+     * - A comma/newline-separated list; a single value stays single (e.g., "5" -> [5], "A,B,C" -> ["A","B","C"])
      * @param {string} input - Input text
      * @returns {Array<string|number>} Array of values
      */
@@ -561,21 +559,11 @@ export class UIDisplayModule {
 
         input = input.trim();
 
-        // Check if it's a single number (generate range 1 to N)
-        const singleNum = parseInt(input);
-        if (!isNaN(singleNum) && input.match(/^\d+$/)) {
-            const result = [];
-            for (let i = 1; i <= singleNum; i++) {
-                result.push(i);
-            }
-            return result;
-        }
-
         // Check if it's a range (e.g., "1-10")
         const rangeResult = this.parseRange(input);
         if (rangeResult) return rangeResult;
 
-        // Otherwise parse as comma/newline-separated list
+        // Otherwise parse as comma/newline-separated list (single value stays single, e.g. "5" -> [5])
         const items = this.parseList(input);
 
         // Try to convert to numbers if all items are numeric
@@ -880,7 +868,10 @@ export class UIDisplayModule {
         const parseOneNumber = (id) => {
             const el = document.getElementById(id);
             if (!el) return null;
-            const raw = this.parseFlexibleInput((el.value || '').trim());
+            const input = (el.value || '').trim();
+            const raw = id === 'rackNumbers'
+                ? this.parseFlexibleInputShelfUPasteOnly(input)
+                : this.parseFlexibleInput(input);
             if (raw.length === 0) return null;
             const first = raw[0];
             return typeof first === 'number' ? first : parseInt(first, 10) || null;
@@ -888,7 +879,8 @@ export class UIDisplayModule {
         const parseRackNumbersList = () => {
             const el = document.getElementById('rackNumbers');
             if (!el) return [];
-            const raw = this.parseFlexibleInput((el.value || '').trim());
+            const input = (el.value || '').trim();
+            const raw = this.parseFlexibleInputShelfUPasteOnly(input);
             return raw.map(x => (typeof x === 'number' ? x : parseInt(x, 10) || 1));
         };
         const parseShelfUList = () => {

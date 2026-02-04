@@ -2409,6 +2409,26 @@ export class HierarchyModule {
         return pathMapping;
     }
 
+    /**
+     * Get the number of existing graph instances with the given template under the given parent (or at root).
+     * Used to assign correct instance index when pasting (e.g. superpod_0, superpod_1).
+     * @param {Object} cy - Cytoscape instance
+     * @param {string|null} parentId - Parent graph id, or null for root
+     * @param {string} templateName - template_name to count
+     * @returns {number}
+     */
+    _getExistingInstanceCount(cy, parentId, templateName) {
+        if (!cy || !templateName) return 0;
+        if (parentId == null || parentId === '') {
+            const roots = cy.nodes().roots();
+            return roots.filter(n => n.data('type') === 'graph' && n.data('template_name') === templateName).length;
+        }
+        const parentNode = cy.getElementById(parentId);
+        if (!parentNode || parentNode.length === 0) return 0;
+        const children = parentNode.children();
+        return children.filter(n => n.data('type') === 'graph' && n.data('template_name') === templateName).length;
+    }
+
     _checkPasteCircularDependency(clipboardNodes, parentId) {
         if (!parentId || !this.state.cy) {
             return { allowed: true };
@@ -2473,6 +2493,8 @@ export class HierarchyModule {
         let rootGraphIndex = 0;
         const nodesToAdd = [];
         const edgesToAdd = [];
+        /** @type {Map<string, number>} key: (effectiveParentId ?? '') + '\0' + templateName */
+        const pasteInstanceCountByParentAndTemplate = new Map();
 
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
@@ -2485,10 +2507,24 @@ export class HierarchyModule {
             const effectiveParentId = parentIndex === -1 ? parentId : parentNewId;
 
             if (type === 'graph') {
-                const label = data.child_name || data.label || `graph_${i}`;
+                const templateName = (data.template_name != null && data.template_name !== '') ? data.template_name : '';
+                let label;
+                let childName;
+                if (templateName) {
+                    const key = (effectiveParentId == null ? '' : effectiveParentId) + '\0' + templateName;
+                    const existingCount = this._getExistingInstanceCount(this.state.cy, effectiveParentId, templateName);
+                    const pastedCount = pasteInstanceCountByParentAndTemplate.get(key) || 0;
+                    const instanceIndex = existingCount + pastedCount;
+                    childName = `${templateName}_${instanceIndex}`;
+                    label = childName;
+                    pasteInstanceCountByParentAndTemplate.set(key, pastedCount + 1);
+                } else {
+                    label = data.child_name || data.label || `graph_${i}`;
+                    childName = data.child_name != null ? data.child_name : label;
+                }
                 const newId = effectiveParentId == null
                     ? `graph_${prefix}_${rootGraphIndex++}`
-                    : `${effectiveParentId}_${label}`;
+                    : `${effectiveParentId}_${childName}`;
                 oldIdToNewId.set(oldId, newId);
                 const pos = { x: 0, y: 0 };
                 const templateColor = data.templateColor || this.common.getTemplateColor(data.template_name || '');
@@ -2497,11 +2533,11 @@ export class HierarchyModule {
                     data: {
                         id: newId,
                         parent: effectiveParentId || undefined,
-                        label: data.label != null ? data.label : label,
+                        label,
                         type: 'graph',
                         template_name: data.template_name != null ? data.template_name : '',
                         depth: data.depth != null ? data.depth : 0,
-                        child_name: data.child_name != null ? data.child_name : label,
+                        child_name: childName,
                         templateColor,
                         instance_only: true
                     },
