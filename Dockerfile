@@ -26,22 +26,25 @@ RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
 
 WORKDIR ${TT_METAL_HOME}
 
+# Fetch and checkout the exact commit (shallow fetch for that commit only)
 RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH}"
 
 COPY build_scaleout.sh ${TT_METAL_HOME}/build_scaleout.sh
 RUN chmod +x ${TT_METAL_HOME}/build_scaleout.sh
 
+RUN /bin/bash -c "${TT_METAL_HOME}/build_scaleout.sh --build-type Release --build-dir build"
+
 WORKDIR ${APP_HOME}
 # Copy Flask web server files
+# Bust docker build cache
+ARG CACHEBUST=1
+RUN echo "Busting docker build cache at $(date): $CACHEBUST"
+
 COPY templates/ ${APP_HOME}/templates/
 COPY server.py ${APP_HOME}/server.py
 COPY import_cabling.py ${APP_HOME}/import_cabling.py
 COPY export_descriptors.py ${APP_HOME}/export_descriptors.py
 COPY static/ ${APP_HOME}/static/
-
-WORKDIR ${TT_METAL_HOME}
-
-RUN /bin/bash -c "${TT_METAL_HOME}/build_scaleout.sh --build-type Release --build-dir build"
 
 # Expose ports for tt-cablegen server
 # Port 5000: Web server
