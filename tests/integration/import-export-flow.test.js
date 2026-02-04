@@ -1243,9 +1243,6 @@ describe('Import/Export Flow Integration Tests', () => {
                     node.data('template_name') === rootTemplateName
                 ).length;
 
-                console.log(`\n--- Adding instance ${i + 2} of ${totalExpectedInstances} ---`);
-                console.log(`Before: ${beforeNodeCount} nodes, ${beforeEdgeCount} edges, ${beforeInstanceCount} instances`);
-
                 // Add the graph instance
                 hierarchyModule.addGraph(graphTemplateSelect);
 

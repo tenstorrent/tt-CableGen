@@ -713,9 +713,6 @@ export class HierarchyModule {
             // Track processed child names to prevent duplicates
             const processedChildren = new Set();
 
-            console.log(`[instantiateTemplate] Template "${templateName}" (graphId: ${graphId}) has ${template.children.length} children:`,
-                template.children.map(c => `${c.name} (${c.type}${c.type === 'graph' ? `, template: ${c.graph_template}` : ''})`));
-
             template.children.forEach((child, index) => {
                 // Skip if this child name was already processed (prevent duplicates)
                 if (processedChildren.has(child.name)) {
@@ -735,7 +732,6 @@ export class HierarchyModule {
                 if (child.original_name && child.original_name !== child.name) {
                     pathMapping[child.original_name] = childId;
                 }
-                console.log(`[instantiateTemplate] Added to pathMapping: "${child.name}" -> "${childId}"${child.original_name && child.original_name !== child.name ? ` (also "${child.original_name}")` : ''}`);
 
                 if (child.type === 'node') {
                     // Create a shelf node (leaf node)
@@ -2846,22 +2842,14 @@ export class HierarchyModule {
 
                 // Check if this child template is already in the parent template definition
                 const parentTemplate = this.state.data.availableGraphTemplates[parentTemplateName];
-                console.log(`[addGraph] Checking if child exists: parentTemplateName="${parentTemplateName}", selectedTemplate="${selectedTemplate}", baseChildName="${baseChildName}"`);
-                console.log(`[addGraph] Parent template children:`, parentTemplate && parentTemplate.children && parentTemplate.children.map(c => `${c.name} (${c.type}${c.type === 'graph' ? `, template: ${c.graph_template}` : ''})`));
-
                 const childExists = parentTemplate && parentTemplate.children && parentTemplate.children.some(
                     child => child.type === 'graph' && child.graph_template === selectedTemplate && child.name === baseChildName
                 );
 
-                console.log(`[addGraph] Child exists check result: ${childExists}`);
-
                 // Update the parent template definition first (use base name, not indexed label)
                 // Only add if it doesn't already exist
                 if (!childExists) {
-                    console.log(`[addGraph] Calling updateTemplateWithNewChild`);
                     this.updateTemplateWithNewChild(parentTemplateName, selectedTemplate, baseChildName);
-                } else {
-                    console.log(`[addGraph] Skipping updateTemplateWithNewChild - child already exists`);
                 }
 
                 // Find all instances of the parent template (including empty ones)
@@ -3667,8 +3655,6 @@ export class HierarchyModule {
      * @param {string} childLabel - The label/name for the child in the template
      */
     updateTemplateWithNewChild(parentTemplateName, childTemplateName, childLabel) {
-        console.log(`[updateTemplateWithNewChild] Called with: parentTemplateName="${parentTemplateName}", childTemplateName="${childTemplateName}", childLabel="${childLabel}"`);
-
         // Check if parent template exists
         if (!this.state.data.availableGraphTemplates[parentTemplateName]) {
             console.error(`[updateTemplateWithNewChild] Parent template "${parentTemplateName}" not found in availableGraphTemplates`);
@@ -3701,10 +3687,6 @@ export class HierarchyModule {
                 type: 'graph',
                 graph_template: childTemplateName
             });
-
-            console.log(`[updateTemplateWithNewChild] Added child "${childLabel}" (type: graph, template: ${childTemplateName}) to template "${parentTemplateName}"`);
-            console.log(`[updateTemplateWithNewChild] Template "${parentTemplateName}" now has ${parentTemplate.children.length} children:`,
-                parentTemplate.children.map(c => `${c.name} (${c.type}${c.type === 'graph' ? `, template: ${c.graph_template}` : ''})`));
         }
 
         // Update state.data.currentData.metadata.graph_templates if it exists (for export)
@@ -3803,8 +3785,6 @@ export class HierarchyModule {
          */
         const dfsTraverse = (parentNode, depth = 0) => {
             const indent = '  '.repeat(depth);
-            const parentLabel = parentNode ? (parentNode.data('label') || parentNode.id()) : 'ROOT';
-            console.log(`${indent}Processing level (parent: ${parentLabel})`);
 
             // Get all direct graph children of this parent
             const directGraphChildren = parentNode
@@ -3901,7 +3881,6 @@ export class HierarchyModule {
                     const newLabel = `${templateName}_${index}`;
 
                     if (oldLabel !== newLabel || oldChildName !== newLabel) {
-                        console.log(`${indent}  Renaming "${oldLabel}" (child_name: "${oldChildName}") -> "${newLabel}"`);
                         graphNode.data('label', newLabel);
                         graphNode.data('child_name', newLabel);
 
@@ -3912,7 +3891,6 @@ export class HierarchyModule {
                             if (childEntry && childEntry.graph_template === templateName) {
                                 const oldMetaName = childEntry.name;
                                 childEntry.name = newLabel;
-                                console.log(`${indent}    Updated metadata: ${parentTemplateName}.children[${index}] "${oldMetaName}" -> "${newLabel}"`);
 
                                 // Also update connections that reference the old child name
                                 // Only update if the child still exists in the template (i.e., it's being renamed, not moved)
@@ -3931,7 +3909,6 @@ export class HierarchyModule {
                                                 const pathIndex = conn.port_a.path.indexOf(oldMetaName);
                                                 if (pathIndex !== -1) {
                                                     conn.port_a.path[pathIndex] = newLabel;
-                                                    console.log(`${indent}    Updated connection port_a path: ${oldMetaName} -> ${newLabel}`);
                                                 }
                                             }
                                             // Update port_b path if it references the old child name
@@ -3939,12 +3916,9 @@ export class HierarchyModule {
                                                 const pathIndex = conn.port_b.path.indexOf(oldMetaName);
                                                 if (pathIndex !== -1) {
                                                     conn.port_b.path[pathIndex] = newLabel;
-                                                    console.log(`${indent}    Updated connection port_b path: ${oldMetaName} -> ${newLabel}`);
                                                 }
                                             }
                                         });
-                                    } else {
-                                        console.log(`${indent}    Skipping connection path updates - child "${oldMetaName}" was moved (no longer in template)`);
                                     }
                                 }
                             }
@@ -3962,15 +3936,11 @@ export class HierarchyModule {
                                 if (index < templateChildren.length) {
                                     const templateChildEntry = templateChildren[index];
                                     if (templateChildEntry && templateChildEntry.graph_template === templateName) {
-                                        const oldTemplateName = templateChildEntry.name;
                                         templateChildEntry.name = newLabel;
-                                        console.log(`${indent}    Updated availableGraphTemplates: ${parentTemplateName}.children[${index}] "${oldTemplateName}" -> "${newLabel}"`);
                                     }
                                 }
                             }
                         }
-                    } else {
-                        console.log(`${indent}  "${oldLabel}" already correctly named`);
                     }
                 });
             });
@@ -3983,8 +3953,6 @@ export class HierarchyModule {
 
         // Start DFS traversal from root level (parent = null)
         dfsTraverse(null, 0);
-
-        console.log('Graph instance renaming complete.');
     }
 
     /**

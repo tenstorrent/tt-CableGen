@@ -4316,7 +4316,6 @@ export class CommonModule {
         const dfsTraverse = (graphNode, startHostIndex, depth = 0) => {
             const indent = '  '.repeat(depth);
             const graphLabel = graphNode.data('label') || graphNode.id();
-            console.log(`${indent}[DFS] Processing graph: ${graphLabel} (starting at host_${startHostIndex})`);
 
             // Track host_index counter for this graph instance (consecutive within this instance)
             let instanceHostIndex = startHostIndex;
@@ -4344,7 +4343,6 @@ export class CommonModule {
                     console.warn(`${indent}  Child node ${child.id()} in graph "${graphLabel}" has no child_name`);
                 }
             });
-            console.log(`${indent}  Built childrenByName map: [${Array.from(childrenByName.keys()).join(', ')}]`);
 
             // Order children according to template (if available), otherwise fall back to alphabetical
             const orderedChildren = [];
@@ -4367,7 +4365,6 @@ export class CommonModule {
                                 type: childType,
                                 childName: templateChild.name
                             });
-                            console.log(`${indent}  Added template child "${templateChild.name}" (type: ${childType}, id: ${childId})`);
                         } else {
                             console.warn(`${indent}  Skipping duplicate child "${templateChild.name}" (id: ${childId})`);
                         }
@@ -4386,7 +4383,6 @@ export class CommonModule {
                             childName: childName
                         });
                         processedChildNames.add(childName);
-                        console.log(`${indent}  Found child "${childName}" not in template (newly added)`);
                     }
                 });
             } else {
@@ -4406,7 +4402,7 @@ export class CommonModule {
                 const nodeId = node.id();
 
                 if (type === 'shelf' || type === 'node') {
-                    const oldHostIndex = node.data('host_index');
+                    const _oldHostIndex = node.data('host_index');
                     const newHostIndex = instanceHostIndex;
                     instanceHostIndex++;
 
@@ -4438,11 +4434,6 @@ export class CommonModule {
                             portNode.data('host_id', newHostIndex);
                         });
                     });
-                    if (oldHostIndex !== newHostIndex) {
-                        console.log(`${indent}  Updated shelf ${displayChildName}: host_${oldHostIndex} -> host_${newHostIndex}`);
-                    } else {
-                        console.log(`${indent}  Shelf ${displayChildName}: host_${newHostIndex} (unchanged)`);
-                    }
                 } else if (type === 'graph') {
                     // Recursively process nested graph nodes (DFS)
                     if (processedGraphNodes.has(nodeId)) {
@@ -4669,9 +4660,9 @@ export class CommonModule {
         // Process nested shelves (children of racks in location mode)
         // These ensure uniqueness in location mode where shelves are organized under racks
         sortedNestedShelves.forEach((nestedShelf, _shelfIndex) => {
-            const shelfLabel = nestedShelf.data('label') || nestedShelf.id();
-            const parentLabel = nestedShelf.parent().length > 0 ? nestedShelf.parent().data('label') || nestedShelf.parent().id() : 'canvas';
-            const oldHostIndex = nestedShelf.data('host_index');
+            const _shelfLabel = nestedShelf.data('label') || nestedShelf.id();
+            const _parentLabel = nestedShelf.parent().length > 0 ? nestedShelf.parent().data('label') || nestedShelf.parent().id() : 'canvas';
+            const _oldHostIndex = nestedShelf.data('host_index');
             const newHostIndex = nextHostIndex;
             nextHostIndex++;
 
@@ -4703,12 +4694,6 @@ export class CommonModule {
                     portNode.data('host_id', newHostIndex);
                 });
             });
-
-            if (oldHostIndex !== newHostIndex) {
-                console.log(`[DFS] Updated nested shelf ${shelfLabel} (under ${parentLabel}): host_${oldHostIndex} -> host_${newHostIndex}`);
-            } else {
-                console.log(`[DFS] Nested shelf ${shelfLabel} (under ${parentLabel}): host_${newHostIndex} (unchanged)`);
-            }
         });
 
         // Update state.data.globalHostCounter to the next available index
