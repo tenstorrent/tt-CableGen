@@ -19,21 +19,15 @@ ARG TT_METAL_HASH=9a790e2201de81a40fb66132e6774b84748e4775
 COPY requirements.txt requirements.txt
 RUN /bin/bash -c "pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
 
-# Clone tt-metal for scaleout dependencies (shallow, sparse: only what build_scaleout.sh needs)
-# Build needs: root CMake + cmake/, third_party/, tt_metal/, tt_stl/, tools/, ttnn/
-COPY sparse-checkout.txt /tmp/tt-metal-sparse-checkout.txt
-ARG TT_METAL_REPO=https://github.com/tenstorrent/tt-metal.git
-RUN /bin/bash -c "git clone --filter=blob:none --depth 1 --no-tags \
-    ${TT_METAL_REPO} ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git sparse-checkout set --no-cone --stdin < /tmp/tt-metal-sparse-checkout.txt \
-    && git submodule update --init --recursive"
+# Clone tt-metal for scaleout dependencies
+RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
+    https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
+    && cd ${TT_METAL_HOME}"
 
 WORKDIR ${TT_METAL_HOME}
 
 # Fetch and checkout the exact commit (shallow fetch for that commit only)
-RUN /bin/bash -c "git fetch --depth 1 origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH} \
-    && git submodule update --init --recursive"
+RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH}"
 
 COPY build_scaleout.sh ${TT_METAL_HOME}/build_scaleout.sh
 RUN chmod +x ${TT_METAL_HOME}/build_scaleout.sh
