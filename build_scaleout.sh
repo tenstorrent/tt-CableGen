@@ -108,19 +108,7 @@ cmake_args+=("-DCMAKE_INSTALL_PREFIX=$cmake_install_prefix")
 
 # Set default toolchain
 if [ -z "$toolchain_path" ]; then
-    # Require toolchain_path from tt-metal/build_metal.sh; fail if not found
-    if [ -f "${TT_METAL_HOME:-./tt-metal}/build_metal.sh" ]; then
-        toolchain_path_from_metal=$(grep -E '^toolchain_path=' "${TT_METAL_HOME:-./tt-metal}/build_metal.sh" | grep -v '#' | head -n1 | cut -d'=' -f2- | tr -d '"')
-        if [ -n "$toolchain_path_from_metal" ]; then
-            toolchain_path="$toolchain_path_from_metal"
-        else
-            echo "ERROR: toolchain_path not found in ${TT_METAL_HOME:-./tt-metal}/build_metal.sh. Please specify toolchain_path explicitly."
-            exit 1
-        fi
-    else
-        echo "ERROR: ${TT_METAL_HOME:-./tt-metal}/build_metal.sh not found. Please specify toolchain_path explicitly."
-        exit 1
-    fi
+    toolchain_path="cmake/x86_64-linux-clang-20-libstdcpp-toolchain.cmake"
 fi
 
 echo "INFO: CMAKE_TOOLCHAIN_FILE: $toolchain_path"
