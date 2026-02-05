@@ -107,7 +107,8 @@ cmake_args+=("-DCMAKE_BUILD_TYPE=$build_type")
 cmake_args+=("-DCMAKE_INSTALL_PREFIX=$cmake_install_prefix")
 
 # Set default toolchain
-toolchain_path="cmake/x86_64-linux-clang-20-libstdcpp-toolchain.cmake"
+toolchain_path="cmake/x86_64-linux-clang-17-libstdcpp-toolchain.cmake"
+# toolchain_path="cmake/x86_64-linux-clang-20-libstdcpp-toolchain.cmake"
 echo "INFO: CMAKE_TOOLCHAIN_FILE: $toolchain_path"
 cmake_args+=("-DCMAKE_TOOLCHAIN_FILE=${toolchain_path}")
 
