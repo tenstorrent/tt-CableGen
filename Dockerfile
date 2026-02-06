@@ -29,10 +29,11 @@ WORKDIR ${TT_METAL_HOME}
 # Fetch and checkout the exact commit (shallow fetch for that commit only)
 RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH}"
 
+ENV toolchain_path=cmake/x86_64-linux-clang-17-libstdcpp-toolchain.cmake
 COPY build_scaleout.sh ${TT_METAL_HOME}/build_scaleout.sh
 RUN chmod +x ${TT_METAL_HOME}/build_scaleout.sh
 
-RUN /bin/bash -c "${TT_METAL_HOME}/build_scaleout.sh --build-type Release --build-dir build"
+RUN /bin/bash -c "${TT_METAL_HOME}/build_scaleout.sh --build-dir build"
 
 WORKDIR ${APP_HOME}
 # Copy Flask web server files
