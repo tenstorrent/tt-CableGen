@@ -9,6 +9,11 @@
 export const API_ENDPOINTS = {
     // File upload
     UPLOAD_CSV: '/upload_csv',
+    /** Merge new CSV with existing graph (send existing_data + csv_file) */
+    MERGE_CSV: '/merge_csv',
+
+    // External file loading
+    LOAD_EXTERNAL_FILE: '/load_external_file',
     
     // Export operations
     EXPORT_CABLING_DESCRIPTOR: '/export_cabling_descriptor',

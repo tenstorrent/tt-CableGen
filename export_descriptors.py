@@ -44,10 +44,611 @@ except ImportError as e:
 try:
     from google.protobuf import text_format
     from google.protobuf.message import Message
-except ImportError:
-    print("Warning: protobuf not available. Deployment descriptor export will not work.")
+except ImportError as e:
+    print(f"Warning: protobuf not available. Deployment descriptor export will not work. Error: {e}")
     text_format = None
     Message = None
+
+
+# Configuration: Field patterns that should be formatted as single lines
+# These are regex patterns that match the start of fields in the textproto output.
+# The patterns should match the field name followed by opening brace.
+# 
+# Examples: 
+#   - r'value \{' matches "value {" (for ChildMapping.value)
+#   - r'port_a \{' matches "port_a {" (for PortConnection.port_a)  
+#   - r'port_b \{' matches "port_b {" (for PortConnection.port_b)
+#   - r'child_mappings \{' matches "child_mappings {" (for GraphInstance.child_mappings)
+#
+# To enable single-line formatting, add patterns to this list:
+#   SINGLE_LINE_FIELD_PATTERNS = [r'value \{', r'port_a \{', r'port_b \{']
+#
+# Note: The patterns use regex syntax. Special characters like '{' need to be escaped as '\{'
+SINGLE_LINE_FIELD_PATTERNS = [r'^connections \{', r'^graph_ref \{', r'^node_ref \{', r'^child_mappings \{']  # Empty by default - user can configure
+
+# Configuration: Minimum depth for single-line formatting
+# This is a dictionary mapping field patterns to their minimum depth.
+# 
+# Positive values: Depth from top (0-indexed). Depth 0 = root level, depth 1 = one level nested, etc.
+#   Single-line formatting applies at the specified depth and ALL deeper levels.
+#   Example: {r'^value \{': 2} formats at depth 2, 3, 4, ... from the top
+#
+# Negative values: Depth from bottom. -1 = bottom level, -2 = one level above bottom, etc.
+#   Single-line formatting applies at the specified depth from bottom and ALL deeper levels.
+#   Example: {r'^sub_instance \{': -2} formats at 2 levels above bottom and deeper
+#
+# If a pattern is not in this dict, it applies at all depths.
+# Note: Patterns should match those in SINGLE_LINE_FIELD_PATTERNS (including ^ anchor if present)
+SINGLE_LINE_DEPTH_LIMITS = {r'^child_mappings \{': -3}  # Empty by default - applies to all depths
+
+# Configuration: Fields that should use array shorthand syntax
+# If empty list [], automatically detects and converts ALL repeated fields to array syntax.
+# If list of field names provided, only converts those specific fields.
+# Example: ['path'] will convert only 'path' fields:
+#   path: "value1"
+#   path: "value2"
+#   to: path: ["value1", "value2"]
+# Example: [] will automatically convert all repeated fields to arrays
+# NOTE: Array shorthand only works for scalar/primitive fields (strings, ints, bools, enums).
+# Message types (like 'connections', 'children') cannot use array shorthand in textproto.
+ARRAY_SHORTHAND_FIELDS = ['path']  # Only scalar fields - message types don't support array shorthand
+
+# Configuration: Graph template ordering in output
+# Options:
+#   'alphabetical' - Sort template names A-Z
+#   'bottom-up'    - Leaf templates first (those with only node refs), then composites that reference them
+#   'top-down'     - Root template first, then referenced templates in depth order
+#   'none'         - Preserve original order (dict insertion order)
+GRAPH_TEMPLATE_ORDER = 'bottom-up'
+
+
+def sort_graph_templates(graph_templates_meta: dict, order: str = 'bottom-up') -> list:
+    """Sort graph templates according to the specified ordering.
+    
+    Args:
+        graph_templates_meta: Dict of template_name -> template_info
+        order: Ordering strategy ('alphabetical', 'bottom-up', 'top-down', 'none')
+        
+    Returns:
+        List of (template_name, template_info) tuples in the desired order
+    """
+    if order == 'none':
+        return list(graph_templates_meta.items())
+    
+    if order == 'alphabetical':
+        return sorted(graph_templates_meta.items(), key=lambda x: x[0])
+    
+    # Build dependency graph for hierarchical sorting
+    # A template "depends on" templates it references via graph_ref
+    template_deps = {}  # template_name -> set of templates it references
+    
+    for template_name, template_info in graph_templates_meta.items():
+        deps = set()
+        for child in template_info.get('children', []):
+            if child.get('type') == 'graph':
+                ref_template = child.get('graph_template')
+                if ref_template and ref_template in graph_templates_meta:
+                    deps.add(ref_template)
+        template_deps[template_name] = deps
+    
+    # Topological sort
+    sorted_templates = []
+    remaining = set(graph_templates_meta.keys())
+    
+    while remaining:
+        # Find templates with no remaining dependencies
+        ready = [t for t in remaining if not (template_deps[t] & remaining)]
+        
+        if not ready:
+            # Circular dependency - just add remaining in alphabetical order
+            ready = sorted(remaining)
+        
+        # Sort ready templates alphabetically for consistent output
+        ready.sort()
+        
+        for t in ready:
+            sorted_templates.append(t)
+            remaining.remove(t)
+    
+    if order == 'top-down':
+        sorted_templates.reverse()
+    
+    return [(name, graph_templates_meta[name]) for name in sorted_templates]
+
+
+def reorder_graph_templates_in_textproto(textproto_text: str, order: str = 'bottom-up') -> str:
+    """Reorder graph_templates entries in textproto output.
+    
+    This post-processes the textproto to reorder the graph_templates { ... } blocks.
+    
+    Args:
+        textproto_text: The textproto text to process
+        order: Ordering strategy ('alphabetical', 'bottom-up', 'top-down', 'none')
+        
+    Returns:
+        Textproto text with graph_templates reordered
+    """
+    import re
+    
+    if order == 'none':
+        return textproto_text
+    
+    lines = textproto_text.split('\n')
+    
+    # Find all graph_templates entries: "graph_templates { key: "name" value { ... } }"
+    # or multi-line version with graph_templates { on its own line
+    
+    # First, identify the structure - we need to find each graph_templates block
+    template_blocks = []  # List of (template_name, start_line, end_line, block_text)
+    other_lines_before = []  # Lines before graph_templates section
+    other_lines_after = []  # Lines after graph_templates section
+    
+    i = 0
+    in_graph_templates_section = False
+    graph_templates_started = False
+    
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        
+        # Check if this line starts a graph_templates entry
+        if stripped.startswith('graph_templates {'):
+            in_graph_templates_section = True
+            graph_templates_started = True
+            
+            # Extract the template name from "key: "name""
+            template_name = None
+            block_lines = [line]
+            
+            # Check if key is on the same line or next line
+            key_match = re.search(r'key:\s*"([^"]+)"', stripped)
+            if key_match:
+                template_name = key_match.group(1)
+            
+            # Find the end of this block by counting braces
+            brace_count = stripped.count('{') - stripped.count('}')
+            j = i + 1
+            
+            while j < len(lines) and brace_count > 0:
+                next_line = lines[j]
+                block_lines.append(next_line)
+                next_stripped = next_line.strip()
+                
+                # Look for key on subsequent lines if not found yet
+                if not template_name:
+                    key_match = re.search(r'key:\s*"([^"]+)"', next_stripped)
+                    if key_match:
+                        template_name = key_match.group(1)
+                
+                brace_count += next_stripped.count('{') - next_stripped.count('}')
+                j += 1
+            
+            if template_name:
+                template_blocks.append((template_name, '\n'.join(block_lines)))
+            else:
+                # Couldn't parse template name - keep as-is
+                template_blocks.append((f'_unknown_{len(template_blocks)}', '\n'.join(block_lines)))
+            
+            i = j
+            continue
+        
+        # Track lines before/after graph_templates section
+        if not graph_templates_started:
+            other_lines_before.append(line)
+        elif not in_graph_templates_section or not stripped.startswith('graph_templates'):
+            # Check if we're past all graph_templates
+            if graph_templates_started and not stripped.startswith('graph_templates'):
+                in_graph_templates_section = False
+                other_lines_after.append(line)
+            else:
+                other_lines_before.append(line)
+        
+        i += 1
+    
+    # If no template blocks found, return as-is
+    if not template_blocks:
+        return textproto_text
+    
+    # Build dependency graph for hierarchical sorting
+    template_deps = {}
+    for name, block in template_blocks:
+        deps = set()
+        # Find graph_ref { graph_template: "..." } references in the block
+        for match in re.finditer(r'graph_template:\s*"([^"]+)"', block):
+            ref_name = match.group(1)
+            deps.add(ref_name)
+        template_deps[name] = deps
+    
+    # Sort according to order
+    if order == 'alphabetical':
+        sorted_blocks = sorted(template_blocks, key=lambda x: x[0])
+    else:
+        # Topological sort for bottom-up or top-down
+        sorted_names = []
+        remaining = {name for name, _ in template_blocks}
+        name_to_block = {name: block for name, block in template_blocks}
+        
+        while remaining:
+            # Find templates with no remaining dependencies
+            ready = [t for t in remaining if not (template_deps.get(t, set()) & remaining)]
+            
+            if not ready:
+                # Circular dependency - add remaining alphabetically
+                ready = sorted(remaining)
+            
+            ready.sort()
+            
+            for t in ready:
+                sorted_names.append(t)
+                remaining.remove(t)
+        
+        if order == 'top-down':
+            sorted_names.reverse()
+        
+        sorted_blocks = [(name, name_to_block[name]) for name in sorted_names if name in name_to_block]
+    
+    # Reconstruct output
+    result_lines = other_lines_before
+    for name, block in sorted_blocks:
+        result_lines.append(block)
+    result_lines.extend(other_lines_after)
+    
+    return '\n'.join(result_lines)
+
+
+def format_message_as_textproto(message, single_line_field_patterns=None, depth_limits=None):
+    """
+    Format a protobuf message to textproto format, with optional single-line formatting
+    for specific field patterns.
+    
+    Args:
+        message: The protobuf message to format
+        single_line_field_patterns: List of regex patterns matching field names that should
+                                   be formatted as single lines along with their content.
+                                   Patterns should match the field name followed by opening brace.
+                                   Examples: [r'value \{', r'port_a \{', r'port_b \{']
+                                   If None, uses SINGLE_LINE_FIELD_PATTERNS global config.
+        depth_limits: Optional dict mapping patterns to minimum depth.
+                     Positive values: depth from top (0-indexed)
+                     Negative values: depth from bottom (-1 = bottom, -2 = one above bottom, etc.)
+                     Single-line formatting applies at the specified depth and ALL deeper levels.
+                     Patterns not in dict apply at all depths.
+                     If None, uses SINGLE_LINE_DEPTH_LIMITS global config.
+    
+    Returns:
+        String representation of the message in textproto format
+    
+    Raises:
+        ImportError: If protobuf text_format module is not available
+    """
+    if text_format is None:
+        raise ImportError(
+            "protobuf text_format not available. "
+            "Please ensure protobuf is installed and TT_METAL_HOME is set correctly. "
+            "The protobuf Python modules should be available at: "
+            "$TT_METAL_HOME/build/tools/scaleout/protobuf/"
+        )
+    
+    # Generate the textproto output
+    output = text_format.MessageToString(message)
+    
+    # Reorder graph_templates section according to configured ordering
+    # This applies to ClusterDescriptor messages with graph_templates
+    if GRAPH_TEMPLATE_ORDER != 'none':
+        output = reorder_graph_templates_in_textproto(output, GRAPH_TEMPLATE_ORDER)
+    
+    # Apply array shorthand formatting FIRST (before single-line formatting)
+    # This ensures repeated fields are converted to arrays before any collapsing happens
+    # Always call this function - it handles empty list for auto-detection
+    output = apply_array_shorthand(output, ARRAY_SHORTHAND_FIELDS)
+    
+    # Use global config if not provided
+    if single_line_field_patterns is None:
+        single_line_field_patterns = SINGLE_LINE_FIELD_PATTERNS
+    if depth_limits is None:
+        depth_limits = SINGLE_LINE_DEPTH_LIMITS
+    
+    # Apply single-line formatting if patterns are specified
+    if single_line_field_patterns:
+        output = apply_single_line_formatting(output, single_line_field_patterns, depth_limits=depth_limits)
+    
+    return output
+
+
+def apply_single_line_formatting(textproto_text, field_patterns, depth_limits=None):
+    """
+    Post-process textproto text to format specific fields as single lines.
+    
+    This function finds fields matching the patterns and formats them and their
+    descendants as single lines by collapsing newlines and extra spaces.
+    
+    Args:
+        textproto_text: The textproto text to process
+        field_patterns: List of regex patterns matching field names to format as single lines
+        depth_limits: Optional dict mapping patterns to minimum depth.
+                     Positive values: depth from top (0-indexed)
+                     Negative values: depth from bottom (-1 = bottom, -2 = one above bottom, etc.)
+                     Single-line formatting applies at the specified depth and ALL deeper levels.
+                     Patterns not in dict apply at all depths.
+    
+    Returns:
+        Processed textproto text with specified fields formatted as single lines
+    """
+    import re
+    
+    if not field_patterns:
+        return textproto_text
+    
+    depth_limits = depth_limits or {}
+    
+    # Build a combined pattern that matches any of the field patterns
+    # Also track which pattern matched for depth checking
+    pattern_list = [(pattern, re.compile(pattern)) for pattern in field_patterns]
+    
+    # First pass: Calculate maximum depth for each pattern (needed for negative depth limits)
+    lines = textproto_text.split('\n')
+    base_indent = None
+    pattern_max_depths = {}  # pattern -> max_depth
+    
+    # Check if we have any negative depth limits
+    has_negative_limits = any(d < 0 for d in depth_limits.values())
+    
+    if has_negative_limits:
+        # First pass: find max depth for each pattern
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            
+            indent = len(line) - len(line.lstrip())
+            if base_indent is None:
+                base_indent = indent
+            
+            depth = (indent - base_indent) // 2 if base_indent is not None else 0
+            
+            # Check if this line matches any pattern
+            for pattern, pattern_re in pattern_list:
+                if pattern_re.search(stripped):
+                    # Normalize pattern for lookup
+                    lookup_pattern = pattern
+                    if lookup_pattern not in depth_limits:
+                        pattern_without_anchor = lookup_pattern.lstrip('^')
+                        if pattern_without_anchor in depth_limits:
+                            lookup_pattern = pattern_without_anchor
+                        else:
+                            pattern_with_anchor = '^' + lookup_pattern
+                            if pattern_with_anchor in depth_limits:
+                                lookup_pattern = pattern_with_anchor
+                    
+                    if lookup_pattern in depth_limits and depth_limits[lookup_pattern] < 0:
+                        # Track max depth for this pattern
+                        if lookup_pattern not in pattern_max_depths:
+                            pattern_max_depths[lookup_pattern] = depth
+                        else:
+                            pattern_max_depths[lookup_pattern] = max(pattern_max_depths[lookup_pattern], depth)
+                    break
+    
+    # Second pass: Apply formatting with depth checking
+    result_lines = []
+    i = 0
+    base_indent = None  # Reset for second pass
+    
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        
+        # Skip empty lines but preserve them
+        if not stripped:
+            result_lines.append(line)
+            i += 1
+            continue
+        
+        # Calculate indentation level (in spaces, assuming 2-space indentation)
+        indent = len(line) - len(line.lstrip())
+        if base_indent is None:
+            base_indent = indent
+        
+        # Calculate depth: (indent - base_indent) // 2 (assuming 2-space indentation)
+        # This gives us depth 0, 1, 2, etc.
+        depth = (indent - base_indent) // 2 if base_indent is not None else 0
+        
+        # Check if this line matches any pattern
+        matched_pattern = None
+        for pattern, pattern_re in pattern_list:
+            if pattern_re.search(stripped):
+                matched_pattern = pattern
+                break
+        
+        if matched_pattern:
+            # Check minimum depth for this pattern
+            # Normalize pattern lookup: try exact match, then try without ^ anchor
+            min_depth = depth_limits.get(matched_pattern)
+            lookup_pattern = matched_pattern
+            
+            if min_depth is None:
+                # Try pattern without ^ anchor if it exists
+                pattern_without_anchor = matched_pattern.lstrip('^')
+                min_depth = depth_limits.get(pattern_without_anchor)
+                if min_depth is not None:
+                    lookup_pattern = pattern_without_anchor
+                else:
+                    # Also try with ^ anchor if original didn't have it
+                    pattern_with_anchor = '^' + matched_pattern
+                    min_depth = depth_limits.get(pattern_with_anchor)
+                    if min_depth is not None:
+                        lookup_pattern = pattern_with_anchor
+            
+            if min_depth is not None:
+                # Handle negative depth (from bottom)
+                if min_depth < 0:
+                    # Convert to absolute depth from top
+                    max_depth = pattern_max_depths.get(lookup_pattern, depth)
+                    # min_depth is negative, so we want depth >= (max_depth + min_depth)
+                    # e.g., if max_depth=5 and min_depth=-2, format at depth >= 3 (5-2)
+                    # This means: format at 2 levels above bottom and deeper (depths 3, 4, 5)
+                    # Clamp to 0 since depth can't be negative
+                    absolute_min_depth = max(0, max_depth + min_depth)
+                    if depth < absolute_min_depth:
+                        # Depth is less than minimum - don't format as single line
+                        result_lines.append(line)
+                        i += 1
+                        continue
+                else:
+                    # Positive depth (from top)
+                    if depth < min_depth:
+                        # Depth is less than minimum - don't format as single line
+                        result_lines.append(line)
+                        i += 1
+                        continue
+            
+            # Found a matching field - collect until matching closing brace
+            # Preserve the indentation of the first line
+            indent = len(line) - len(line.lstrip())
+            
+            # Count opening and closing braces in the first line
+            brace_count = stripped.count('{') - stripped.count('}')
+            single_line_parts = [stripped]
+            j = i + 1
+            
+            # Collect subsequent lines until braces are balanced
+            while j < len(lines) and brace_count > 0:
+                next_line = lines[j]
+                next_stripped = next_line.strip()
+                
+                # Count braces in this line
+                brace_count += next_line.count('{') - next_line.count('}')
+                
+                if next_stripped:  # Only add non-empty lines
+                    single_line_parts.append(next_stripped)
+                
+                j += 1
+            
+            # Join parts with single spaces, removing extra whitespace
+            single_line_content = ' '.join(part for part in single_line_parts if part)
+            result_lines.append(' ' * indent + single_line_content)
+            i = j
+        else:
+            # Normal line, add as-is
+            result_lines.append(line)
+            i += 1
+    
+    return '\n'.join(result_lines)
+
+
+def apply_array_shorthand(textproto_text, field_names=None):
+    """
+    Convert repeated field entries to array shorthand syntax.
+    
+    This function finds consecutive repeated field entries and converts them to
+    array syntax. For example:
+    
+    Before:
+      path: "value1"
+      path: "value2"
+      path: "value3"
+    
+    After:
+      path: ["value1", "value2", "value3"]
+    
+    Args:
+        textproto_text: The textproto text to process
+        field_names: List of field names to convert to array syntax (e.g., ['path']).
+                    If empty list [] or None, automatically detects all repeated fields.
+    
+    Returns:
+        Processed textproto text with repeated fields converted to arrays
+    """
+    import re
+    
+    lines = textproto_text.split('\n')
+    result_lines = []
+    i = 0
+    
+    # Pattern to match any field assignment: "field_name: value"
+    field_pattern = r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$'
+    
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        
+        # Skip empty lines
+        if not stripped:
+            result_lines.append(line)
+            i += 1
+            continue
+        
+        # Try to match a field assignment
+        match = re.match(field_pattern, stripped)
+        
+        if match:
+            field_name = match.group(1)
+            indent = len(line) - len(line.lstrip())
+            
+            # Check if we should process this field
+            # If field_names is provided and not empty, only process those fields
+            # If field_names is empty/None, process all fields
+            should_process = (not field_names or len(field_names) == 0 or field_name in field_names)
+            
+            if should_process:
+                # Found a matching field - collect consecutive entries
+                values = []
+                j = i
+                
+                # Collect consecutive lines with the same field name at the same indentation
+                while j < len(lines):
+                    current_line = lines[j]
+                    current_stripped = current_line.strip()
+                    
+                    # Skip empty lines but continue looking
+                    if not current_stripped:
+                        j += 1
+                        continue
+                    
+                    current_indent = len(current_line) - len(current_line.lstrip())
+                    
+                    # If indentation decreased, we've moved to a parent scope - stop
+                    if current_indent < indent:
+                        break
+                    
+                    # Check if it's the same field at the same indentation level
+                    current_match = re.match(field_pattern, current_stripped)
+                    
+                    if (current_match and 
+                        current_match.group(1) == field_name and 
+                        current_indent == indent):
+                        # Extract the value (handle quoted strings and other values)
+                        value = current_match.group(2).strip()
+                        values.append(value)
+                        j += 1
+                    elif current_indent == indent:
+                        # Different field at same indentation - stop collecting
+                        break
+                    else:
+                        # Different indentation (greater) - might be nested, skip for now
+                        # but this shouldn't happen for consecutive fields
+                        j += 1
+                        continue
+                
+                # If we have multiple values, format as array
+                if len(values) > 1:
+                    # Format as array: field: ["value1", "value2", "value3"]
+                    array_content = ', '.join(values)
+                    result_lines.append(' ' * indent + f'{field_name}: [{array_content}]')
+                    i = j
+                else:
+                    # Single value - keep as-is
+                    result_lines.append(line)
+                    i += 1
+            else:
+                # Field not in the list - keep as-is
+                result_lines.append(line)
+                i += 1
+        else:
+            # Not a field assignment - keep as-is
+            result_lines.append(line)
+            i += 1
+    
+    return '\n'.join(result_lines)
 
 
 class CytoscapeDataParser:
@@ -75,8 +676,57 @@ class CytoscapeDataParser:
                     self.nodes[node_id] = element
 
     def extract_hierarchy_info(self, node_id: str) -> Optional[Dict]:
-        """Extract shelf/tray/port info from node ID using only patterns that are actually used"""
-
+        """
+        Extract shelf/tray/port info from node ID.
+        
+        **PRIMARY PATH**: Read host_id from node_data.host_index (if node exists in self.nodes)
+        **FALLBACK PATH**: Parse node_id string using regex patterns (legacy support)
+        
+        This unified approach ensures we always use host_index when available,
+        falling back to parsing only when necessary.
+        """
+        # PRIMARY PATH: Try to get node data and read host_index
+        if node_id in self.nodes:
+            node_element = self.nodes[node_id]
+            node_data = node_element.get("data", {})
+            host_id = node_data.get("host_index") or node_data.get("host_id")
+            
+            if host_id is not None:
+                # We have host_id from node data - extract tray/port from node_id if needed
+                host_id_str = str(host_id)
+                
+                # Try to extract tray/port from descriptor format: {host_id}:t{tray}:p{port}
+                tray_port_match = re.match(r"^(\d+):t(\d+)(?::p(\d+))?$", node_id)
+                if tray_port_match:
+                    parsed_host_id = tray_port_match.group(1)
+                    if parsed_host_id == host_id_str:
+                        tray_id = int(tray_port_match.group(2))
+                        if tray_port_match.group(3):
+                            # Port format
+                            return {
+                                "type": "port",
+                                "hostname": host_id_str,
+                                "shelf_id": host_id_str,
+                                "tray_id": tray_id,
+                                "port_id": int(tray_port_match.group(3))
+                            }
+                        else:
+                            # Tray format
+                            return {
+                                "type": "tray",
+                                "hostname": host_id_str,
+                                "shelf_id": host_id_str,
+                                "tray_id": tray_id
+                            }
+                elif node_id == host_id_str:
+                    # Simple shelf ID match
+                    return {
+                        "type": "shelf",
+                        "hostname": host_id_str,
+                        "shelf_id": host_id_str
+                    }
+        
+        # FALLBACK PATH: Parse node_id string using regex patterns (legacy support)
         # Define patterns with their handlers - only include patterns that are actually used
         # Order matters: more specific patterns first, fallback last
         patterns = [
@@ -340,13 +990,35 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
         return connections
 
     def _get_hostname_from_port(self, port_id: str) -> Optional[str]:
-        """Get hostname from a port node's data
+        """
+        Get hostname/host_id from a port node's data
+        
+        **PRIMARY PATH**: Read host_index from port node data, then look up shelf node
+        **FALLBACK PATH**: Parse port_id string to extract host_id (legacy support)
         
         Handles multiple formats:
         1. Port ID format like "0:t1:p2" (descriptor/CSV format) - extract host_id and look up shelf
         2. Port has hostname directly in its data
         3. Traverse hierarchy: port -> tray -> shelf
         """
+        # PRIMARY PATH: Try to get port node and read host_index from its data
+        if port_id in self.nodes:
+            port_element = self.nodes[port_id]
+            port_data = port_element.get("data", {})
+            host_id = port_data.get("host_index") or port_data.get("host_id")
+            
+            if host_id is not None:
+                # We have host_id from port data - look up the shelf node
+                # Try to find shelf node with this host_id
+                for shelf_id, shelf_element in self.nodes.items():
+                    shelf_data = shelf_element.get("data", {})
+                    if shelf_data.get("type") == "shelf":
+                        shelf_host_id = shelf_data.get("host_index") or shelf_data.get("host_id")
+                        if shelf_host_id == host_id:
+                            # Found matching shelf - return its hostname or host_id
+                            return shelf_data.get("hostname") or str(host_id)
+        
+        # FALLBACK PATH: Parse port_id string (legacy support)
         # Check if port_id matches descriptor format (e.g., "0:t1:p2")
         import re
         descriptor_match = re.match(r"^(\d+):t\d+:p\d+$", port_id)
@@ -636,8 +1308,9 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     """
     # Build a map of host_index -> (hostname, node_type) from shelf nodes
     # This preserves the indexed relationship from the cabling descriptor
+    # CRITICAL: host_index is now REQUIRED - all nodes must have it set (via DFS or at creation)
     host_by_index = {}
-    host_without_index = []  # For CSV imports without host_index
+    seen_hostnames = {}  # Track hostnames for duplicate detection
     
     # Extract all shelf nodes directly to get host_index
     elements = cytoscape_data.get("elements", [])
@@ -652,51 +1325,58 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
             node_type = node_data.get("shelf_node_type") or node_data.get("node_type")
             host_index = node_data.get("host_index")
             
-            # Fallback to host_id if host_index not present
+            # Fallback to host_id if host_index not present (for backward compatibility)
             if host_index is None:
                 host_index = node_data.get("host_id")
             
             if not hostname or not node_type:
                 continue  # Skip incomplete nodes
             
-            if host_index is not None:
-                # Has host_index (from cabling descriptor import)
-                host_by_index[host_index] = (hostname, node_type)
+            # CRITICAL: host_index is now REQUIRED - raise error if missing
+            if host_index is None:
+                raise ValueError(
+                    f"Shelf node '{hostname}' is missing required host_index. "
+                    f"This should not happen - all shelf nodes must have host_index set at creation "
+                    f"or via DFS recalculation. If nodes were collapsed, try expanding the hierarchy and try again."
+                )
+            
+            # CRITICAL: Detect duplicate host_index values (Issue #3)
+            if host_index in host_by_index:
+                existing_hostname, existing_node_type = host_by_index[host_index]
+                raise ValueError(
+                    f"Duplicate host_index {host_index} detected: "
+                    f"'{hostname}' (type: {node_type}) conflicts with "
+                    f"'{existing_hostname}' (type: {existing_node_type}). "
+                    f"Each shelf node must have a unique host_index. "
+                    f"Please run DFS recalculation to ensure unique host_index values."
+                )
+            
+            # Track hostnames for duplicate detection (same hostname should have same host_index)
+            if hostname in seen_hostnames:
+                if seen_hostnames[hostname] != host_index:
+                    raise ValueError(
+                        f"Hostname '{hostname}' appears with different host_index values: "
+                        f"{seen_hostnames[hostname]} and {host_index}. "
+                        f"This indicates inconsistent node data."
+                    )
             else:
-                # No host_index (from CSV import)
-                host_without_index.append((hostname, node_type))
+                seen_hostnames[hostname] = host_index
+            
+            # Store in map
+            host_by_index[host_index] = (hostname, node_type)
     
-    # Determine export strategy based on whether nodes have host_index
-    if host_by_index and not host_without_index:
-        # All nodes have host_index - this is from a cabling descriptor import
-        # Sort by host_index to maintain the indexed relationship
-        sorted_indices = sorted(host_by_index.keys())
-        sorted_hosts = [host_by_index[idx] for idx in sorted_indices]
-        return sorted_hosts
-    
-    elif host_without_index and not host_by_index:
-        # No nodes have host_index - this is from a CSV import
-        # Sort alphabetically by hostname for consistent ordering
-        # Indices will be assigned dynamically based on this order
-        sorted_hosts = sorted(host_without_index)
-        return sorted_hosts
-    
-    elif host_by_index and host_without_index:
-        # Mixed - some have host_index, some don't
-        # This is an error state (shouldn't happen in normal usage)
-        raise ValueError(
-            f"Inconsistent visualization state: {len(host_by_index)} nodes have host_index, "
-            f"but {len(host_without_index)} nodes don't. "
-            f"This usually means nodes from different sources (CSV and descriptor) were mixed. "
-            f"Please use a consistent data source."
-        )
-    
-    else:
-        # No valid hosts found
+    if not host_by_index:
+        # No valid hosts found (e.g. payload missing shelf nodes when hierarchy was collapsed)
         raise ValueError(
             "No valid hosts found for export. "
-            "Hosts must have both hostname and node_type defined."
+            "Hosts must have both hostname, node_type, and host_index defined. "
+            "If nodes were collapsed, try expanding the hierarchy and try again."
         )
+    
+    # Sort by host_index to maintain the indexed relationship
+    sorted_indices = sorted(host_by_index.keys())
+    sorted_hosts = [host_by_index[idx] for idx in sorted_indices]
+    return sorted_hosts
 
 
 def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
@@ -781,7 +1461,7 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     cluster_desc.root_instance.CopyFrom(root_instance)
 
     # Return the content directly
-    return text_format.MessageToString(cluster_desc)
+    return format_message_as_textproto(cluster_desc, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)
 
 
 def export_cabling_descriptor_for_visualizer(cytoscape_data: Dict, filename_prefix: str = "cabling_descriptor") -> str:
@@ -987,13 +1667,20 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
                 graph_templates_meta[template_name]['connections'].extend(conns)
     
     # Build all graph templates from metadata (excluding empty ones)
-    for template_name, template_info in graph_templates_meta.items():
+    # Sort templates according to configured ordering
+    sorted_templates = sort_graph_templates(graph_templates_meta, GRAPH_TEMPLATE_ORDER)
+    for template_name, template_info in sorted_templates:
         graph_template = cluster_config_pb2.GraphTemplate()
         
-        # Add children
+        # Add children (deduplicate by name so lowest-level template has no duplicate node_ref)
+        seen_child_names = set()
         for child_info in template_info.get('children', []):
+            child_name = child_info.get('name')
+            if not child_name or child_name in seen_child_names:
+                continue
+            seen_child_names.add(child_name)
             child = graph_template.children.add()
-            child.name = child_info['name']
+            child.name = child_name
             
             if child_info.get('type') == 'node':
                 # Leaf node
@@ -1135,7 +1822,7 @@ def export_from_metadata_templates(cytoscape_data: Dict, graph_templates_meta: D
     
     cluster_desc.root_instance.CopyFrom(root_instance)
     
-    return text_format.MessageToString(cluster_desc)
+    return format_message_as_textproto(cluster_desc, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)
 
 
 def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
@@ -1340,7 +2027,7 @@ def export_hierarchical_cabling_descriptor(cytoscape_data: Dict) -> str:
             f"A singular root template containing all nodes and connections is required for CablingDescriptor export."
         )
         
-    return text_format.MessageToString(cluster_desc)
+    return format_message_as_textproto(cluster_desc, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)
 
 
 def build_graph_template_with_reuse(node_el, element_map, connections, cluster_desc, built_templates):
@@ -1594,11 +2281,13 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id,
             child_name = child_data.get("child_name") or child_data.get("label") or child_data.get("id")
             children_by_name[child_name] = child_el
         
-        # Process children in template order
+        # Process children in template order (deduplicate by name so host_id is consecutive 0,1,2,...)
         children = []
+        seen_child_names = set()
         for template_child in template.children:
             child_name = template_child.name
-            if child_name in children_by_name:
+            if child_name in children_by_name and child_name not in seen_child_names:
+                seen_child_names.add(child_name)
                 children.append(children_by_name[child_name])
     else:
         # No template order available, use element_map order
@@ -1624,15 +2313,20 @@ def add_child_mappings_with_reuse(node_el, element_map, graph_instance, host_id,
         
         if child_type == "shelf":
             # This is a leaf node - map it to a host_id
-            # Use child_name which is the template-relative name
+            # Use visualizer metadata host_index/host_id when present; otherwise fall back to counter
             child_name = child_data.get("child_name", child_label)
-            
-            
+            node_host_id = child_data.get("host_index")
+            if node_host_id is None:
+                node_host_id = child_data.get("host_id")
+            if node_host_id is not None:
+                mapping_host_id = int(node_host_id)
+            else:
+                mapping_host_id = host_id
+                host_id += 1
+
             child_mapping = cluster_config_pb2.ChildMapping()
-            child_mapping.host_id = host_id
+            child_mapping.host_id = mapping_host_id
             graph_instance.child_mappings[child_name].CopyFrom(child_mapping)
-            
-            host_id += 1
             
         else:
             # This is a hierarchical container - create a nested instance
@@ -1940,36 +2634,6 @@ def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
     return host_id
 
 
-def _ensure_host_indices(cytoscape_data: Dict, sorted_hosts: List[Tuple[str, str]]) -> None:
-    """Ensure all shelf nodes have host_index set.
-    
-    For CSV imports, shelf nodes won't have host_index. This function dynamically
-    assigns host_index based on the sorted host list order.
-    
-    Args:
-        cytoscape_data: The cytoscape visualization data (modified in-place)
-        sorted_hosts: List of (hostname, node_type) tuples in the order they should be indexed
-    """
-    # Build a map: hostname -> index
-    hostname_to_index = {hostname: idx for idx, (hostname, _) in enumerate(sorted_hosts)}
-    
-    # Update shelf nodes with their host_index if missing
-    elements = cytoscape_data.get("elements", [])
-    for element in elements:
-        if "source" in element.get("data", {}):
-            continue  # Skip edges
-        
-        node_data = element.get("data", {})
-        if node_data.get("type") == "shelf":
-            hostname = node_data.get("hostname", "").strip()
-            
-            # Only set host_index if it's missing
-            if node_data.get("host_index") is None and node_data.get("host_id") is None:
-                if hostname in hostname_to_index:
-                    # Dynamically assign host_index based on sorted position
-                    node_data["host_index"] = hostname_to_index[hostname]
-
-
 def export_deployment_descriptor_for_visualizer(
     cytoscape_data: Dict, filename_prefix: str = "deployment_descriptor"
 ) -> str:
@@ -2042,4 +2706,4 @@ def export_deployment_descriptor_for_visualizer(
             host_proto.node_type = node_type
 
     # Return the content directly instead of a file path
-    return text_format.MessageToString(deployment_descriptor)
+    return format_message_as_textproto(deployment_descriptor, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)

@@ -1,427 +1,131 @@
-# Network Cabling Visualizer
+# tt-CableGen: Network Cabling Visualizer for Tenstorrent Scale-Out Deployments
 
-A web-based interactive tool for visualizing, creating, and managing network topology and cabling configurations for data center infrastructure.
+For scale-out deployments of Tenstorrent Wormhole and Blackhole hardware, this tool can be used to visualize how to connect multiple systems for a specific multi-node scale-out topology.
 
-## Overview
+<!-- Remember to update the table of contents when adding new sections -->
+## Table of Contents
 
-The Network Cabling Visualizer is a Flask-based web application that provides an intuitive interface for working with network cabling configurations. It enables users to visualize existing network topologies, create new ones from scratch, modify configurations interactively, and export results in multiple industry-standard formats.
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Basic Usage](#basic-usage)
+- [What Can It Do?](#what-can-it-do)
+- [Supported Hardware](#supported-hardware)
+- [Basic Usage](#basic-usage-1)
+  - [Importing a Topology](#importing-a-topology)
+  - [Editing](#editing)
+  - [Copy and Paste](#copy-and-paste)
+  - [Exporting](#exporting)
+- [Docker Deployment](#docker-deployment)
+- [Detailed Documentation](#detailed-documentation)
+  - [General Interactions](#general-interactions)
+  - [Visualizer Descriptors/Files](#visualizer-descriptorsfiles)
+- [License](#license)
+- [Support](#support)
 
-## Key Features
+![Python](https://img.shields.io/badge/python-3.7+-blue.svg)
+![Flask](https://img.shields.io/badge/flask-3.0.2-green.svg)
 
-### Visualization Capabilities
+<p align="center">
+  <img src="static/img/8x16-bh.png" alt="8x16 BH-Galaxy Mesh Topology" width="800">
+  <br>
+  <em>Example: 4× BH-Galaxy systems forming an 8×16 mesh with 2D-torus connections</em>
+</p>
 
-- **Interactive Graph Visualization**: Pan, zoom, and explore network topologies using Cytoscape.js
-- **Hierarchical Node Structure**: Supports nested compound nodes representing:
-  - Racks → Shelves → Trays → Ports (location mode)
-  - Graph Templates → Graph Instances → Shelves → Trays → Ports (hierarchy mode)
-- **Dual Visualization Modes**:
-  - **Location Mode**: Physical layout view organized by rack locations (Hall/Aisle/Rack/Shelf)
-  - **Hierarchy Mode**: Logical topology view with hierarchical groupings (Graph Templates/Instances)
-- **Visual Feedback**: Color-coded connections, port status indicators, and connection legends
-- **Collapsible Nodes**: Expand/collapse rack and graph compound nodes to manage visual complexity
+## Quick Start
 
-### Import Capabilities
-
-#### CSV Format Support
-The visualizer supports multiple CSV format variations:
-
-1. **Hierarchical CSV** (with location information):
-   - Columns: `hostname`, `hall`, `aisle`, `rack_num`, `shelf_u`, `tray`, `port`, `cable_type`, `cable_length`, `dest_hostname`, `dest_hall`, `dest_aisle`, `dest_rack_num`, `dest_shelf_u`, `dest_tray`, `dest_port`
-   - Organizes nodes by physical data center location
-
-2. **Hostname-based CSV** (simplified):
-   - Columns: `hostname`, `tray`, `port`, `cable_type`, `cable_length`, `dest_hostname`, `dest_tray`, `dest_port`
-   - Useful when location information is not available or not required
-
-3. **Minimal CSV** (basic connections/limited support):
-   - Supports even simpler formats with auto-detection of column headers
-   - Will attempt to parse source/destination host properties and (and tray, port endpoints for connections)
-   - Auto-configures missing cable information with defaults
-
-#### TextProto Format Support
-- **Cabling Descriptor**: Protocol buffer text format defining cluster topology
-  - Supports hierarchical graph structures with templates and instances
-  - Defines node types, connections, and network topology
-  - Enables reuse of common topology patterns through templates
-  - See [TT-Metal Scaleout tools ](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) for more info
-
-The parser auto-detects file format and node types, making it easy to work with various input sources.
-
-### Export Capabilities
-
-#### 1. Cabling Descriptor Export
-Exports the current visualization as a `CablingDescriptor` textproto file:
-- **Based ONLY on hierarchy/topology information** (hostname, node_type, connections, logical structure)
-- **Physical location fields (Hall/Aisle/Rack/Shelf) are NEVER used**
-- Preserves hierarchical graph structure (when logical topology is present)
-- Exports flat structure with all hosts at root level (when no logical topology)
-- Includes all node configurations, connections, and metadata
-- Can be re-imported for round-trip editing
-
-#### 2. Deployment Descriptor Export
-Exports a `DeploymentDescriptor` textproto file:
-- **Uses physical location information** (Hall/Aisle/Rack/Shelf) when available
-- Lists all hosts with their physical deployment locations
-- Used in conjunction with CablingDescriptor for complete system definition
-- Required input for cabling guide generation
-
-#### 3. Cabling Guide Generation
-Generates production-ready cabling documentation:
-- **Cabling Guide CSV**: Detailed connection instructions for datacenter technicians
-  - Two format options:
-    - **Detailed format** (with location info): Includes Hall/Aisle/Rack/Shelf for each endpoint
-    - **Simple format** (hostname-based): Uses hostnames only when location unavailable
-  - Auto-detects which format to use based on available data
-- **Factory System Descriptor (FSD)**: Complete system specification textproto
-- Requires TT-Metal repo to be on system and specified through `TT_METAL_HOME` environment variable
-
-### Interactive Editing Features
-
-#### Create From Scratch
-- **Empty Canvas Mode**: Start with a blank canvas and build topology manually
-- **Add Nodes**: Create new shelf nodes with specified:
-  - Node type (hardware configuration)
-  - Hostname
-  - Optional location information (Hall, Aisle, Rack, Shelf)
-- **Add Graph Instances**: In hierarchy mode, instantiate graph templates
-
-#### Connection Management
-- **Visual Connection Creation**:
-  - Enable editing mode
-  - Click first port (source)
-  - Click second port (target)
-  - Connection automatically created with configurable properties
-- **Connection Properties**: Edit cable type and length for each connection
-- **Connection Deletion**: Select and delete connections using UI or keyboard shortcuts
-
-#### Node Editing
-- **Shelf Node Editing**: Double-click shelf nodes to edit:
-  - Hostname
-  - Location information (Hall, Aisle, Rack number, Shelf U)
-  - Node type
-- **Node Deletion**: Delete individual shelf nodes, entire racks, or graph instances
-- **Drag and Position**: Move nodes and compound structures around the canvas
-
-#### Port Management
-- **Port Status Visualization**: 
-  - Connected ports shown in default color
-  - Unconnected ports highlighted in orange (in edit mode)
-  - Selected ports shown with distinct styling
-- **Port Information Display**: Click ports to view connection details and metadata
-
-### Supported Hardware Types
-
-The visualizer supports a wide range of Tenstorrent hardware configurations:
-
-#### Wormhole Series
-- **WH_GALAXY**: 4 trays, 6 ports per tray
-- **WH_GALAXY_X_TORUS**: WH_GALAXY with X-axis torus topology
-- **WH_GALAXY_Y_TORUS**: WH_GALAXY with Y-axis torus topology  
-- **WH_GALAXY_XY_TORUS**: WH_GALAXY with full torus topology
-
-- **N300_LB**: 4 trays, 2 ports per tray, horizontal layout (blank/no connectiviy and default connectivity)
-- **N300_QB**: 4 trays, 2 ports per tray, horizontal layout (blank/no connectiviy and default connectivity)
-
-#### Blackhole Series
-- **BH_GALAXY**: 4 trays, 14 ports per tray
-- **BH_GALAXY_X_TORUS**: BH_GALAXY with X-axis torus topology
-- **BH_GALAXY_Y_TORUS**: BH_GALAXY with Y-axis torus topology
-- **BH_GALAXY_XY_TORUS**: BH_GALAXY with full torus topology
-
-- **P150_LB**: 8 trays, 4 ports per tray
-- **P150_QB_AMERICA**: 4 trays, 4 ports per tray, horizontal layout
-- **P150_QB_GLOBAL**: 4 trays, 4 ports per tray, horizontal layout
-- **P150_QB_AE**: P150 QB AE configuration
-- **P150_QB_AE_DEFAULT**: Default P150 QB AE configuration
-
-Each node type has a predefined configuration specifying:
-- Number of trays
-- Ports per tray
-- Physical layout orientation (horizontal/vertical)
-- Default spacing and dimensions
-
-## Architecture
-
-### Backend (Python/Flask)
-- **`server.py`**: Flask web server providing REST API endpoints
-- **`import_cabling.py`**: Core visualization engine with CSV and textproto parsing
-- **`export_descriptors.py`**: Export logic for generating descriptors and cabling guides
-
-### Frontend (JavaScript)
-- **`visualizer.js`**: Client-side application logic
-  - Cytoscape.js integration and graph management
-  - Interactive editing features
-  - Event handling and UI updates
-  - Export/import coordination
-- **`index.html`**: Web interface template
-  - Upload section for file imports
-  - Control panels for editing operations
-  - Information displays for node/connection details
-  - Export controls with customizable filenames
-
-### External Integration
-- **C++ Cabling Generator**: Backend tool for generating production cabling guides
-  - Invoked via subprocess from Flask server
-  - Requires `TT_METAL_HOME` environment variable
-  - Generates both CSV cabling guides and Factory System Descriptors
-
-## Installation and Setup
+This tool is built with 2 modes of use in mind: 
+1. A **Physical Deployment** (with racking information) mode that is useful for visualizing nodes in a simplified view of how they would be organized in data center Aisles/Racks/Shelves. See [README-LOCATION.md](README-LOCATION.md) for detailed documentation.
+2. A **Logical Hierarchy** (with clustering/pod information) mode that is useful for visualizing node groupings in terms of graphs and subgraphs. See [README-HIERARCHY.md](README-HIERARCHY.md) for detailed documentation.
 
 ### Prerequisites
-- Python 3.7+
-- Flask 3.0.2
-- Werkzeug 3.0.1
-- protobuf 3.20.0
-- TT_METAL_HOME environment variable (for cabling guide generation)
-- Compiled cabling generator at `$TT_METAL_HOME/build/tools/scaleout/run_cabling_generator`
 
-### Installation
+The tool is mostly self-packaged as a docker image packaged as part of the repo. This docker environment takes care of all JavaScript, Python, and [tt-Metal](https://github.com/tenstorrent/tt-metal) dependencies. For most deployments we have a Makefile that serves as as simple interface for managing the application. For a simple deployment to test out tool functionality we recommend the make commands with the `-local` suffixes. For more secure, production enviroments, we recommend the default `make` commands (which require some extra environment configuration, see [README-COMPOSE.md](README-COMPOSE.md) for more detail).
 
-1. **Install Python dependencies**:
-```bash
-pip install -r requirements.txt
-```
+### Basic Usage 
 
-2. **Set up environment** (for cabling guide generation):
-```bash
-export TT_METAL_HOME=/path/to/tt-metal
-# Ensure the cabling generator is built:
-# cd $TT_METAL_HOME && ./build_metal.sh
-```
+Select a predefined topology from the [Defined Topologies](defined_topologies/README.md) folder and upload the desired CSV or TextProto file to visualize your network topology. Alternatively, click a mode tab and then **"Create Empty Canvas"** to build one from scratch, with different Tenstorrent node types!
 
-3. **Run the server**:
-```bash
-python server.py
-```
+Please regularly hard refresh the page (Ctrl+Shift+R / Cmd+Shift+R) to ensure you are using the latest version of the tool.
 
-The server will start on `http://localhost:5000` by default.
+## What Can It Do?
 
-### Command Line Options
+| Feature | Description |
+|---------|-------------|
+| **Visualize** | Interactive graph with pan, zoom, and hierarchical node structure |
+| **Edit** | Add/remove nodes, create connections, create node groupings, modify properties |
+| **Import/Export** | Generate cabling descriptors, deployment descriptors, and cabling guides. Transfer work so it can be consumed by various parties |
 
-```bash
-python server.py [OPTIONS]
+## Supported Hardware
 
-Options:
-  -p, --port PORT          Port number to run the server on (default: 5000)
-  --host HOST             Host address to bind to (default: 0.0.0.0)
-  --debug                 Run in debug mode (default: enabled)
-  --no-debug              Disable debug mode
-```
+- **Wormhole**: WH_GALAXY, N300_LB, N300_QB
+- **Blackhole**: BH_GALAXY, P150_LB, P150_QB
 
-### Docker Deployment
-See [README-COMPOSE.md](README-COMPOSE.md)
+## Basic Usage
 
-## Usage Guide
+### Starting a New Visualization
 
-### Starting the Server
+- **Drag & Drop**: Drag & drop a `.csv` or `.textproto` file onto the site to start a new visualization.
+- **Create Empty Canvas**: Click the "Create Empty Canvas" button under the "Physical Deployment" or "Logical Hierarchy" tab to start a new visualization from scratch.
 
-```bash
-python server.py --port 5000
-```
+### Editing
 
-Open your browser to `http://localhost:5000`
+- **Enable Edit Mode**: Click the "Enable Cabling Editing" button under the "Cabling Editor" section to enable edit mode.
+- **Add nodes**: Use "Add New Node" panel to create shelf nodes.
+- **Create connections**: Enable edit mode → click source port → click destination port.
+- **Edit nodes**: Double-click any shelf node to edit the node properties.
+- **Delete**: Select item + press Delete/Backspace.
 
-### Importing Network Topology
+### Copy and Paste
 
-#### Option 1: Upload CSV or TextProto File
-1. Click **"Choose File"** or drag and drop file onto upload area
-2. Select a `.csv` or `.textproto` file
-3. Click **"Generate Visualization"**
-4. The topology will be rendered automatically
+Copy and paste works in both **Physical Deployment** (Location) and **Logical Hierarchy** modes when **Cabling Editing** is enabled. Use **Ctrl+C** (or **Cmd+C** on Mac) to copy and **Ctrl+V** (or **Cmd+V** on Mac) to paste.
 
-#### Option 2: Create From Scratch
-1. Click **"Create Empty Canvas"** button
-2. The editing interface will open with a blank canvas
-3. Use **"Add New Node"** to create shelf nodes
-4. Use connection editing to wire nodes together
+| Mode | Copy | Paste |
+|------|------|--------|
+| **Location** | Select one or more shelves, or a hall/aisle/rack to copy all shelves under it. Connections between nodes in the selection are included. | **Ctrl+V** opens a **Paste destination** modal. Choose where to place the pasted shelves (e.g. hall, aisle, rack, shelf U). You can paste into a selected rack or at a new location. |
+| **Hierarchy** | Select one or more graph instances or shelves. Full subtrees and connections between nodes in the selection are included. | **Ctrl+V** pastes under the currently selected graph instance (or at root if no graph selected). New instances use the prefix `copy`. No modal. |
 
-### Working with Visualizations
+- **Multi-select**: Use **Shift+Click** or **Ctrl/Cmd+Click** to select multiple nodes before copying.
+- **Paste requirements**: Paste is only available when Cabling Editing is enabled. In Location mode, paste is only allowed when the session started in Location mode (e.g. from a CSV import).
 
-#### Location Mode (CSV Import)
-- Nodes are organized by physical location
-- Compound nodes represent racks containing shelves
-- Editing location information updates the rack grouping
-- Double-click racks to collapse/expand
+### Exporting
 
-#### Hierarchy Mode (TextProto Import)
-- Nodes are organized by logical topology
-- Graph templates and instances form the hierarchy
-- Can instantiate new instances of graph templates
-- Double-click graph nodes to collapse/expand
+- **Cabling Descriptor**: Topology definition (hierarchy-based)
+- **Deployment Descriptor**: Physical location mapping (tied to a Cabling Descriptor usually)
+- **Cabling Guide**: CSV instructions for technicians (requires `TT_METAL_HOME`)
+
+## Docker Deployment
+
+See [README-COMPOSE.md](README-COMPOSE.md) for containerized deployment options.
+
+---
+
+## Detailed Documentation
+
+### General Interactions
+
+The visualizer has 2 distinct modes which expose different information but there are common flows/functionality between them. 
+
+1. Panning/Dragging: Clicking and dragging on the blank background will allow the user to move around the visualized topologies. Clicking on a node and dragging will move the node. In both modes, clicking the "Reset Layout" button will reset the layout to calculated default positions.
+2. Node/Connection Info: In both modes clicking on the a connected port will show the connection info panel with details about the connection and the endpoints. 
+3. Connection Creation: In both modes clicking on an unconnected port will allow the user to create a connection to another unconnected port.
+4. Element Deletion: In both modes, selcting an element and clicking the delete button (or pressing Backspace/Delete) will delete the element. This will delete any contained nodes/connections. Multiple elements can be selected and deleted at once by holding Shift/Cmd/Ctrl and clicking on the elements to select them.
+5. Copy and Paste: In both modes, **Ctrl+C** / **Cmd+C** copies the current selection (shelves and internal connections in Location mode; graph instances/shelves and subtrees in Hierarchy mode). **Ctrl+V** / **Cmd+V** pastes: in Location mode a paste-destination modal appears to choose hall/aisle/rack/shelf U; in Hierarchy mode content is pasted under the selected graph or at root. See [Copy and Paste](#copy-and-paste) and the mode-specific READMEs for usage flows.
+
+**📖 For detailed Location Mode documentation, see [README-LOCATION.md](README-LOCATION.md)**
+
+**📖 For detailed Hierarchy Mode documentation, see [README-HIERARCHY.md](README-HIERARCHY.md)**
+
+### Visualizer Descriptors/Files
+
+See [TT-Metal Scaleout tools](https://github.com/tenstorrent/tt-metal/tree/main/tools/scaleout) page for more information on how our descriptor files are structured, their specific use cases, and how they fit in with our flows. 
 
 
-
-### Exporting Results
-
-#### Export Cabling Descriptor
-1. Optionally enter a custom **Filename Prefix**
-2. Click **"Export Cabling Descriptor"**
-3. Downloads a `.textproto` file with complete topology definition
-4. **Note**: This export is based ONLY on hierarchy/topology information (hostname, node_type, connections). Physical location fields (Hall/Aisle/Rack/Shelf) are not included in the cabling descriptor.
-5. Can be re-imported for further editing
-
-#### Export Deployment Descriptor
-1. Ensure all nodes have location information (Hall/Aisle/Rack/Shelf)
-2. Click **"Export Deployment Descriptor"**
-3. Downloads a `.textproto` file with deployment configuration
-4. **Note**: This export uses physical location fields (Hall/Aisle/Rack/Shelf) for datacenter deployment planning
-
-#### Generate Cabling Guide
-1. **Prerequisites**:
-   - `TT_METAL_HOME` environment variable set
-   - Cabling generator built at `$TT_METAL_HOME/build/tools/scaleout/run_cabling_generator`
-2. Click **"Generate Cabling Guide"**
-3. Downloads a CSV file with detailed cabling instructions
-4. **Important**: The cabling guide uses:
-   - **Cabling Descriptor**: Based ONLY on hierarchy/topology (hostname, node_type, connections)
-   - **Deployment Descriptor**: Uses physical location when available (Hall/Aisle/Rack/Shelf)
-5. Output format automatically selected:
-   - **Detailed**: If all nodes have location information in deployment descriptor
-   - **Simple**: If any nodes lack location information
-
-#### Generate Factory System Descriptor
-1. Same prerequisites as cabling guide
-2. Click **"Generate Factory System Descriptor (FSD)"**
-3. Downloads complete factory system specification as `.textproto`
-
-## File Formats
-
-### CSV Format (Cabling Guide)
-
-CSV files use a **2-line header** format where:
-- **Line 1**: Groups columns into Source/Destination/Cable info sections
-- **Line 2**: Contains the actual column names
-
-#### Example CSV Format:
-```csv
-Source,,,,,,,,,Destination,,,,,,,,,Cable Length,Cable Type
-Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,Hostname,Hall,Aisle,Rack,Shelf U,Tray,Port,Label,Node Type,,
-host_1,,,00,U00,1,3,00U00-1-3,P150_LB,host_2,,,00,U00,2,3,00U00-2-3,P150_LB,,
-```
-
-**Column Definitions:**
-- **Source section**: Hostname, Hall, Aisle, Rack, Shelf U, Tray, Port, Label, Node Type
-- **Destination section**: Same fields as source
-- **Cable info**: Cable Length, Cable Type
-
-**Note**: Hall and Aisle columns may be empty if location information is not available (simplified format).
-
-### TextProto Format (Cabling Descriptor)
-
-The Cabling Descriptor uses protocol buffer text format with the following structure:
-
-```protobuf
-# Define reusable graph templates
-graph_templates {
-  key: "template_name"
-  value {
-    # Define child nodes or sub-graphs
-    children {
-      name: "node1"
-      node_ref { node_descriptor: "N300_LB_DEFAULT" }
-    }
-    children {
-      name: "subgraph1"
-      graph_ref { graph_template: "another_template" }
-    }
-    
-    # Define internal connections by cable type
-    internal_connections {
-      key: "QSFP_DD"
-      value {
-        connections {
-          port_a { path: ["node1"] tray_id: 1 port_id: 2 }
-          port_b { path: ["node2"] tray_id: 1 port_id: 2 }
-        }
-        connections {
-          port_a { path: ["subgraph1", "inner_node"] tray_id: 3 port_id: 1 }
-          port_b { path: ["node1"] tray_id: 3 port_id: 1 }
-        }
-      }
-    }
-  }
-}
-
-# Root instance that maps templates to physical hosts
-root_instance {
-  template_name: "template_name"
-  
-  # Map child names to host IDs or sub-instances
-  child_mappings {
-    key: "node1"
-    value { host_id: 0 }
-  }
-  child_mappings {
-    key: "subgraph1"
-    value {
-      sub_instance {
-        template_name: "another_template"
-        child_mappings {
-          key: "inner_node"
-          value { host_id: 1 }
-        }
-      }
-    }
-  }
-}
-```
-
-**Key Elements:**
-- `graph_templates`: Map of template names to graph definitions (reusable patterns)
-- `children`: List of child nodes (either `node_ref` for devices or `graph_ref` for sub-graphs)
-- `internal_connections`: Connections within the template, organized by cable type
-- `path`: Array specifying hierarchical path to a node (e.g., `["superpod1", "node2"]`)
-- `root_instance`: The top-level graph instance that assigns actual host IDs to template nodes
-
-### TextProto Format (Deployment Descriptor)
-
-```protobuf
-hosts {
-  location {
-    hall: "A"
-    aisle: "01"
-    rack_num: 1
-    shelf_u: 10
-  }
-}
-```
-
-## Development
-
-### Project Structure
-
-```
-tt-CableGen/
-├── server.py                   # Flask web server
-├── import_cabling.py          # Visualization engine and parsers
-├── export_descriptors.py      # Export logic
-├── requirements.txt           # Python dependencies
-├── templates/
-│   └── index.html            # Web interface template
-├── static/
-│   └── js/
-│       └── visualizer.js     # Client-side application
-├── docker-compose.yml         # Production Docker setup
-├── docker-compose.local.yml   # Local development Docker setup
-├── Dockerfile                 # Application container
-├── Makefile                  # Docker management commands
-└── nginx/                     # Nginx and OAuth2 configuration
-```
-
-## Keyboard Shortcuts
-
-- **Delete / Backspace**: Delete selected connection or node while in Edit Mode
-- **Double-click** shelf node: Open editing interface
-- **Double-click** rack/graph node: Collapse/expand
-- **Drag**: Move nodes
-- **Mouse wheel**: Zoom in/out
-- **Click + drag** on background: Pan canvas
+---
 
 ## License
 
-See LICENSE file for details.
+See [LICENSE](LICENSE) file for details.
 
 ## Support
 
-For issues, questions, or contributions, please refer to the project repository and raise issues/requests.
-
+For issues or questions, please open an issue in the project repository.

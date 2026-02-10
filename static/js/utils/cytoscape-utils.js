@@ -24,8 +24,6 @@ export function verifyCytoscapeExtensions(state) {
         const testLayout = state.cy.layout({ name: 'fcose', eles: state.cy.collection() });
         if (testLayout && typeof testLayout.run === 'function') {
             availableExtensions.push('cytoscape-fcose');
-            // Note: layout-base and cose-base are dependencies loaded before fcose
-            // If fcose works, they are implicitly available
         } else {
             missingExtensions.push('cytoscape-fcose');
         }

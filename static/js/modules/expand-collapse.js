@@ -75,20 +75,10 @@ export class ExpandCollapseModule {
     collapseNode(node, nodeId) {
         // Get all descendant nodes (children, grandchildren, etc.) including ports
         const descendants = node.descendants();
-        const descendantIds = new Set(descendants.map(d => d.id()));
 
-        // Batch query all edges connected to descendants (more efficient than per-descendant queries)
-        // Only include original edges (not rerouted edges) - rerouted edges will be handled separately
-        const connectedEdges = this.state.cy.edges().filter(edge => {
-            // Skip rerouted edges - they'll be handled via their original edges
-            if (edge.data('isRerouted')) {
-                return false;
-            }
-            // For original edges, check current endpoints
-            const sourceId = edge.data('source');
-            const targetId = edge.data('target');
-            return descendantIds.has(sourceId) || descendantIds.has(targetId);
-        });
+        // Use Cytoscape's optimized connectedEdges() instead of filtering all edges
+        // This leverages internal edge indexing for O(1) lookup per node vs O(edges) filtering
+        const connectedEdges = descendants.connectedEdges().filter(edge => !edge.data('isRerouted'));
 
         // Add this node to collapsed set for ancestor checking
         const collapsedNodeIds = new Set(this.state.ui.collapsedGraphs);
@@ -406,6 +396,9 @@ export class ExpandCollapseModule {
         // Batch DOM operations
         this.state.cy.startBatch();
 
+        // Track edges that need curve style updates
+        const edgesToStyle = [];
+
         // Process all original edges and create rerouted edges as needed
         originalEdgesToProcess.forEach((edge) => {
             // Find any existing rerouted edges for this original edge and remove them
@@ -454,19 +447,22 @@ export class ExpandCollapseModule {
                     const targetNode = this.state.cy.getElementById(routing.target);
 
                     if (sourceNode.length && targetNode.length) {
-                        this.state.cy.add(reroutedEdgeData).style('display', 'element');
+                        const newEdge = this.state.cy.add(reroutedEdgeData);
+                        newEdge.style('display', 'element');
+                        edgesToStyle.push(newEdge);
                     }
                 } else {
                     // No rerouting needed, show original edge
                     edge.style('display', 'element');
+                    edgesToStyle.push(edge);
                 }
             }
         });
 
         this.state.cy.endBatch();
 
-        // Schedule curve styles update (debounced) - bezier curves will handle overlapping edges
-        this._scheduleCurveStylesUpdate();
+        // Schedule curve styles update for only affected edges (debounced)
+        this._scheduleCurveStylesUpdate(edgesToStyle);
     }
 
     /**
@@ -590,18 +586,35 @@ export class ExpandCollapseModule {
     /**
      * Schedule a debounced curve styles update
      * Prevents multiple style recalculations when multiple operations happen quickly
+     * @param {Object} affectedEdges - Optional: specific edges to restyle (Cytoscape collection or array)
      */
-    _scheduleCurveStylesUpdate() {
+    _scheduleCurveStylesUpdate(affectedEdges = null) {
         if (this._curveStylesTimer) {
             clearTimeout(this._curveStylesTimer);
         }
 
+        // Store affected edges for the debounced callback
+        // If we already have pending edges, merge with new ones
+        if (affectedEdges) {
+            if (!this._pendingEdgesToStyle) {
+                this._pendingEdgesToStyle = new Set();
+            }
+            // Handle both Cytoscape collections and arrays
+            if (affectedEdges.forEach) {
+                affectedEdges.forEach(edge => this._pendingEdgesToStyle.add(edge.id()));
+            }
+        }
+
         this._curveStylesTimer = setTimeout(() => {
             if (this.state && this.state.commonModule) {
+                // Always use forceApplyCurveStyles to ensure edges between collapsed nodes
+                // get proper distance-based curve styling
+                // This handles both regular edges and edges between collapsed shelves/graphs
                 this.state.commonModule.forceApplyCurveStyles();
+                this._pendingEdgesToStyle = null;
             }
             this._curveStylesTimer = null;
-        }, 50); // Reduced from 100ms to 50ms for faster response
+        }, 50);
     }
 
     /**
@@ -660,6 +673,22 @@ export class ExpandCollapseModule {
 
         // Schedule layout refresh (debounced)
         this._scheduleLayoutRefresh();
+    }
+
+    /**
+     * Expand all levels: expand every collapsed node until the visualization is fully expanded.
+     * Used before switching to location mode so the graph has no rerouted edges and all nodes are visible.
+     */
+    expandAllLevels() {
+        if (!this.state.cy) {
+            return;
+        }
+        const maxIterations = 200; // safety limit
+        let iterations = 0;
+        while (this.state.ui.collapsedGraphs.size > 0 && iterations < maxIterations) {
+            this.expandOneLevel();
+            iterations++;
+        }
     }
 
     /**
@@ -747,24 +776,12 @@ export class ExpandCollapseModule {
 
             // Get all descendant nodes (children, grandchildren, etc.) including ports
             const descendants = node.descendants();
-            const descendantIds = new Set(descendants.map(d => d.id()));
 
-            // Find all edges connected to descendants (original edges)
-            const connectedEdges = this.state.cy.edges().filter(edge => {
-                const sourceId = edge.data('source');
-                const targetId = edge.data('target');
-                return descendantIds.has(sourceId) || descendantIds.has(targetId);
-            });
+            // Use Cytoscape's optimized connectedEdges() instead of filtering all edges
+            const connectedEdges = descendants.connectedEdges().filter(edge => !edge.data('isRerouted'));
 
-            // Also find rerouted edges that point to this node (edges that were rerouted to this collapsed node)
-            const reroutedEdgesToNode = this.state.cy.edges().filter(edge => {
-                if (!edge.data('isRerouted')) {
-                    return false;
-                }
-                const sourceId = edge.data('source');
-                const targetId = edge.data('target');
-                return sourceId === nodeId || targetId === nodeId;
-            });
+            // Find rerouted edges that point to this node using Cytoscape selector
+            const reroutedEdgesToNode = node.connectedEdges().filter(edge => edge.data('isRerouted'));
 
             // Add all affected edges to the set
             connectedEdges.forEach(edge => allAffectedEdges.add(edge));
@@ -843,15 +860,11 @@ export class ExpandCollapseModule {
             const edgeReroutingData = this.state.ui.edgeRerouting.get(nodeId);
             const connectedEdges = edgeReroutingData ? edgeReroutingData.originalEdges : [];
 
-            // If we don't have cached edges, find them by descendants
+            // If we don't have cached edges, find them by descendants using optimized selector
             if (connectedEdges.length === 0) {
                 const descendants = node.descendants();
-                const descendantIds = new Set(descendants.map(d => d.id()));
-                const foundEdges = this.state.cy.edges().filter(edge => {
-                    const sourceId = edge.data('source');
-                    const targetId = edge.data('target');
-                    return descendantIds.has(sourceId) || descendantIds.has(targetId);
-                });
+                // Use Cytoscape's optimized connectedEdges() instead of filtering all edges
+                const foundEdges = descendants.connectedEdges();
                 foundEdges.forEach(edge => allAffectedEdges.add(edge));
             } else {
                 connectedEdges.forEach(edge => allAffectedEdges.add(edge));

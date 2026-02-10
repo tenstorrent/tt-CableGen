@@ -2,6 +2,19 @@
 
 Docker Compose setup for CableGen with Nginx reverse proxy and ACME certificate support.
 
+## Pre-built Docker Images
+
+Docker images are automatically built and published to the GitHub Container Registry via GitHub Actions whenever changes are pushed to the main branch.
+
+To use the pre-built image:
+```bash
+docker pull ghcr.io/tenstorrent/tt-cablegen:main
+```
+
+Available tags:
+- `main` - Latest build from main branch
+- `sha-<commit>` - Specific commit builds
+
 ## Architecture
 
 This setup provides:
@@ -46,6 +59,10 @@ FQDN=cablegen.yourcompany.com
 
 ## Management Commands
 
+### Production Environment (Includes OAuth authentication) 
+<details>
+<summary> </summary>
+
 ```bash
 make setup     # Copy env.example to .env (if .env doesn't exist)
 make build     # Build all Docker images
@@ -58,6 +75,23 @@ make clean     # Remove containers, networks, and volumes
 make shell     # Open shell in cablegen container
 make nginx-shell # Open shell in nginx container
 ```
+</details>
+
+### Local Development/Deployment Environment (No authentication)
+<details>
+<summary> </summary>
+
+```bash
+make build-local     # Build all Docker images
+make up-local        # Start all services
+make down-local      # Stop all services
+make logs-local      # View logs from all services
+make status-local    # Check status of all services
+make restart-local   # Restart all services
+make clean-local     # Remove containers, networks, and volumes
+make shell-local     # Open shell in cablegen container
+```
+</details>
 
 ## Troubleshooting
 

@@ -42,9 +42,8 @@ services:
 
   # Tenstorrent CableGen Flask Application
   cablegen:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/tenstorrent/tt-cablegen:main
+    pull_policy: always
     container_name: cablegen-app
     restart: unless-stopped
     environment:

@@ -27,7 +27,10 @@ export class VisualizerState {
             hierarchyModeState: null, // Store current hierarchy state when switching to location mode
             globalHostCounter: 0, // Global counter for unique host IDs across all instances
             availableGraphTemplates: {}, // Store graph templates from loaded textproto
-            nodeConfigs: {} // Will be populated from config module
+            nodeConfigs: {}, // Will be populated from config module
+            initialMode: null, // Track the mode when session started (from import or empty canvas)
+            hierarchyStructureChanged: false, // Track if hierarchy structure changed (forces re-import of deployment descriptor)
+            deploymentDescriptorApplied: false // Track if deployment descriptor has been applied
         };
 
         // UI state
@@ -38,6 +41,16 @@ export class VisualizerState {
             expandedGraphs: new Set(),
             collapsedGraphs: new Set(),
             edgeRerouting: new Map() // Maps collapsed node ID -> { edges: [...], originalSources: [...], originalTargets: [...] }
+        };
+
+        // Clipboard for copy/paste (nodes + internal connections)
+        this.clipboard = null;
+
+        // Default layout positions (init / full expansion) per mode; restored on Reset layout
+        // Recalculation only runs on init, add, move between compounds, delete
+        this.layout = {
+            hierarchy: null,  // Map<nodeId, {x, y}>
+            location: null    // Map<nodeId, {x, y}>
         };
 
         // History for undo/redo
@@ -68,9 +81,12 @@ export class VisualizerState {
         this.data.currentData = null;
         this.data.initialVisualizationData = null;
         this.data.hierarchyModeState = null;
+        this.clipboard = null;
         this.ui.modalsOpen.clear();
         this.ui.expandedGraphs.clear();
         this.ui.collapsedGraphs.clear();
+        this.layout.hierarchy = null;
+        this.layout.location = null;
         this.clearHistory();
 
         if (this.ui.notificationTimer) {

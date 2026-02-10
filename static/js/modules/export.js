@@ -103,8 +103,7 @@ export class ExportModule {
             }
             return sanitized;
         } finally {
-            // Note: We don't remove from seen set here because we want to detect
-            // circular references even after returning from nested calls
+            // Empty finally block - no cleanup needed
         }
     }
 
@@ -202,30 +201,95 @@ export class ExportModule {
             return;
         }
 
-        // Validate: Must have exactly one top-level root template
-        const topLevelGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
-            const parent = node.parent();
-            return parent.length === 0;
-        });
+        // Check if we have saved hierarchy state (from switching hierarchy -> location)
+        // If available, use hierarchical export even if initialMode was 'location'
+        const hasSavedHierarchyState = this.state.data.hierarchyModeState && 
+            this.state.data.hierarchyModeState.elements &&
+            this.state.mode === 'location';
 
-        if (topLevelGraphs.length === 0) {
-            this.notificationManager.show('❌ Cannot export CablingDescriptor: No root template found. Please create a graph template that contains all nodes and connections.', 'error');
+        // If session started in location mode AND no saved hierarchy state, use flat export
+        if (this.state.data.initialMode === 'location' && !hasSavedHierarchyState) {
+            // Use flat export - no validation needed, creates extracted_topology template automatically
+            const exportBtn = document.getElementById('exportCablingBtn');
+            const originalText = exportBtn ? exportBtn.textContent : 'Export';
+
+            try {
+                if (exportBtn) {
+                    exportBtn.textContent = '⏳ Exporting...';
+                    exportBtn.disabled = true;
+                }
+                this.statusManager.show('Generating CablingDescriptor (flat export)...', 'info');
+
+                // Get current cytoscape data
+                const rawElements = this.state.cy.elements().jsons();
+                const sanitizedElements = this.sanitizeForJSON(rawElements);
+
+                const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                    ? this.state.data.currentData.metadata
+                    : {};
+                const sanitizedMetadata = this.sanitizeForJSON(rawMetadata);
+
+                const cytoscapeData = {
+                    elements: sanitizedElements,
+                    metadata: sanitizedMetadata
+                };
+
+                // Filter to only include fields needed for export
+                const filteredData = this.commonModule.filterCytoscapeDataForExport(cytoscapeData, 'cabling');
+
+                // Use flat export API
+                const textprotoContent = await this.apiClient.exportFlatCablingDescriptor(filteredData);
+
+                // Create and download file
+                const customFileName = this.getCustomFileName();
+                const filename = customFileName
+                    ? `${customFileName}_cabling_descriptor.textproto`
+                    : 'cabling_descriptor.textproto';
+                const blob = new Blob([textprotoContent], { type: 'text/plain' });
+                this.downloadFile(blob, filename);
+
+                this.statusManager.show('CablingDescriptor exported successfully!', 'success');
+
+            } catch (error) {
+                console.error('Export error:', error);
+                this.notificationManager.show(`Export failed: ${error.message}`, 'error');
+            } finally {
+                if (exportBtn) {
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
+                }
+            }
             return;
         }
 
-        if (topLevelGraphs.length > 1) {
-            const templateNames = topLevelGraphs.map(n => n.data('template_name') || n.data('label')).join(', ');
-            this.notificationManager.show(`❌ Cannot export CablingDescriptor: Multiple root templates found (${templateNames}). A singular root template containing all nodes and connections is required for CablingDescriptor export.`, 'error');
-            return;
-        }
+        // For hierarchy mode, validate graph templates
+        // If we have saved hierarchy state, skip validation (graph nodes aren't in current view)
+        if (!hasSavedHierarchyState) {
+            // Validate: Must have exactly one top-level root template
+            const topLevelGraphs = this.state.cy.nodes('[type="graph"]').filter(node => {
+                const parent = node.parent();
+                return parent.length === 0;
+            });
 
-        // Validate: Root template must not be empty (must have children)
-        const rootGraph = topLevelGraphs[0];
-        const rootChildren = rootGraph.children();
-        if (rootChildren.length === 0) {
-            const templateName = rootGraph.data('template_name') || rootGraph.data('label');
-            this.notificationManager.show(`❌ Cannot export CablingDescriptor: Root template "${templateName}" is empty. Root templates must contain at least one child node or graph reference.`, 'error');
-            return;
+            if (topLevelGraphs.length === 0) {
+                this.notificationManager.show('❌ Cannot export CablingDescriptor: No root template found. Please create a graph template that contains all nodes and connections.', 'error');
+                return;
+            }
+
+            if (topLevelGraphs.length > 1) {
+                const templateNames = topLevelGraphs.map(n => n.data('template_name') || n.data('label')).join(', ');
+                this.notificationManager.show(`❌ Cannot export CablingDescriptor: Multiple root templates found (${templateNames}). A singular root template containing all nodes and connections is required for CablingDescriptor export.`, 'error');
+                return;
+            }
+
+            // Validate: Root template must not be empty (must have children)
+            const rootGraph = topLevelGraphs[0];
+            const rootChildren = rootGraph.children();
+            if (rootChildren.length === 0) {
+                const templateName = rootGraph.data('template_name') || rootGraph.data('label');
+                this.notificationManager.show(`❌ Cannot export CablingDescriptor: Root template "${templateName}" is empty. Root templates must contain at least one child node or graph reference.`, 'error');
+                return;
+            }
         }
 
         const exportBtn = document.getElementById('exportCablingBtn');
@@ -238,16 +302,29 @@ export class ExportModule {
             }
             this.statusManager.show('Generating CablingDescriptor...', 'info');
 
-            // Get current cytoscape data with full metadata (including graph_templates)
+            // Use saved hierarchy state if available (contains graph structure), otherwise use current data
+            let rawElements;
+            let rawMetadata;
+            
+            if (hasSavedHierarchyState) {
+                // Use saved hierarchy state for export (contains full graph structure)
+                console.log('[exportCablingDescriptor] Using saved hierarchyModeState for export');
+                rawElements = this.state.data.hierarchyModeState.elements;
+                rawMetadata = this.state.data.hierarchyModeState.metadata || 
+                    (this.state.data.currentData && this.state.data.currentData.metadata) || {};
+            } else {
+                // Use current cytoscape data
+                rawElements = this.state.cy.elements().jsons();
+                rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
+                    ? this.state.data.currentData.metadata
+                    : {};
+            }
+
             // Sanitize elements to remove circular references
-            const rawElements = this.state.cy.elements().jsons();
             const sanitizedElements = this.sanitizeForJSON(rawElements);
 
             // Sanitize metadata to remove circular references (but preserve structure)
             // This prevents "[Circular Reference]" strings from ending up in path arrays
-            const rawMetadata = this.state.data.currentData && this.state.data.currentData.metadata
-                ? this.state.data.currentData.metadata
-                : {};
             const metadataCircularRefs = [];
             const sanitizedMetadata = this.sanitizeForJSON(rawMetadata, new WeakSet(), 'metadata', metadataCircularRefs);
 
@@ -437,32 +514,22 @@ export class ExportModule {
 
         // No hierarchy structure - this is a CSV import
         // The backend will use flat export which doesn't need complex metadata or graph nodes
-        // Just ensure host_index is set on shelf nodes for proper host_id mapping
+        // host_index is now REQUIRED - all nodes must have it set (via DFS or at creation)
         console.log('[export.enrichWithImplicitHierarchy] No hierarchy detected - CSV import, backend will use flat export');
 
-        // Assign host_index to shelves that don't have one (needed for host_id mapping in flat export)
-        let hostIndexCounter = 0;
-        const enrichedElements = elements.map(el => {
-            if (el.data && el.data.type === 'shelf') {
-                // Ensure host_index is set (required for host_id mapping in export)
-                let hostIndex = el.data.host_index;
-                if (hostIndex === undefined || hostIndex === null) {
-                    hostIndex = hostIndexCounter++;
-                }
-
-                return {
-                    ...el,
-                    data: {
-                        ...el.data,
-                        host_index: hostIndex
-                    }
-                };
-            }
-            return el;
+        // Verify that all shelf nodes have host_index (required, no fallback assignment)
+        const shelvesWithoutHostIndex = shelfNodes.filter(shelf => {
+            const hostIndex = shelf.data.host_index;
+            return hostIndex === undefined || hostIndex === null;
         });
 
-        console.log(`[export.enrichWithImplicitHierarchy] Ensured host_index is set on ${shelfNodes.length} shelf nodes for flat export`);
-        return { elements: enrichedElements, metadata };
+        if (shelvesWithoutHostIndex.length > 0) {
+            console.error(`[export.enrichWithImplicitHierarchy] ERROR: ${shelvesWithoutHostIndex.length} shelf nodes missing required host_index. This should not happen - all shelf nodes must have host_index set at creation or via DFS recalculation.`);
+            // Let the Python export code handle the error with a more detailed message
+        }
+
+        // Return elements as-is (no modification needed - host_index should already be set)
+        return { elements, metadata };
     }
 
     /**
