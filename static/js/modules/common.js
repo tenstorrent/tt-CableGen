@@ -332,102 +332,97 @@ export class CommonModule {
         nestedGraphs.sort((a, b) => a.data('label').localeCompare(b.data('label')));
 
         if (nestedGraphs.length > 0) {
-            // Calculate grid dimensions - aim for square-ish layout
-            // Use column-major ordering only in hierarchy mode, row-major in location mode
             const isHierarchyMode = this.state.mode === 'hierarchy';
-            let gridRows, gridCols;
+            const collapsedGraphs = this.state.ui?.collapsedGraphs;
+            const hasCollapsedInSubtree = (n) => {
+                if (!collapsedGraphs || !(collapsedGraphs instanceof Set)) return false;
+                if (collapsedGraphs.has(n.id())) return true;
+                const descendants = n.descendants();
+                for (let i = 0; i < descendants.length; i++) {
+                    if (collapsedGraphs.has(descendants[i].id())) return true;
+                }
+                return false;
+            };
 
-            // Helper function to find the most square grid dimensions
-            const findSquareGrid = (numItems, preferRowsFirst) => {
-                // Start with square root as base
-                const sqrt = Math.sqrt(numItems);
-                let bestRows, bestCols;
-                let bestDiff = Infinity;
+            // Measurement pass: position each nested graph in a temporary vertical stack to get real dimensions
+            const widths = [];
+            const heights = [];
+            let tempY = graphPos.y;
+            const spacing = (LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT || 450) * 0.1;
+            nestedGraphs.forEach((graph) => {
+                graph.position({ x: graphPos.x, y: tempY });
+                this.positionGraphChildren(graph);
+                const bbox = graph.boundingBox();
+                let w = (bbox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.1;
+                let h = (bbox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
+                if (hasCollapsedInSubtree(graph)) {
+                    w = Math.max(w, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_WIDTH);
+                    h = Math.max(h, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_HEIGHT);
+                }
+                widths.push(w);
+                heights.push(h);
+                tempY += h + spacing;
+            });
 
-                // Try both ceil and floor of sqrt, and nearby values
-                for (let rows = Math.max(1, Math.floor(sqrt)); rows <= Math.ceil(sqrt) + 1; rows++) {
+            // Choose grid dimensions that make the overall layout as square as possible (minimize max(totalW, totalH))
+            // Prefer more rows (stack below) when nodes are wide to avoid horizontal scrolling
+            const findBestGridFromDimensions = (numItems, ws, hs, columnMajor) => {
+                let bestRows = 1;
+                let bestCols = numItems;
+                let bestScore = Infinity;
+                for (let rows = 1; rows <= numItems; rows++) {
                     const cols = Math.ceil(numItems / rows);
-                    const diff = Math.abs(rows - cols);
-
-                    // Prefer grids where rows and cols are as close as possible
-                    // Also prefer grids that don't waste too much space
-                    if (diff < bestDiff || (diff === bestDiff && rows * cols < bestRows * bestCols)) {
-                        bestDiff = diff;
+                    const rowHeights = new Array(rows).fill(0);
+                    const colWidths = new Array(cols).fill(0);
+                    for (let i = 0; i < numItems; i++) {
+                        const row = columnMajor ? i % rows : Math.floor(i / cols);
+                        const col = columnMajor ? Math.floor(i / rows) : i % cols;
+                        rowHeights[row] = Math.max(rowHeights[row], hs[i]);
+                        colWidths[col] = Math.max(colWidths[col], ws[i]);
+                    }
+                    const totalW = colWidths.reduce((a, b) => a + b, 0);
+                    const totalH = rowHeights.reduce((a, b) => a + b, 0);
+                    const score = Math.max(totalW, totalH);
+                    if (score < bestScore) {
+                        bestScore = score;
                         bestRows = rows;
                         bestCols = cols;
                     }
                 }
-
-                return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
+                return { rows: bestRows, cols: bestCols };
             };
 
-            if (isHierarchyMode) {
-                // Column-major: prefer more rows (taller grid)
-                const grid = findSquareGrid(nestedGraphs.length, true);
-                gridRows = grid.rows;
-                gridCols = grid.cols;
-            } else {
-                // Row-major: prefer more columns (wider grid)
-                const grid = findSquareGrid(nestedGraphs.length, false);
-                gridRows = grid.rows;
-                gridCols = grid.cols;
-            }
+            const grid = findBestGridFromDimensions(nestedGraphs.length, widths, heights, isHierarchyMode);
+            const gridRows = grid.rows;
+            const gridCols = grid.cols;
 
-            // Starting position
-            const startX = graphPos.x + (graphBBox.w * 0.05); // 5% padding from left
-            const startY = graphPos.y + (graphBBox.h * LAYOUT_CONSTANTS.GRAPH_PADDING_TOP_FACTOR);
-
-            // Track max dimensions for each row/column for proper spacing
+            // Build rowHeights and colWidths from chosen grid and stored dimensions
             const rowHeights = new Array(gridRows).fill(0);
             const colWidths = new Array(gridCols).fill(0);
-
-            // First pass: position nodes and calculate max dimensions
             nestedGraphs.forEach((graph, index) => {
                 let row, col;
                 if (isHierarchyMode) {
-                    // Column-major: row changes faster
                     row = index % gridRows;
                     col = Math.floor(index / gridRows);
                 } else {
-                    // Row-major: col changes faster
                     row = Math.floor(index / gridCols);
                     col = index % gridCols;
                 }
-
-                // Calculate position based on accumulated widths/heights
-                let x = startX;
-                for (let c = 0; c < col; c++) {
-                    x += colWidths[c];
-                }
-
-                let y = startY;
-                for (let r = 0; r < row; r++) {
-                    y += rowHeights[r];
-                }
-
-                graph.position({ x, y });
-
-                // Recursively position this graph's children
-                this.positionGraphChildren(graph);
-
-                // Update max dimensions for this row/column
-                const nestedBBox = graph.boundingBox();
-                const nestedWidth = (nestedBBox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.1; // 10% spacing
-                const nestedHeight = (nestedBBox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
-
-                colWidths[col] = Math.max(colWidths[col], nestedWidth);
-                rowHeights[row] = Math.max(rowHeights[row], nestedHeight);
+                colWidths[col] = Math.max(colWidths[col], widths[index]);
+                rowHeights[row] = Math.max(rowHeights[row], heights[index]);
             });
 
-            // Second pass: reposition with correct spacing
+            // Starting position
+            const startX = graphPos.x + (graphBBox.w * 0.05);
+            const startY = graphPos.y + (graphBBox.h * LAYOUT_CONSTANTS.GRAPH_PADDING_TOP_FACTOR);
+
+            // Position each nested graph in the chosen grid
             nestedGraphs.forEach((graph, index) => {
                 let row, col;
                 if (isHierarchyMode) {
-                    // Column-major: row changes faster
                     row = index % gridRows;
                     col = Math.floor(index / gridRows);
                 } else {
-                    // Row-major: col changes faster
                     row = Math.floor(index / gridCols);
                     col = index % gridCols;
                 }
@@ -443,6 +438,9 @@ export class CommonModule {
                 }
 
                 graph.position({ x, y });
+
+                // Recursively position this graph's children (already done in measurement pass, but ensure correct)
+                this.positionGraphChildren(graph);
             });
         }
     }

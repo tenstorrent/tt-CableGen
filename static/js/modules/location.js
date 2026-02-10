@@ -576,6 +576,9 @@ export class LocationModule {
             hallIndex++;
         });
 
+        // Remove empty hall/aisle/rack compounds left after reparenting (e.g. after aisle/hall edits)
+        this._removeEmptyLocationNodes();
+
         this.state.cy.endBatch();
 
         console.log('Location-based layout applied with hall > aisle > rack > shelf hierarchy');
@@ -688,6 +691,10 @@ export class LocationModule {
      * Use this when the user toggles from hierarchy to location mode.
      */
     switchMode() {
+        // Stop any running hierarchy layout so the visualizer doesn't stay frozen
+        if (typeof window.hierarchyModule?.stopLayout === 'function') {
+            window.hierarchyModule.stopLayout();
+        }
         // Clear all selections (including Cytoscape selections) when switching modes
         if (this.common && typeof this.common.clearAllSelections === 'function') {
             this.common.clearAllSelections();
@@ -1269,6 +1276,37 @@ export class LocationModule {
         const shouldShowAisles = allAisles.size > 1 || (allAisles.size === 1 && [...allAisles][0] !== '');
 
         return { shouldShowHalls, shouldShowAisles };
+    }
+
+    /**
+     * Remove hall, aisle, and rack compound nodes that have no children.
+     * Call after location hierarchy changes (e.g. after reparenting racks) so the visualizer
+     * does not leave empty compounds. Removes bottom-up: empty racks, then empty aisles, then empty halls.
+     */
+    _removeEmptyLocationNodes() {
+        if (!this.state.cy) return;
+        let removed = true;
+        while (removed) {
+            removed = false;
+            // Empty rack: no shelf (or other) children
+            const emptyRacks = this.state.cy.nodes('[type="rack"]').filter((rack) => rack.children().length === 0);
+            if (emptyRacks.length > 0) {
+                emptyRacks.remove();
+                removed = true;
+            }
+            // Empty aisle: no rack (or other) children
+            const emptyAisles = this.state.cy.nodes('[type="aisle"]').filter((aisle) => aisle.children().length === 0);
+            if (emptyAisles.length > 0) {
+                emptyAisles.remove();
+                removed = true;
+            }
+            // Empty hall: no aisle or rack children
+            const emptyHalls = this.state.cy.nodes('[type="hall"]').filter((hall) => hall.children().length === 0);
+            if (emptyHalls.length > 0) {
+                emptyHalls.remove();
+                removed = true;
+            }
+        }
     }
 
     /**
@@ -2722,17 +2760,14 @@ export class LocationModule {
             this.recolorConnections();
         }
 
-        // If rack or shelf_u changed in location mode, automatically reset layout to properly reposition nodes
-        // In hierarchy mode, location changes don't affect the visualization layout
-        if ((rackChanged || shelfUChanged) && mode === 'location') {
-
-            // Call resetLayout to recalculate positions
-            // Use setTimeout to ensure the DOM updates are complete
+        // If rack, shelf_u, or hall/aisle changed in location mode, reset layout so the location hierarchy
+        // is rebuilt: new aisle/hall compounds are created, racks reparented, and empty compounds removed.
+        // In hierarchy mode, location changes don't affect the visualization layout.
+        if ((rackChanged || shelfUChanged || hallChanged || aisleChanged) && mode === 'location') {
             setTimeout(() => {
                 window.resetLayout?.();
             }, 100);
         } else {
-            // Show success message
             window.showExportStatus?.('Shelf node updated successfully', 'success');
         }
     }

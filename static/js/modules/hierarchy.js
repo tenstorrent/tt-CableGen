@@ -9,6 +9,24 @@ export class HierarchyModule {
     constructor(state, commonModule) {
         this.state = state;
         this.common = commonModule;
+        /** @type {import('cytoscape').LayoutInstance | null} Running fcose/preset layout; stop before starting a new one. */
+        this._hierarchyLayoutRef = null;
+    }
+
+    /**
+     * Stop any running hierarchy layout (fcose/preset). Call when switching to location mode
+     * or before starting a new layout to avoid a frozen visualizer and overlapping layout runs.
+     */
+    stopLayout() {
+        if (this._hierarchyLayoutRef && typeof this._hierarchyLayoutRef.stop === 'function') {
+            try {
+                this._hierarchyLayoutRef.stop();
+                console.log('[hierarchy] Layout stopped (stopLayout)');
+            } catch (e) {
+                console.warn('[hierarchy] Error stopping layout:', e?.message ?? e);
+            }
+            this._hierarchyLayoutRef = null;
+        }
     }
 
     /**
@@ -890,6 +908,7 @@ export class HierarchyModule {
      */
     calculateLayout() {
         if (!this.state.cy) return;
+        console.log('[hierarchy] calculateLayout start');
 
         // Get all top-level graph nodes (no parent)
         const topLevelNodes = this.state.cy.nodes('[type="graph"]').filter(node => {
@@ -904,46 +923,7 @@ export class HierarchyModule {
 
         if (sortedTopLevel.length === 0) return;
 
-        // Calculate grid dimensions for square-ish layout
-        // Aim for roughly square aspect ratio
         const numNodes = sortedTopLevel.length;
-        let gridRows, gridCols;
-
-        if (numNodes <= 3) {
-            // For 1-3 nodes, arrange vertically (single column)
-            gridRows = numNodes;
-            gridCols = 1;
-        } else {
-            // For 4+ nodes, calculate optimal grid dimensions for square layout
-            // Calculate rows first (for column-major ordering in hierarchy mode)
-            gridRows = Math.ceil(Math.sqrt(numNodes));
-            gridCols = Math.ceil(numNodes / gridRows);
-
-            // Optimize to make it as square as possible
-            // If the grid is too wide, try adding a row
-            if (gridCols > gridRows * 1.2) {
-                gridRows = Math.ceil(Math.sqrt(numNodes * 1.2));
-                gridCols = Math.ceil(numNodes / gridRows);
-            }
-        }
-
-        // First pass: position nodes temporarily to get accurate dimensions
-        sortedTopLevel.forEach((node, _index) => {
-            // Temporary position for bounding box calculation
-            node.position({
-                x: LAYOUT_CONSTANTS.TOP_LEVEL_START_X,
-                y: LAYOUT_CONSTANTS.TOP_LEVEL_START_Y
-            });
-
-            // Recursively position children to get accurate dimensions
-            this.common.positionGraphChildren(node);
-        });
-
-        // Calculate max dimensions for each row/column
-        const rowHeights = new Array(gridRows).fill(0);
-        const colWidths = new Array(gridCols).fill(0);
-
-        // First pass: calculate dimensions (use larger minimum when node or any descendant is collapsed)
         const collapsedGraphs = this.state.ui?.collapsedGraphs;
         const hasCollapsedInSubtree = (n) => {
             if (!collapsedGraphs || !(collapsedGraphs instanceof Set)) return false;
@@ -954,28 +934,77 @@ export class HierarchyModule {
             }
             return false;
         };
-        sortedTopLevel.forEach((node, index) => {
-            const row = index % gridRows;  // Column-major: row changes faster
-            const col = Math.floor(index / gridRows);  // Column-major: col changes slower
 
+        // Measurement pass: position each node in a temporary vertical stack so we get accurate per-node dimensions
+        const widths = [];
+        const heights = [];
+        let tempY = LAYOUT_CONSTANTS.TOP_LEVEL_START_Y;
+        const spacing = (LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT || 450) * 0.15;
+        sortedTopLevel.forEach((node) => {
+            node.position({
+                x: LAYOUT_CONSTANTS.TOP_LEVEL_START_X,
+                y: tempY
+            });
+            this.common.positionGraphChildren(node);
             const bbox = node.boundingBox();
-            let nodeWidth = (bbox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.15; // 15% spacing
-            let nodeHeight = (bbox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
+            let w = (bbox.w || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * 1.15;
+            let h = (bbox.h || LAYOUT_CONSTANTS.FALLBACK_GRAPH_HEIGHT) * LAYOUT_CONSTANTS.GRAPH_VERTICAL_SPACING_FACTOR;
             if (hasCollapsedInSubtree(node)) {
-                nodeWidth = Math.max(nodeWidth, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_WIDTH);
-                nodeHeight = Math.max(nodeHeight, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_HEIGHT);
+                w = Math.max(w, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_WIDTH);
+                h = Math.max(h, LAYOUT_CONSTANTS.COLLAPSED_GRAPH_LAYOUT_MIN_HEIGHT);
             }
-
-            colWidths[col] = Math.max(colWidths[col], nodeWidth);
-            rowHeights[row] = Math.max(rowHeights[row], nodeHeight);
+            widths.push(w);
+            heights.push(h);
+            tempY += h + spacing;
         });
 
-        // Second pass: position nodes in grid with proper spacing
-        sortedTopLevel.forEach((node, index) => {
-            const row = index % gridRows;  // Column-major: row changes faster
-            const col = Math.floor(index / gridRows);  // Column-major: col changes slower
+        // Choose grid dimensions that make the overall layout as square as possible (minimize max(totalW, totalH))
+        // Prefer more rows (stack below) when a node is especially wide to avoid horizontal scrolling
+        const findBestGridFromDimensions = (n, ws, hs) => {
+            let bestRows = 1;
+            let bestCols = n;
+            let bestScore = Infinity;
+            for (let rows = 1; rows <= n; rows++) {
+                const cols = Math.ceil(n / rows);
+                const rowHeights = new Array(rows).fill(0);
+                const colWidths = new Array(cols).fill(0);
+                for (let i = 0; i < n; i++) {
+                    const row = i % rows;
+                    const col = Math.floor(i / rows);
+                    rowHeights[row] = Math.max(rowHeights[row], hs[i]);
+                    colWidths[col] = Math.max(colWidths[col], ws[i]);
+                }
+                const totalW = colWidths.reduce((a, b) => a + b, 0);
+                const totalH = rowHeights.reduce((a, b) => a + b, 0);
+                const score = Math.max(totalW, totalH);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestRows = rows;
+                    bestCols = cols;
+                }
+            }
+            return { rows: bestRows, cols: bestCols };
+        };
 
-            // Calculate position based on accumulated widths/heights
+        const grid = findBestGridFromDimensions(numNodes, widths, heights);
+        const gridRows = grid.rows;
+        const gridCols = grid.cols;
+
+        // Build rowHeights and colWidths from chosen grid and stored dimensions
+        const rowHeights = new Array(gridRows).fill(0);
+        const colWidths = new Array(gridCols).fill(0);
+        sortedTopLevel.forEach((node, index) => {
+            const row = index % gridRows;
+            const col = Math.floor(index / gridRows);
+            colWidths[col] = Math.max(colWidths[col], widths[index]);
+            rowHeights[row] = Math.max(rowHeights[row], heights[index]);
+        });
+
+        // Position nodes in the chosen grid
+        sortedTopLevel.forEach((node, index) => {
+            const row = index % gridRows;
+            const col = Math.floor(index / gridRows);
+
             let x = LAYOUT_CONSTANTS.TOP_LEVEL_START_X;
             for (let c = 0; c < col; c++) {
                 x += colWidths[c];
@@ -987,10 +1016,9 @@ export class HierarchyModule {
             }
 
             node.position({ x, y });
-
-            // Ensure children are positioned correctly (already done in first pass, but ensure it's correct)
             this.common.positionGraphChildren(node);
         });
+        console.log('[hierarchy] calculateLayout done');
     }
 
     /**
@@ -1825,6 +1853,7 @@ export class HierarchyModule {
 
         // Add all elements back to cytoscape
         this.state.cy.add(newElements);
+        this.state.cy.endBatch();
 
         // After adding elements, recalculate template associations for connections if we have a logical topology
         // This ensures connections are associated with the correct template based on the graph hierarchy
@@ -1904,14 +1933,30 @@ export class HierarchyModule {
             this.common.recalculateAllEdgeRouting();
         }
 
+        // Refresh Connection Options filter dropdowns to match current hierarchy
+        this.refreshConnectionFilterDropdowns();
+
         // Run preset layout first
-        this.state.cy.layout({ name: 'preset' }).run();
+        this.stopLayout();
+        const presetLayout = this.state.cy.layout({ name: 'preset' });
+        this._hierarchyLayoutRef = presetLayout;
+        presetLayout.run();
+        this._hierarchyLayoutRef = null;
 
         // Then apply fcose ONLY to graph-level nodes to prevent overlap
         setTimeout(() => {
+            if (this.state.mode !== 'hierarchy' || !this.state.cy) {
+                console.log('[hierarchy] Skipping fcose (mode changed or cy gone)');
+                return;
+            }
             const graphNodes = this.state.cy.nodes('[type="graph"]');
-            if (graphNodes.length > 0) {
-                // Verify fcose extension is available before using it
+            const graphCount = graphNodes.length;
+            console.log('[hierarchy] Fcose layout starting, graph nodes:', graphCount);
+            if (graphCount > 0) {
+                // Stop any previous layout so we don't stack runs and freeze the UI
+                this.stopLayout();
+                // Cap iterations for large graphs to reduce freeze duration; fcose is main-thread heavy
+                const numIter = graphCount > 30 ? 200 : graphCount > 15 ? 350 : 500;
                 try {
                     const layout = this.state.cy.layout({
                         name: 'fcose',
@@ -1926,72 +1971,64 @@ export class HierarchyModule {
                         idealEdgeLength: 200,
                         nestingFactor: 0.1,
                         gravity: 0,
-                        numIter: 500,
+                        numIter,
                         stop: () => {
-                            this.common.applyDragRestrictions();
-                            // Update edge curve styles for hierarchy mode after layout completes
-                            this.common.forceApplyCurveStyles();
-
-                            // Fit the view to show all nodes with padding before showing container
-                            this.state.cy.fit(null, 50);
-                            this.state.cy.center();
-                            this.state.cy.forceRender();
-
-                            // Show container after layout, styling, and zoom complete
-                            const cyContainer = document.getElementById('cy');
-                            if (cyContainer) {
-                                cyContainer.style.visibility = 'visible';
+                            if (this.state.mode !== 'hierarchy' || !this.state.cy) return;
+                            this._hierarchyLayoutRef = null;
+                            try {
+                                console.log('[hierarchy] Fcose stop callback start');
+                                this.common.applyDragRestrictions();
+                                console.log('[hierarchy] Fcose stop: applyDragRestrictions done');
+                                this.common.forceApplyCurveStyles();
+                                console.log('[hierarchy] Fcose stop: forceApplyCurveStyles done');
+                                this.state.cy.fit(null, 50);
+                                this.state.cy.center();
+                                this.state.cy.forceRender();
+                                const cyContainer = document.getElementById('cy');
+                                if (cyContainer) {
+                                    cyContainer.style.visibility = 'visible';
+                                }
+                                console.log('[hierarchy] Fcose layout finished');
+                            } catch (e) {
+                                console.error('[hierarchy] Fcose stop callback error:', e?.message ?? e, e);
                             }
                         }
                     });
                     if (layout) {
+                        this._hierarchyLayoutRef = layout;
                         layout.run();
                     } else {
-                        console.warn('fcose layout extension not available, falling back to preset layout');
+                        console.warn('[hierarchy] Fcose layout extension not available, falling back to preset layout');
+                        this._hierarchyLayoutRef = null;
                         this.state.cy.layout({ name: 'preset' }).run();
                         this.common.forceApplyCurveStyles();
-
-                        // Fit the view to show all nodes with padding before showing container
                         this.state.cy.fit(null, 50);
                         this.state.cy.center();
                         this.state.cy.forceRender();
-
-                        // Show container after fallback layout and zoom complete
                         const cyContainer = document.getElementById('cy');
-                        if (cyContainer) {
-                            cyContainer.style.visibility = 'visible';
-                        }
+                        if (cyContainer) cyContainer.style.visibility = 'visible';
+                        console.log('[hierarchy] Preset fallback layout finished');
                     }
                 } catch (e) {
-                    console.warn('Error using fcose layout:', e.message, '- falling back to preset layout');
+                    console.warn('[hierarchy] Error using fcose layout:', e.message, '- falling back to preset layout');
+                    this._hierarchyLayoutRef = null;
                     this.state.cy.layout({ name: 'preset' }).run();
                     this.common.forceApplyCurveStyles();
-
-                    // Fit the view to show all nodes with padding before showing container
                     this.state.cy.fit(null, 50);
                     this.state.cy.center();
                     this.state.cy.forceRender();
-
-                    // Show container after fallback layout and zoom complete
                     const cyContainer = document.getElementById('cy');
-                    if (cyContainer) {
-                        cyContainer.style.visibility = 'visible';
-                    }
+                    if (cyContainer) cyContainer.style.visibility = 'visible';
+                    console.log('[hierarchy] Preset fallback (after error) finished');
                 }
             } else {
-                // No graph nodes, but still update curve styles
                 this.common.forceApplyCurveStyles();
-
-                // Fit the view to show all nodes with padding before showing container
                 this.state.cy.fit(null, 50);
                 this.state.cy.center();
                 this.state.cy.forceRender();
-
-                // Show container after styling and zoom complete
                 const cyContainer = document.getElementById('cy');
-                if (cyContainer) {
-                    cyContainer.style.visibility = 'visible';
-                }
+                if (cyContainer) cyContainer.style.visibility = 'visible';
+                console.log('[hierarchy] No graph nodes; layout finished');
             }
         }, 100);
     }
@@ -3012,6 +3049,10 @@ export class HierarchyModule {
                     instancesUpdated++;
                 });
 
+                // CRITICAL: End the batch so Cytoscape flushes updates; without this the visualizer
+                // never updates (no pan/zoom/select) and export still shows correct state.
+                this.state.cy.endBatch();
+
                 // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
                 this.recalculateHostIndicesForTemplates();
 
@@ -3025,19 +3066,25 @@ export class HierarchyModule {
                 this.state.cy.style().update();
                 this.state.cy.forceRender();
 
-                // Defer layout calculation to ensure nodes are fully rendered and bounding boxes are accurate
+                // Defer layout calculation to next tick so the UI can update first (avoids freeze)
+                const self = this;
                 setTimeout(() => {
-                    this.calculateLayout();
-                    window.saveDefaultLayout?.();
-                    this.state.cy.fit(null, 50);
-
-                    // Apply curves and update status after layout is done
-                    setTimeout(() => {
-                        this.common.forceApplyCurveStyles();
-                        window.updatePortConnectionStatus?.();
-                        this.state.cy.forceRender();
-                    }, 50);
-                }, 50);
+                    if (!self.state.cy || self.state.mode !== 'hierarchy') return;
+                    try {
+                        self.calculateLayout();
+                        window.saveDefaultLayout?.();
+                        self.state.cy.fit(null, 50);
+                        setTimeout(() => {
+                            if (self.common && typeof self.common.forceApplyCurveStyles === 'function') {
+                                self.common.forceApplyCurveStyles();
+                            }
+                            window.updatePortConnectionStatus?.();
+                            self.state.cy.forceRender();
+                        }, 50);
+                    } catch (e) {
+                        console.error('[hierarchy] addGraph (inside template) layout error:', e?.message ?? e);
+                    }
+                }, 0);
 
                 // Log success message
                 console.log(`Successfully added graph template "${selectedTemplate}" as "${graphLabel}" to ${instancesUpdated} instance(s) of template "${parentTemplateName}"!`);
@@ -3677,6 +3724,8 @@ export class HierarchyModule {
                     window.showExportStatus(`Successfully created template "${newTemplateName}"${contentInfo} and added instance "${graphLabel}"`, 'success');
                 }
             }
+
+            this.refreshConnectionFilterDropdowns();
 
         } catch (error) {
             console.error('Error creating new template:', error);
@@ -4628,6 +4677,8 @@ export class HierarchyModule {
 
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();
+
+        this.refreshConnectionFilterDropdowns();
     }
 
     /**
@@ -4858,6 +4909,7 @@ export class HierarchyModule {
         const allEdgesToAdd = [];
         const allDeferredConnections = [];
 
+        console.log('[hierarchy] moveGraphInstanceToTemplate: instantiating for', targetInstances.length, 'target(s)');
         targetInstances.forEach(targetInstance => {
             const nodesToAdd = [];
             const edgesToAdd = [];
@@ -4894,6 +4946,7 @@ export class HierarchyModule {
         });
 
         // Add all nodes first (batched with edges below)
+        console.log('[hierarchy] moveGraphInstanceToTemplate: adding', allNodesToAdd.length, 'nodes to cy');
         this.state.cy.startBatch();
         this.state.cy.add(allNodesToAdd);
 
@@ -4935,10 +4988,26 @@ export class HierarchyModule {
         console.log(`[moveGraphInstanceToTemplate] Added ${allNodesToAdd.length} nodes and ${allEdgesToAdd.length} edges across ${targetInstances.length} target instance(s)`);
 
         // Recalculate host indices
+        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates start');
         this.recalculateHostIndicesForTemplates();
-
+        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates done');
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();
+
+        this.refreshConnectionFilterDropdowns();
+        console.log('[hierarchy] moveGraphInstanceToTemplate: done');
+    }
+
+    /**
+     * Refresh both Connection Options filter dropdowns to match current graph/templates.
+     * Call after any hierarchy operation that adds/removes nodes or templates.
+     */
+    refreshConnectionFilterDropdowns() {
+        if (!this.state || !this.state.cy) {
+            return;
+        }
+        window.populateNodeFilterDropdown?.();
+        this.populateTemplateFilterDropdown();
     }
 
     /**
@@ -5276,6 +5345,26 @@ export class HierarchyModule {
             delete this.state.data.currentData.metadata.graph_templates[oldTemplateName];
         }
 
+        // Update metadata.initialRootTemplate so cabling descriptor export uses the new name
+        if (this.state.data.currentData?.metadata?.initialRootTemplate === oldTemplateName) {
+            this.state.data.currentData.metadata.initialRootTemplate = newTemplateName;
+        }
+
+        // Update all graph_template references inside other templates' children (for export)
+        const gt = this.state.data.currentData?.metadata?.graph_templates;
+        if (gt) {
+            Object.keys(gt).forEach((tplName) => {
+                const tpl = gt[tplName];
+                if (tpl?.children) {
+                    tpl.children.forEach((child) => {
+                        if (child.graph_template === oldTemplateName) {
+                            child.graph_template = newTemplateName;
+                        }
+                    });
+                }
+            });
+        }
+
         // Refresh the connection legend to reflect the new template name
         if (this.state.data.currentData) {
             if (window.updateConnectionLegend && typeof window.updateConnectionLegend === 'function') {
@@ -5380,21 +5469,37 @@ export class HierarchyModule {
                 throw new Error(`Cannot move node of type "${nodeType}". Only shelf and graph nodes can be moved.`);
             }
 
+            console.log('[hierarchy] executeMoveToTemplate: move done, deferring layout');
+
             // Close dialog and clear selections
             if (window.clearAllSelections && typeof window.clearAllSelections === 'function') {
                 window.clearAllSelections();
             }
 
-            // Recalculate layout
-            this.calculateLayout();
-            window.saveDefaultLayout?.();
-
+            // Show success immediately; defer heavy layout/save so the UI doesn't freeze
             if (window.showExportStatus && typeof window.showExportStatus === 'function') {
                 const successMessage = isMovingToRoot
                     ? `Successfully moved "${nodeLabel}" to root-instance`
                     : `Successfully moved "${nodeLabel}" to template "${targetTemplateName}"`;
                 window.showExportStatus(successMessage, 'success');
             }
+
+            // Defer layout and save to next tick so visualizer stays responsive (avoids freeze after move)
+            const self = this;
+            setTimeout(() => {
+                if (!self.state.cy || self.state.mode !== 'hierarchy') return;
+                try {
+                    console.log('[hierarchy] executeMoveToTemplate: layout start');
+                    self.calculateLayout();
+                    console.log('[hierarchy] executeMoveToTemplate: layout done');
+                    window.saveDefaultLayout?.();
+                    if (self.common && typeof self.common.forceApplyCurveStyles === 'function') {
+                        self.common.forceApplyCurveStyles();
+                    }
+                } catch (e) {
+                    console.error('[hierarchy] executeMoveToTemplate: layout/save error', e?.message ?? e);
+                }
+            }, 0);
 
         } catch (error) {
             console.error('Error moving instance:', error);
