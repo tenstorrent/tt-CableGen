@@ -4,7 +4,8 @@
   "description": "CableGen Network Visualization Tool",
   "type": "module",
   "scripts": {
-    "test": "jest",
+    "test": "jest --runInBand --detectOpenHandles --config jest.config.cjs",
+    "test:ci": "jest --runInBand --forceExit --config jest.config.cjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:coverage:html": "jest --coverage --coverageReporters=html",

@@ -360,6 +360,9 @@ export class LocationModule {
 
         console.log(`Location layout: ${uniqueHalls.length} halls, ${allAisles.size} aisles (showing halls: ${shouldShowHalls}, aisles: ${shouldShowAisles})`);
 
+        // Remove empty hall/aisle/rack compounds first so they are not reused in existingHalls/existingAisles
+        this._removeEmptyLocationNodes();
+
         // Stacked hall/aisle layout constants (rack horizontal spacing is from node inside width + RACK_MIN_GAP)
         const hallSpacing = 1200;
         const aisleSpacing = 800; // Vertical spacing between aisles (no horizontal offset)
@@ -576,6 +579,9 @@ export class LocationModule {
             hallIndex++;
         });
 
+        // Remove empty hall/aisle/rack compounds left after reparenting (e.g. after aisle/hall edits)
+        this._removeEmptyLocationNodes();
+
         this.state.cy.endBatch();
 
         console.log('Location-based layout applied with hall > aisle > rack > shelf hierarchy');
@@ -688,6 +694,10 @@ export class LocationModule {
      * Use this when the user toggles from hierarchy to location mode.
      */
     switchMode() {
+        // Stop any running hierarchy layout so the visualizer doesn't stay frozen
+        if (typeof window.hierarchyModule?.stopLayout === 'function') {
+            window.hierarchyModule.stopLayout();
+        }
         // Clear all selections (including Cytoscape selections) when switching modes
         if (this.common && typeof this.common.clearAllSelections === 'function') {
             this.common.clearAllSelections();
@@ -1272,6 +1282,37 @@ export class LocationModule {
     }
 
     /**
+     * Remove hall, aisle, and rack compound nodes that have no children.
+     * Call after location hierarchy changes (e.g. after reparenting racks) so the visualizer
+     * does not leave empty compounds. Removes bottom-up: empty racks, then empty aisles, then empty halls.
+     */
+    _removeEmptyLocationNodes() {
+        if (!this.state.cy) return;
+        let removed = true;
+        while (removed) {
+            removed = false;
+            // Empty rack: no shelf (or other) children
+            const emptyRacks = this.state.cy.nodes('[type="rack"]').filter((rack) => rack.children().length === 0);
+            if (emptyRacks.length > 0) {
+                emptyRacks.remove();
+                removed = true;
+            }
+            // Empty aisle: no rack (or other) children
+            const emptyAisles = this.state.cy.nodes('[type="aisle"]').filter((aisle) => aisle.children().length === 0);
+            if (emptyAisles.length > 0) {
+                emptyAisles.remove();
+                removed = true;
+            }
+            // Empty hall: no aisle or rack children
+            const emptyHalls = this.state.cy.nodes('[type="hall"]').filter((hall) => hall.children().length === 0);
+            if (emptyHalls.length > 0) {
+                emptyHalls.remove();
+                removed = true;
+            }
+        }
+    }
+
+    /**
      * Create node data structures for hall/aisle/rack (for use in switchMode where we build newElements array)
      * Returns node data structures that can be added to newElements array, not added directly to cytoscape
      * @param {Object} params - Parameters object
@@ -1442,14 +1483,8 @@ export class LocationModule {
         let aisleNode = null;
         let rackNode = null;
 
-        // Normalize rack number first
+        // Normalize rack number first (optional when only creating hall/aisle for reparenting an existing rack)
         const normalizedRackNum = rackNum !== undefined ? this._normalizeRackNum(rackNum) : null;
-
-        // Enforce hierarchy: If Aisle (higher level compared to Rack) is specified, Rack (lower level) MUST be expected
-        if (aisle && normalizedRackNum === null) {
-            console.warn('[findOrCreateLocationNodes] Aisle (higher level) specified but rackNum (lower level) is missing - if aisle is specified, rackNum must be specified');
-            return { hallNode: null, aisleNode: null, rackNode: null };
-        }
 
         // Find existing nodes first (if not provided)
         const existingNodes = this._findExistingLocationNodes({ hall, aisle, rackNum: normalizedRackNum });
@@ -1514,15 +1549,15 @@ export class LocationModule {
                     label: `Aisle ${aisle}`,
                     type: 'aisle',
                     hall: hall,
-                    aisle: aisle,
-                    parent: hallNode.id()
+                    aisle: aisle
                 };
+                if (hallNode) aisleData.parent = hallNode.id();
                 this.state.cy.add({
                     data: aisleData,
                     position: position || { x: 200, y: 300 }
                 });
                 aisleNode = this.state.cy.getElementById(aisleId);
-            } else {
+            } else if (hallNode) {
                 // Ensure aisle is under correct hall parent
                 aisleNode.move({ parent: hallNode.id() });
             }
@@ -2722,17 +2757,14 @@ export class LocationModule {
             this.recolorConnections();
         }
 
-        // If rack or shelf_u changed in location mode, automatically reset layout to properly reposition nodes
-        // In hierarchy mode, location changes don't affect the visualization layout
-        if ((rackChanged || shelfUChanged) && mode === 'location') {
-
-            // Call resetLayout to recalculate positions
-            // Use setTimeout to ensure the DOM updates are complete
+        // If rack, shelf_u, or hall/aisle changed in location mode, reset layout so the location hierarchy
+        // is rebuilt: new aisle/hall compounds are created, racks reparented, and empty compounds removed.
+        // In hierarchy mode, location changes don't affect the visualization layout.
+        if ((rackChanged || shelfUChanged || hallChanged || aisleChanged) && mode === 'location') {
             setTimeout(() => {
                 window.resetLayout?.();
             }, 100);
         } else {
-            // Show success message
             window.showExportStatus?.('Shelf node updated successfully', 'success');
         }
     }
