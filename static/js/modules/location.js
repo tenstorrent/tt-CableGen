@@ -360,6 +360,9 @@ export class LocationModule {
 
         console.log(`Location layout: ${uniqueHalls.length} halls, ${allAisles.size} aisles (showing halls: ${shouldShowHalls}, aisles: ${shouldShowAisles})`);
 
+        // Remove empty hall/aisle/rack compounds first so they are not reused in existingHalls/existingAisles
+        this._removeEmptyLocationNodes();
+
         // Stacked hall/aisle layout constants (rack horizontal spacing is from node inside width + RACK_MIN_GAP)
         const hallSpacing = 1200;
         const aisleSpacing = 800; // Vertical spacing between aisles (no horizontal offset)
@@ -1480,14 +1483,8 @@ export class LocationModule {
         let aisleNode = null;
         let rackNode = null;
 
-        // Normalize rack number first
+        // Normalize rack number first (optional when only creating hall/aisle for reparenting an existing rack)
         const normalizedRackNum = rackNum !== undefined ? this._normalizeRackNum(rackNum) : null;
-
-        // Enforce hierarchy: If Aisle (higher level compared to Rack) is specified, Rack (lower level) MUST be expected
-        if (aisle && normalizedRackNum === null) {
-            console.warn('[findOrCreateLocationNodes] Aisle (higher level) specified but rackNum (lower level) is missing - if aisle is specified, rackNum must be specified');
-            return { hallNode: null, aisleNode: null, rackNode: null };
-        }
 
         // Find existing nodes first (if not provided)
         const existingNodes = this._findExistingLocationNodes({ hall, aisle, rackNum: normalizedRackNum });
@@ -1552,15 +1549,15 @@ export class LocationModule {
                     label: `Aisle ${aisle}`,
                     type: 'aisle',
                     hall: hall,
-                    aisle: aisle,
-                    parent: hallNode.id()
+                    aisle: aisle
                 };
+                if (hallNode) aisleData.parent = hallNode.id();
                 this.state.cy.add({
                     data: aisleData,
                     position: position || { x: 200, y: 300 }
                 });
                 aisleNode = this.state.cy.getElementById(aisleId);
-            } else {
+            } else if (hallNode) {
                 // Ensure aisle is under correct hall parent
                 aisleNode.move({ parent: hallNode.id() });
             }
