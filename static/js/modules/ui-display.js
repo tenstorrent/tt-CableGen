@@ -76,6 +76,21 @@ export class UIDisplayModule {
             currentModeDiv.innerHTML = '<strong>🌳 Logical Hierarchy View</strong>';
             descriptionDiv.textContent = 'Organized by graph templates and instances (ignores physical location)';
 
+            // Show Galaxy mesh view toggle (BH, WH - global switch)
+            const bhSection = document.getElementById('bhGalaxyExternalPortsSection');
+            const bhToggle = document.getElementById('bhGalaxyExternalPortsToggle');
+            if (bhSection && bhToggle) {
+                bhSection.style.display = 'block';
+                bhToggle.checked = this.state.ui.bhGalaxyExternalPortsMode;
+                if (!bhToggle._bhGalaxyHandlerAttached) {
+                    bhToggle._bhGalaxyHandlerAttached = true;
+                    bhToggle.addEventListener('change', () => {
+                        this.state.ui.bhGalaxyExternalPortsMode = bhToggle.checked;
+                        this.commonModule._refreshBhGalaxyShelves();
+                    });
+                }
+            }
+
             // Hide physical fields, show logical message
             if (nodePhysicalFields) nodePhysicalFields.style.display = 'none';
             if (nodeLogicalMessage) nodeLogicalMessage.style.display = 'block';
@@ -88,6 +103,10 @@ export class UIDisplayModule {
             indicator.style.borderColor = '#0c5460';
             currentModeDiv.innerHTML = '<strong>📍 Physical Location View</strong>';
             descriptionDiv.textContent = 'Organized by physical location: hall/aisle/rack/shelf (ignores logical topology)';
+
+            // Hide Galaxy mesh view toggle (hierarchy only)
+            const bhSectionLoc = document.getElementById('bhGalaxyExternalPortsSection');
+            if (bhSectionLoc) bhSectionLoc.style.display = 'none';
 
             // Show physical fields, hide logical message
             if (nodePhysicalFields) nodePhysicalFields.style.display = 'block';
