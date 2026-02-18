@@ -13,8 +13,46 @@ import {
     SHELF_LAYOUT_PORT_EXTENT,
     SHELF_LAYOUT_PORT_SIZE
 } from '../config/node-types.js';
+import { getBhGalaxyPortEdge } from '../config/bh-galaxy-ports.js';
+import { getWhGalaxyPortEdge } from '../config/wh-galaxy-ports.js';
 import { LAYOUT_CONSTANTS, CONNECTION_COLORS } from '../config/constants.js';
 import { ExpandCollapseModule } from './expand-collapse.js';
+
+/** BH Galaxy: T1 top-left, T2 bottom-left, T3 top-right, T4 bottom-right */
+const GALAXY_MESH_LAYOUT_BH = {
+    trayGridPos: (cx, cy, h) => ({
+        1: { x: cx - h, y: cy - h },
+        2: { x: cx - h, y: cy + h },
+        3: { x: cx + h, y: cy - h },
+        4: { x: cx + h, y: cy + h }
+    }),
+    topTrays: [1, 3],
+    bottomTrays: [2, 4],
+    leftTrays: [1, 2],
+    rightTrays: [3, 4],
+    horizontalSpanFraction: 0.9,
+    verticalOuterSpanFraction: 0.9,  // Tighter spacing for ports 3,4,5,6
+    verticalInnerSpanFraction: 0.9,
+    trayMinWidth: 140,
+    trayMinHeight: 200,
+    // BH: top/bottom ports at tray edge; portOffsetH/innerPortOffsetH override when set
+    useTrayEdgeForHorizontal: true  // use halfStep + trayMinHeight/2 for top/bottom
+};
+
+/** WH Galaxy (from chassis diagram): T1 top-left, T2 top-right, T3 bottom-left, T4 bottom-right */
+const GALAXY_MESH_LAYOUT_WH = {
+    trayGridPos: (cx, cy, h) => ({
+        1: { x: cx - h, y: cy - h },
+        2: { x: cx + h, y: cy - h },
+        3: { x: cx - h, y: cy + h },
+        4: { x: cx + h, y: cy + h }
+    }),
+    topTrays: [1, 2],
+    bottomTrays: [3, 4],
+    leftTrays: [1, 3],
+    rightTrays: [2, 4],
+    horizontalSpanFraction: 0.9  // Ports 1,2 closer together (BH uses full span implicitly)
+};
 
 export class CommonModule {
     constructor(state, nodeFactory) {
@@ -61,7 +99,26 @@ export class CommonModule {
         const trays = shelfNode.children('[type="tray"]');
         if (trays.length === 0) return;
 
-        // Use uniform grid step so adjacent ports have same distance in all directions
+        // Galaxy mesh layout (hierarchy mode only, optional view) - BH_GALAXY and WH_GALAXY
+        const nodeTypeUpper = String(nodeType).toUpperCase();
+        const useMeshLayout = this.state.mode === 'hierarchy' &&
+            this.state.ui.bhGalaxyExternalPortsMode &&
+            (nodeTypeUpper.includes('BH_GALAXY') || nodeTypeUpper.includes('WH_GALAXY'));
+
+        if (useMeshLayout) {
+            const isBh = nodeTypeUpper.includes('BH_GALAXY');
+            const getPortEdge = isBh ? getBhGalaxyPortEdge : getWhGalaxyPortEdge;
+            const layout = isBh ? GALAXY_MESH_LAYOUT_BH : GALAXY_MESH_LAYOUT_WH;
+            this._arrangeGalaxyMesh(shelfNode, shelfPos, config, trays, getPortEdge, layout);
+            shelfNode.descendants('[type="port"]').forEach((port) => port.addClass('mesh-port-labels'));
+            return;
+        }
+        shelfNode.descendants('[type="port"]').forEach((port) => {
+            port.removeClass('mesh-port-labels');
+            port.style('label', '');
+        });
+
+        // Default layout
         const trayStep = SHELF_LAYOUT_TRAY_HEIGHT + SHELF_LAYOUT_TRAY_SPACING;
         const portStep = SHELF_LAYOUT_PORT_WIDTH + SHELF_LAYOUT_PORT_SPACING;
 
@@ -119,6 +176,137 @@ export class CommonModule {
 
                 port.position({ x: portX, y: portY });
             });
+        });
+    }
+
+    /**
+     * Galaxy mesh layout: 2x2 tray grid with ports in corners of each tray (L-shape per tray).
+     * Uses mesh-specific spacing to avoid tray/port overlap.
+     * @param {Function} getPortEdge - (trayId, portId) => { edge, order } or null
+     * @param {Object} layout - { trayGridPos(cx,cy,h), topTrays, bottomTrays, leftTrays, rightTrays }
+     * @private
+     */
+    _arrangeGalaxyMesh(shelfNode, shelfPos, config, trays, getPortEdge, layout) {
+        // Mesh-specific spacing: trays spaced to avoid overlap; port rows relative to shelf center
+        const meshTrayStep = 346;  // Center-to-center between trays (~33% more than 260)
+        const halfStep = meshTrayStep / 2;
+        const portOffset = halfStep + 80;   // Default: distance from shelf center to outer port row/column
+        const innerPortOffset = halfStep + 45;  // Default: inner tier stepped back from outer
+        // BH: top/bottom at tray edge when useTrayEdgeForHorizontal + trayMinHeight
+        const horizontalEdgeExtra = 10;  // Push top/bottom ports further from center
+        const portOffsetH = (layout.useTrayEdgeForHorizontal && layout.trayMinHeight != null)
+            ? halfStep + layout.trayMinHeight / 2 + horizontalEdgeExtra : portOffset;
+        const innerPortOffsetH = (layout.useTrayEdgeForHorizontal && layout.trayMinHeight != null)
+            ? portOffsetH - 35 : innerPortOffset;
+        const centerGap = 30;     // Gap at center to prevent port overlap between adjacent trays
+        const cx = shelfPos.x;
+        const cy = shelfPos.y;
+        const trayGridPos = layout.trayGridPos(cx, cy, halfStep);
+
+        const sortedTrays = trays.sort((a, b) => (a.data('tray') || 0) - (b.data('tray') || 0));
+
+        // Collect ports per tray: { trayId: { horizontal: [...], vertical: [...] } }
+        const trayPorts = { 1: { horizontal: [], vertical: [] }, 2: { horizontal: [], vertical: [] }, 3: { horizontal: [], vertical: [] }, 4: { horizontal: [], vertical: [] } };
+
+        sortedTrays.forEach((tray) => {
+            const trayId = tray.data('tray') || 0;
+            const pos = trayGridPos[trayId];
+            if (!pos) return;
+            tray.position({ x: pos.x, y: pos.y });
+            if (layout.trayMinWidth != null || layout.trayMinHeight != null) {
+                const style = {};
+                if (layout.trayMinWidth != null) style['min-width'] = layout.trayMinWidth + 'px';
+                if (layout.trayMinHeight != null) style['min-height'] = layout.trayMinHeight + 'px';
+                tray.style(style);
+            } else {
+                tray.style({ 'min-width': '', 'min-height': '' });  // Clear when WH or default layout
+            }
+
+            const ports = tray.children('[type="port"]');
+            const sortedPorts = ports.sort((a, b) => {
+                const aNum = parseInt((a.data('label') || '').replace('P', '')) || 0;
+                const bNum = parseInt((b.data('label') || '').replace('P', '')) || 0;
+                return aNum - bNum;
+            });
+
+            sortedPorts.forEach((port) => {
+                const portNum = port.data('port') != null ? port.data('port') : (parseInt(String(port.data('label') || '').replace('P', ''), 10) || 0);
+                const edgeInfo = getPortEdge(trayId, portNum);
+                if (edgeInfo) {
+                    const isHorizontal = edgeInfo.edge === 'top' || edgeInfo.edge === 'bottom';
+                    const tier = edgeInfo.tier || 'outer';
+                    const arr = isHorizontal ? trayPorts[trayId].horizontal : trayPorts[trayId].vertical;
+                    arr.push({ order: edgeInfo.order, port, tier });
+                }
+            });
+        });
+
+        // Place ports in each tray's corner; constrain rows/columns to quadrants to avoid overlap.
+        // Mirror across 2x2 axes: right trays reverse horizontal order (port 2 inside, 1 outside);
+        // bottom trays reverse vertical order (mirror of top tray).
+        const placeRow = (list, lo, hi, fixedCoord, horizontal, reverse) => {
+            list.sort((a, b) => a.order - b.order);
+            const n = list.length;
+            if (n === 0) return;
+            list.forEach((item, idx) => {
+                const port = item.port;
+                port.style({ 'width': `${SHELF_LAYOUT_PORT_SIZE}px`, 'height': `${SHELF_LAYOUT_PORT_SIZE}px` });
+                const t = n === 1 ? 0.5 : (reverse ? 1 - idx / (n - 1) : idx / (n - 1));
+                const val = lo + t * (hi - lo);
+                port.position(horizontal ? { x: val, y: fixedCoord } : { x: fixedCoord, y: val });
+            });
+        };
+
+        const placeTier = (list, lo, hi, fixedCoord, horizontal, reverse) => {
+            if (list.length === 0) return;
+            placeRow(list, lo, hi, fixedCoord, horizontal, reverse);
+        };
+
+        [1, 2, 3, 4].forEach((trayId) => {
+            const { horizontal, vertical } = trayPorts[trayId];
+            const horizOuter = horizontal.filter((p) => (p.tier || 'outer') === 'outer');
+            const horizInner = horizontal.filter((p) => p.tier === 'inner');
+            const vertOuter = vertical.filter((p) => (p.tier || 'outer') === 'outer');
+            const vertInner = vertical.filter((p) => p.tier === 'inner');
+
+            const isTop = layout.topTrays.indexOf(trayId) >= 0;
+            const isLeft = layout.leftTrays.indexOf(trayId) >= 0;
+            const isRight = layout.rightTrays.indexOf(trayId) >= 0;
+            const isBottom = layout.bottomTrays.indexOf(trayId) >= 0;
+
+            const hSpanFrac = layout.horizontalSpanFraction != null ? layout.horizontalSpanFraction : 1.0;
+
+            // Horizontal ports: top or bottom row; x constrained to tray's half with center gap
+            let xLo = isLeft ? cx - halfStep : cx + centerGap;
+            let xHi = isLeft ? cx - centerGap : cx + halfStep;
+            if (hSpanFrac < 1.0) {
+                const mid = (xLo + xHi) / 2;
+                const halfSpan = (xHi - xLo) * hSpanFrac / 2;
+                xLo = mid - halfSpan;
+                xHi = mid + halfSpan;
+            }
+            const yHOuter = isTop ? cy - portOffsetH : cy + portOffsetH;
+            const yHInner = isTop ? cy - innerPortOffsetH : cy + innerPortOffsetH;
+            placeTier(horizOuter, xLo, xHi, yHOuter, true, isRight);
+            placeTier(horizInner, xLo, xHi, yHInner, true, isRight);
+
+            // Vertical ports: align y with horizontal row at corner (reduces vertical gap, forms L)
+            const xVOuter = isLeft ? cx - portOffset : cx + portOffset;
+            const xVInner = isLeft ? cx - innerPortOffset : cx + innerPortOffset;
+            let yLo = isTop ? cy - portOffsetH : cy + centerGap;
+            let yHi = isTop ? cy - centerGap : cy + portOffsetH;
+            const vOuterFrac = layout.verticalOuterSpanFraction != null ? layout.verticalOuterSpanFraction : 1.0;
+            const vInnerFrac = layout.verticalInnerSpanFraction != null ? layout.verticalInnerSpanFraction : 1.0;
+            const compressSpan = (lo, hi, frac) => {
+                if (frac >= 1.0) return { lo, hi };
+                const mid = (lo + hi) / 2;
+                const halfSpan = (hi - lo) * frac / 2;
+                return { lo: mid - halfSpan, hi: mid + halfSpan };
+            };
+            const outerRange = compressSpan(yLo, yHi, vOuterFrac);
+            const innerRange = compressSpan(yLo, yHi, vInnerFrac);
+            placeTier(vertOuter, outerRange.lo, outerRange.hi, xVOuter, false, isBottom);
+            placeTier(vertInner, innerRange.lo, innerRange.hi, xVInner, false, isBottom);
         });
     }
 
@@ -214,6 +402,98 @@ export class CommonModule {
     }
 
     /**
+     * Compute shelf (row, col) positions from connection topology for mesh/leaf level.
+     * Ports 3,4,5,6 on both endpoints → horizontal adjacency; ports 1,2 → vertical.
+     * @param {Array} shelves - Cytoscape shelf nodes
+     * @returns {Array<{shelf, row, col}>} placement per shelf, or null to use default layout
+     * @private
+     */
+    _computeMeshConnectionShelfLayout(shelves) {
+        if (!this.state.cy || shelves.length === 0) return null;
+        const shelfIds = new Set(shelves.map(s => s.id()));
+
+        const getShelfAndPortFromNode = (node) => {
+            let n = node;
+            while (n.length) {
+                if (n.data('type') === 'shelf') {
+                    const portNum = node.data('port') != null ? node.data('port') : (parseInt(String(node.data('label') || '').replace('P', ''), 10) || 0);
+                    return { shelf: n, shelfId: n.id(), portNum };
+                }
+                n = n.parent();
+            }
+            return null;
+        };
+
+        const links = {}; // "id1,id2" -> { h, v }
+        const key = (a, b) => a < b ? `${a},${b}` : `${b},${a}`;
+        this.state.cy.edges().forEach(edge => {
+            const src = this.state.cy.getElementById(edge.data('source'));
+            const tgt = this.state.cy.getElementById(edge.data('target'));
+            if (!src.length || !tgt.length) return;
+            const sa = getShelfAndPortFromNode(src);
+            const sb = getShelfAndPortFromNode(tgt);
+            if (!sa || !sb || !shelfIds.has(sa.shelfId) || !shelfIds.has(sb.shelfId) || sa.shelfId === sb.shelfId) return;
+            const k = key(sa.shelfId, sb.shelfId);
+            if (!links[k]) links[k] = { h: 0, v: 0 };
+            const pa = sa.portNum, pb = sb.portNum;
+            const hPorts = [3, 4, 5, 6];
+            const vPorts = [1, 2];
+            const aInH = hPorts.includes(pa), bInH = hPorts.includes(pb);
+            const aInV = vPorts.includes(pa), bInV = vPorts.includes(pb);
+            if (aInH && bInH) links[k].h++;
+            else if (aInV && bInV) links[k].v++;
+        });
+
+        const pos = {}; // shelfId -> { row, col }
+        const placed = new Set();
+        const first = shelves[0];
+        pos[first.id()] = { row: 0, col: 0 };
+        placed.add(first.id());
+
+        while (placed.size < shelves.length) {
+            let bestShelf = null;
+            let bestPlaced = null;
+            let bestScore = -1;
+            let preferH = false;
+            for (const shelf of shelves) {
+                if (placed.has(shelf.id())) continue;
+                for (const pid of placed) {
+                    const k = key(shelf.id(), pid);
+                    const l = links[k];
+                    if (!l) continue;
+                    if (l.h > bestScore) { bestScore = l.h; bestShelf = shelf; bestPlaced = pid; preferH = true; }
+                    if (l.v > bestScore) { bestScore = l.v; bestShelf = shelf; bestPlaced = pid; preferH = false; }
+                }
+            }
+            if (!bestShelf) {
+                const unplaced = shelves.filter(s => !placed.has(s.id()));
+                bestShelf = unplaced[0];
+                bestPlaced = Array.from(placed)[0];
+                preferH = placed.size % 2 === 1;
+            }
+            const ref = pos[bestPlaced];
+            let nr = ref.row, nc = ref.col;
+            if (preferH) nc += 1;
+            else nr += 1;
+            while (Object.values(pos).some(p => p.row === nr && p.col === nc)) {
+                if (preferH) nc += 1;
+                else nr += 1;
+            }
+            pos[bestShelf.id()] = { row: nr, col: nc };
+            placed.add(bestShelf.id());
+        }
+
+        const minR = Math.min(...Object.values(pos).map(p => p.row));
+        const minC = Math.min(...Object.values(pos).map(p => p.col));
+        const normalized = shelves.map(shelf => ({
+            shelf,
+            row: pos[shelf.id()].row - minR,
+            col: pos[shelf.id()].col - minC
+        }));
+        return normalized;
+    }
+
+    /**
      * Position graph children (shelves and nested graphs) in a grid layout
      * Shared between location and hierarchy modes
      * @param {Object} graphNode - Cytoscape graph node
@@ -267,7 +547,17 @@ export class CommonModule {
                 return preferRowsFirst ? { rows: bestRows, cols: bestCols } : { rows: bestCols, cols: bestRows };
             };
 
-            if (isHierarchyMode) {
+            let connectionLayout = null;
+            const useMeshConnectionLayout = isHierarchyMode && this.state.ui?.bhGalaxyExternalPortsMode
+                && nestedGraphs.length === 0;  // Leaf level (shelves only)
+            if (useMeshConnectionLayout) {
+                connectionLayout = this._computeMeshConnectionShelfLayout(shelves);
+            }
+
+            if (connectionLayout) {
+                gridRows = Math.max(1, 1 + Math.max(...connectionLayout.map(c => c.row)));
+                gridCols = Math.max(1, 1 + Math.max(...connectionLayout.map(c => c.col)));
+            } else if (isHierarchyMode) {
                 // Hierarchy mode: always arrange shelves in a single vertical column
                 gridRows = numShelves;
                 gridCols = 1;
@@ -319,8 +609,15 @@ export class CommonModule {
             const startY = graphPos.y - totalHeight / 2;
 
             shelves.forEach((shelf, index) => {
-                const row = isHierarchyMode ? index % gridRows : Math.floor(index / gridCols);
-                const col = isHierarchyMode ? Math.floor(index / gridRows) : index % gridCols;
+                let row, col;
+                if (connectionLayout) {
+                    const entry = connectionLayout.find(c => c.shelf.id() === shelf.id());
+                    row = entry ? entry.row : index % gridRows;
+                    col = entry ? entry.col : Math.floor(index / gridRows);
+                } else {
+                    row = isHierarchyMode ? index % gridRows : Math.floor(index / gridCols);
+                    col = isHierarchyMode ? Math.floor(index / gridRows) : index % gridCols;
+                }
                 shelf.position({
                     x: startX + margin + col * stepX,
                     y: startY + margin + row * stepY
@@ -819,6 +1116,12 @@ export class CommonModule {
                 }
             },
 
+            // Port labels always visible in mesh mode (Galaxy view)
+            {
+                selector: '.port.mesh-port-labels',
+                style: { 'label': 'data(label)' }
+            },
+
             // Port on hover or selected: move to top layer so they draw above edges
             {
                 selector: '.port.port-hover',
@@ -1247,7 +1550,7 @@ export class CommonModule {
 
         this.state.cy.on('mouseout', 'node.port', (evt) => {
             const port = evt.target;
-            port.style('label', '');
+            if (!port.hasClass('mesh-port-labels')) port.style('label', '');
             port.removeClass('port-hover');
         });
 
@@ -2505,6 +2808,34 @@ export class CommonModule {
         nodeInfo.style.top = '10px';
         nodeInfo.style.left = 'auto';
         nodeInfo.style.display = 'block';
+    }
+
+    /**
+     * Re-arrange all Galaxy (BH_GALAXY, WH_GALAXY) shelves and trigger layout refresh (for mesh view toggle)
+     * @private
+     */
+    _refreshBhGalaxyShelves() {
+        if (!this.state.cy) return;
+        const meshMode = this.state.ui?.bhGalaxyExternalPortsMode;
+        this.state.cy.batch(() => {
+            this.state.cy.nodes('[type="shelf"]').forEach((shelf) => {
+                const nodeType = shelf.data('shelf_node_type') || '';
+                const nt = String(nodeType).toUpperCase();
+                if (nt.includes('BH_GALAXY') || nt.includes('WH_GALAXY')) {
+                    this.arrangeTraysAndPorts(shelf);
+                    const ports = shelf.descendants('[type="port"]');
+                    ports.forEach((port) => {
+                        if (meshMode) {
+                            port.addClass('mesh-port-labels');
+                        } else {
+                            port.removeClass('mesh-port-labels');
+                            port.style('label', '');
+                        }
+                    });
+                }
+            });
+        });
+        window.hierarchyModule?.calculateLayout?.();
     }
 
     /**

@@ -40,7 +40,8 @@ export class VisualizerState {
             notificationTimer: null,
             expandedGraphs: new Set(),
             collapsedGraphs: new Set(),
-            edgeRerouting: new Map() // Maps collapsed node ID -> { edges: [...], originalSources: [...], originalTargets: [...] }
+            edgeRerouting: new Map(), // Maps collapsed node ID -> { edges: [...], originalSources: [...], originalTargets: [...] }
+            bhGalaxyExternalPortsMode: false  // Optional Galaxy mesh view (BH, WH - hierarchy only)
         };
 
         // Clipboard for copy/paste (nodes + internal connections)
@@ -85,6 +86,7 @@ export class VisualizerState {
         this.ui.modalsOpen.clear();
         this.ui.expandedGraphs.clear();
         this.ui.collapsedGraphs.clear();
+        this.ui.bhGalaxyExternalPortsMode = false;
         this.layout.hierarchy = null;
         this.layout.location = null;
         this.clearHistory();
