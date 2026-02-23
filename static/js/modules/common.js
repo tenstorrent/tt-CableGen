@@ -118,7 +118,11 @@ export class CommonModule {
             port.style('label', '');
         });
 
-        // Default layout
+        // Default layout: clear mesh tray styles so default tray appearance applies
+        shelfNode.children('[type="tray"]').forEach((tray) => {
+            tray.style({ 'min-width': '', 'min-height': '', 'width': '', 'height': '' });
+        });
+
         const trayStep = SHELF_LAYOUT_TRAY_HEIGHT + SHELF_LAYOUT_TRAY_SPACING;
         const portStep = SHELF_LAYOUT_PORT_WIDTH + SHELF_LAYOUT_PORT_SPACING;
 
@@ -753,7 +757,7 @@ export class CommonModule {
             {
                 selector: 'edge',
                 style: {
-                    'width': 3,
+                    'width': 2,
                     'line-color': 'data(color)',
                     'line-opacity': 1,
                     'curve-style': 'bezier',
@@ -767,7 +771,7 @@ export class CommonModule {
             {
                 selector: 'edge:selected',
                 style: {
-                    'width': 4,
+                    'width': 2,
                     'line-color': 'data(color)',
                     'line-opacity': 1,
                     'z-index': 11,
@@ -792,7 +796,7 @@ export class CommonModule {
                 selector: '.new-connection',
                 style: {
                     'line-color': '#ff6600',
-                    'width': 4,
+                    'width': 2,
                     'line-style': 'dashed',
                     'opacity': 0.8,
                     'z-index': 200
@@ -804,7 +808,7 @@ export class CommonModule {
                 selector: '.selected-connection',
                 style: {
                     'line-color': '#ff0000',
-                    'width': 5,
+                    'width': 2,
                     'line-opacity': 1,
                     'z-index': 190,
                     'overlay-color': '#ff0000',
