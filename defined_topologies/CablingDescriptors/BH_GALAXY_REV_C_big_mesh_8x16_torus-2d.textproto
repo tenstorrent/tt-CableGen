@@ -240,6 +240,230 @@ graph_templates {
             port_id: 6
           }
         }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 2
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 1
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 3
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 2
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 3
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 2
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 1
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 3
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 2
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 1
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group1"
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node1"
+            tray_id: 3
+            port_id: 6
+          }
+        }
       }
     }
   }
@@ -250,13 +474,13 @@ graph_templates {
     children {
       name: "dim1_node0"
       node_ref {
-        node_descriptor: "WH_GALAXY"
+        node_descriptor: "BH_GALAXY_REV_C"
       }
     }
     children {
       name: "dim1_node1"
       node_ref {
-        node_descriptor: "WH_GALAXY"
+        node_descriptor: "BH_GALAXY_REV_C"
       }
     }
     internal_connections {

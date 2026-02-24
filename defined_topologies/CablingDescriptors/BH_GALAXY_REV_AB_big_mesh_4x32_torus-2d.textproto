@@ -1,14 +1,8 @@
 graph_templates {
-  key: "big_mesh_8x16"
+  key: "big_mesh_4x32"
   value {
     children {
       name: "dim0_group0"
-      graph_ref {
-        graph_template: "big_mesh_dim1"
-      }
-    }
-    children {
-      name: "dim0_group1"
       graph_ref {
         graph_template: "big_mesh_dim1"
       }
@@ -20,11 +14,11 @@ graph_templates {
           port_a {
             path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 2
+            tray_id: 3
             port_id: 3
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
             tray_id: 1
             port_id: 3
@@ -38,9 +32,9 @@ graph_templates {
             port_id: 3
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 2
             port_id: 3
           }
         }
@@ -48,11 +42,11 @@ graph_templates {
           port_a {
             path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 2
+            tray_id: 3
             port_id: 4
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
             tray_id: 1
             port_id: 4
@@ -66,9 +60,9 @@ graph_templates {
             port_id: 4
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 2
             port_id: 4
           }
         }
@@ -76,11 +70,11 @@ graph_templates {
           port_a {
             path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 2
+            tray_id: 3
             port_id: 5
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
             tray_id: 1
             port_id: 5
@@ -94,9 +88,9 @@ graph_templates {
             port_id: 5
           }
           port_b {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 2
             port_id: 5
           }
         }
@@ -104,231 +98,7 @@ graph_templates {
           port_a {
             path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 2
-            port_id: 6
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 1
-            port_id: 6
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 4
-            port_id: 6
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node0"
             tray_id: 3
-            port_id: 6
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 2
-            port_id: 3
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 1
-            port_id: 3
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 4
-            port_id: 3
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 3
-            port_id: 3
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 2
-            port_id: 4
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 1
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 4
-            port_id: 4
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 3
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 2
-            port_id: 5
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 1
-            port_id: 5
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 4
-            port_id: 5
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 3
-            port_id: 5
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 2
-            port_id: 6
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 1
-            port_id: 6
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group0"
-            path: "dim1_node1"
-            tray_id: 4
-            port_id: 6
-          }
-          port_b {
-            path: "dim0_group1"
-            path: "dim1_node1"
-            tray_id: 3
-            port_id: 6
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 2
-            port_id: 3
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 1
-            port_id: 3
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 4
-            port_id: 3
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 3
-            port_id: 3
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 2
-            port_id: 4
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 1
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 4
-            port_id: 4
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 3
-            port_id: 4
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 2
-            port_id: 5
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 1
-            port_id: 5
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 4
-            port_id: 5
-          }
-          port_b {
-            path: "dim0_group0"
-            path: "dim1_node0"
-            tray_id: 3
-            port_id: 5
-          }
-        }
-        connections {
-          port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 2
             port_id: 6
           }
           port_b {
@@ -340,23 +110,23 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "dim0_group1"
-            path: "dim1_node0"
-            tray_id: 4
-            port_id: 6
-          }
-          port_b {
             path: "dim0_group0"
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 4
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node0"
+            tray_id: 2
             port_id: 6
           }
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 2
+            tray_id: 3
             port_id: 3
           }
           port_b {
@@ -368,7 +138,7 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
             tray_id: 4
             port_id: 3
@@ -376,15 +146,15 @@ graph_templates {
           port_b {
             path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 3
+            tray_id: 2
             port_id: 3
           }
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 2
+            tray_id: 3
             port_id: 4
           }
           port_b {
@@ -396,7 +166,7 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
             tray_id: 4
             port_id: 4
@@ -404,15 +174,15 @@ graph_templates {
           port_b {
             path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 3
+            tray_id: 2
             port_id: 4
           }
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 2
+            tray_id: 3
             port_id: 5
           }
           port_b {
@@ -424,7 +194,7 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
             tray_id: 4
             port_id: 5
@@ -432,15 +202,15 @@ graph_templates {
           port_b {
             path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 3
+            tray_id: 2
             port_id: 5
           }
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
-            tray_id: 2
+            tray_id: 3
             port_id: 6
           }
           port_b {
@@ -452,7 +222,7 @@ graph_templates {
         }
         connections {
           port_a {
-            path: "dim0_group1"
+            path: "dim0_group0"
             path: "dim1_node1"
             tray_id: 4
             port_id: 6
@@ -460,7 +230,231 @@ graph_templates {
           port_b {
             path: "dim0_group0"
             path: "dim1_node1"
+            tray_id: 2
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
             tray_id: 3
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 3
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 3
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 3
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 3
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 2
+            port_id: 3
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 4
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 2
+            port_id: 4
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 5
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 2
+            port_id: 5
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 6
+          }
+        }
+        connections {
+          port_a {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 6
+          }
+          port_b {
+            path: "dim0_group0"
+            path: "dim1_node3"
+            tray_id: 2
             port_id: 6
           }
         }
@@ -474,13 +468,25 @@ graph_templates {
     children {
       name: "dim1_node0"
       node_ref {
-        node_descriptor: "WH_GALAXY"
+        node_descriptor: "BH_GALAXY_REV_AB"
       }
     }
     children {
       name: "dim1_node1"
       node_ref {
-        node_descriptor: "WH_GALAXY"
+        node_descriptor: "BH_GALAXY_REV_AB"
+      }
+    }
+    children {
+      name: "dim1_node2"
+      node_ref {
+        node_descriptor: "BH_GALAXY_REV_AB"
+      }
+    }
+    children {
+      name: "dim1_node3"
+      node_ref {
+        node_descriptor: "BH_GALAXY_REV_AB"
       }
     }
     internal_connections {
@@ -489,7 +495,7 @@ graph_templates {
         connections {
           port_a {
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 2
             port_id: 1
           }
           port_b {
@@ -506,14 +512,14 @@ graph_templates {
           }
           port_b {
             path: "dim1_node1"
-            tray_id: 2
+            tray_id: 3
             port_id: 1
           }
         }
         connections {
           port_a {
             path: "dim1_node0"
-            tray_id: 3
+            tray_id: 2
             port_id: 2
           }
           port_b {
@@ -530,7 +536,151 @@ graph_templates {
           }
           port_b {
             path: "dim1_node1"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node1"
             tray_id: 2
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node2"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node1"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node2"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node1"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node2"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node2"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node3"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node2"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node3"
+            tray_id: 3
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node3"
+            tray_id: 2
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node3"
+            tray_id: 2
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node3"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 3
             port_id: 2
           }
         }
@@ -539,7 +689,7 @@ graph_templates {
   }
 }
 root_instance {
-  template_name: "big_mesh_8x16"
+  template_name: "big_mesh_4x32"
   child_mappings {
     key: "dim0_group0"
     value {
@@ -557,22 +707,14 @@ root_instance {
             host_id: 1
           }
         }
-      }
-    }
-  }
-  child_mappings {
-    key: "dim0_group1"
-    value {
-      sub_instance {
-        template_name: "big_mesh_dim1"
         child_mappings {
-          key: "dim1_node0"
+          key: "dim1_node2"
           value {
             host_id: 2
           }
         }
         child_mappings {
-          key: "dim1_node1"
+          key: "dim1_node3"
           value {
             host_id: 3
           }

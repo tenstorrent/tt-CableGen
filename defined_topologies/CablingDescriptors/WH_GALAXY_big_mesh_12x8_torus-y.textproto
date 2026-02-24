@@ -1,5 +1,5 @@
 graph_templates {
-  key: "big_mesh_8x8"
+  key: "big_mesh_12x8"
   value {
     children {
       name: "dim0_group0"
@@ -9,6 +9,12 @@ graph_templates {
     }
     children {
       name: "dim0_group1"
+      graph_ref {
+        graph_template: "big_mesh_dim1"
+      }
+    }
+    children {
+      name: "dim0_group2"
       graph_ref {
         graph_template: "big_mesh_dim1"
       }
@@ -136,7 +142,7 @@ graph_templates {
             port_id: 3
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 1
             port_id: 3
@@ -150,7 +156,7 @@ graph_templates {
             port_id: 3
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 3
             port_id: 3
@@ -164,7 +170,7 @@ graph_templates {
             port_id: 4
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 1
             port_id: 4
@@ -178,7 +184,7 @@ graph_templates {
             port_id: 4
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 3
             port_id: 4
@@ -192,7 +198,7 @@ graph_templates {
             port_id: 5
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 1
             port_id: 5
@@ -206,7 +212,7 @@ graph_templates {
             port_id: 5
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 3
             port_id: 5
@@ -220,7 +226,7 @@ graph_templates {
             port_id: 6
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 1
             port_id: 6
@@ -234,7 +240,7 @@ graph_templates {
             port_id: 6
           }
           port_b {
-            path: "dim0_group0"
+            path: "dim0_group2"
             path: "dim1_node0"
             tray_id: 3
             port_id: 6
@@ -256,12 +262,60 @@ graph_templates {
     internal_connections {
       key: "QSFP_DD"
       value {
+        connections {
+          port_a {
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 1
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 1
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node0"
+            tray_id: 3
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 1
+            port_id: 2
+          }
+        }
+        connections {
+          port_a {
+            path: "dim1_node0"
+            tray_id: 4
+            port_id: 2
+          }
+          port_b {
+            path: "dim1_node0"
+            tray_id: 2
+            port_id: 2
+          }
+        }
       }
     }
   }
 }
 root_instance {
-  template_name: "big_mesh_8x8"
+  template_name: "big_mesh_12x8"
   child_mappings {
     key: "dim0_group0"
     value {
@@ -285,6 +339,20 @@ root_instance {
           key: "dim1_node0"
           value {
             host_id: 1
+          }
+        }
+      }
+    }
+  }
+  child_mappings {
+    key: "dim0_group2"
+    value {
+      sub_instance {
+        template_name: "big_mesh_dim1"
+        child_mappings {
+          key: "dim1_node0"
+          value {
+            host_id: 2
           }
         }
       }
