@@ -32,12 +32,21 @@ export const NODE_TYPES = {
         displayName: 'Wormhole Galaxy',
         color: '#2ecc71'
     },
-    'BH_GALAXY': {
+    // BH_GALAXY removed - aliased to BH_GALAXY_REV_AB at import; use REV_AB or REV_C
+    'BH_GALAXY_REV_AB': {
         tray_count: 4,
         ports_per_tray: 14,
         tray_layout: 'vertical',
         shelf_u_height: 6,
-        displayName: 'Blackhole Galaxy',
+        displayName: 'Blackhole Galaxy Rev AB',
+        color: '#e74c3c'
+    },
+    'BH_GALAXY_REV_C': {
+        tray_count: 4,
+        ports_per_tray: 14,
+        tray_layout: 'vertical',
+        shelf_u_height: 6,
+        displayName: 'Blackhole Galaxy Rev C',
         color: '#e74c3c'
     },
     'P150_QB_GLOBAL': {
@@ -134,9 +143,14 @@ export function getNodeConfig(nodeType) {
         normalized = normalized.slice(0, -8); // Remove '_DEFAULT' (8 chars)
     }
 
+    // Alias BH_GALAXY -> BH_GALAXY_REV_AB (BH_GALAXY not used internally; import aliases, legacy may remain)
+    const keyUpper = normalized.toUpperCase();
+    if (normalized === 'BH_GALAXY' || keyUpper === 'BH_GALAXY') {
+        return configCache['BH_GALAXY_REV_AB'] || configCache['bh_galaxy_rev_ab'];
+    }
+
     // Direct key (config keys are uppercase; server/CSV may send lowercase e.g. after secondary import)
     if (configCache[normalized]) return configCache[normalized];
-    const keyUpper = normalized.toUpperCase();
     if (configCache[keyUpper]) return configCache[keyUpper];
     // Case-insensitive fallback for secondary-import node types (e.g. wh_galaxy, bh_galaxy)
     const key = Object.keys(configCache).find((k) => k.toUpperCase() === keyUpper);

@@ -446,8 +446,8 @@ function updateNodeVariationOptions() {
 
     // Node types that support DEFAULT variation
     const supportsDefault = ['N300_LB', 'N300_QB', 'P150_QB_AE'];
-    // Node types that support torus variations
-    const supportsTorus = ['WH_GALAXY', 'BH_GALAXY'];
+    // Node types that support torus variations (BH_GALAXY removed - use REV_AB or REV_C)
+    const supportsTorus = ['WH_GALAXY', 'BH_GALAXY_REV_AB', 'BH_GALAXY_REV_C'];
 
     // Check if selected type supports any variations
     const hasVariations = supportsDefault.includes(selectedType) || supportsTorus.includes(selectedType);
@@ -1368,6 +1368,17 @@ function buildEndpointToNodeId(elements) {
  * @param {string} prefix - Unique prefix for the new guide (e.g. 'm2', 'm3')
  * @returns {Object} Merged { elements, metadata }
  */
+/** Normalize BH_GALAXY -> BH_GALAXY_REV_AB in shelf_node_type (BH_GALAXY not used internally) */
+function normalizeShelfNodeTypeForImport(val) {
+    if (!val || typeof val !== 'string') return val;
+    const u = val.toUpperCase();
+    if (u === 'BH_GALAXY') return 'BH_GALAXY_REV_AB';
+    if (u === 'BH_GALAXY_X_TORUS') return 'BH_GALAXY_REV_AB_X_TORUS';
+    if (u === 'BH_GALAXY_Y_TORUS') return 'BH_GALAXY_REV_AB_Y_TORUS';
+    if (u === 'BH_GALAXY_XY_TORUS') return 'BH_GALAXY_REV_AB_XY_TORUS';
+    return val;
+}
+
 function mergeCablingGuideData(existingData, newData, prefix) {
     const existingEls = existingData?.elements || [];
     const newEls = newData?.elements || [];
@@ -1462,6 +1473,9 @@ function mergeCablingGuideData(existingData, newData, prefix) {
         const data = { ...d };
         const newId = idMap.get(id) ?? makeId(id);
         data.id = newId;
+        if (data.type === 'shelf' && data.shelf_node_type) {
+            data.shelf_node_type = normalizeShelfNodeTypeForImport(data.shelf_node_type);
+        }
         if (data.parent != null) {
             data.parent = resolveParentId(data.parent);
         }

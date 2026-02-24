@@ -2549,7 +2549,9 @@ export class CommonModule {
                 break;
 
             case 'BH_GALAXY':
-                // BH_GALAXY: 14 ports per tray
+            case 'BH_GALAXY_REV_AB':
+            case 'BH_GALAXY_REV_C':
+                // BH_GALAXY kept for legacy display; Rev AB / Rev C: 14 ports per tray (same layout)
                 if (portNumber === 1) return 'ASIC: 5 Channel: 2-3';
                 if (portNumber === 2) return 'ASIC: 1 Channel: 2-3';
                 if (portNumber === 3) return 'ASIC: 1 Channel: 0-1';
@@ -3677,6 +3679,17 @@ export class CommonModule {
         const nodeFields = exportType === 'deployment' ? nodeFieldsForDeployment : nodeFieldsForCabling;
         const edgeFields = exportType === 'deployment' ? edgeFieldsForDeployment : edgeFieldsForCabling;
 
+        // Helper: normalize BH_GALAXY -> BH_GALAXY_REV_AB for export (exports must be REV-specific)
+        const normalizeShelfNodeTypeForExport = (val) => {
+            if (!val || typeof val !== 'string') return val;
+            const u = val.toUpperCase();
+            if (u === 'BH_GALAXY') return 'BH_GALAXY_REV_AB';
+            if (u === 'BH_GALAXY_X_TORUS') return 'BH_GALAXY_REV_AB_X_TORUS';
+            if (u === 'BH_GALAXY_Y_TORUS') return 'BH_GALAXY_REV_AB_Y_TORUS';
+            if (u === 'BH_GALAXY_XY_TORUS') return 'BH_GALAXY_REV_AB_XY_TORUS';
+            return val;
+        };
+
         // Filter elements
         const filteredElements = elements.map(element => {
             const elementData = element.data || {};
@@ -3687,7 +3700,11 @@ export class CommonModule {
             const filteredData = {};
             for (const field of fieldsToKeep) {
                 if (field in elementData) {
-                    filteredData[field] = elementData[field];
+                    let value = elementData[field];
+                    if (field === 'shelf_node_type' && value) {
+                        value = normalizeShelfNodeTypeForExport(value);
+                    }
+                    filteredData[field] = value;
                 }
             }
 
@@ -4073,8 +4090,15 @@ export class CommonModule {
             );
         }
 
-        // BH_GALAXY_X_TORUS: X-torus QSFP connections
-        else if (nodeTypeUpper === 'BH_GALAXY_X_TORUS') {
+        // BH_GALAXY_* removed - alias to BH_GALAXY_REV_AB_* for legacy data only (import aliases to REV_AB)
+        else if (nodeTypeUpper === 'BH_GALAXY_X_TORUS' || nodeTypeUpper === 'BH_GALAXY_Y_TORUS' || nodeTypeUpper === 'BH_GALAXY_XY_TORUS') {
+            // Route to REV_AB variant (same connections)
+            const alias = nodeTypeUpper.replace('BH_GALAXY_', 'BH_GALAXY_REV_AB_');
+            return this.getInternalConnectionsFromNodeType(alias);
+        }
+
+        // BH_GALAXY_REV_AB: BH-style internal connections (trays 1-3, 2-4 for X-torus)
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_AB_X_TORUS') {
             connections.push(
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 3, port_b: 3 },
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 3, port_b: 4 },
@@ -4086,9 +4110,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 4, port_b: 3 }
             );
         }
-
-        // BH_GALAXY_Y_TORUS: Y-torus QSFP connections
-        else if (nodeTypeUpper === 'BH_GALAXY_Y_TORUS') {
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_AB_Y_TORUS') {
             connections.push(
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 2, port_b: 2 },
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 2, port_b: 1 },
@@ -4096,10 +4118,7 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
-
-        // BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
-        else if (nodeTypeUpper === 'BH_GALAXY_XY_TORUS') {
-            // X-torus connections
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_AB_XY_TORUS') {
             connections.push(
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 3, port_b: 3 },
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 3, port_b: 4 },
@@ -4110,12 +4129,51 @@ export class CommonModule {
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 4, tray_b: 4, port_b: 4 },
                 { port_type: 'QSFP_DD', tray_a: 2, port_a: 3, tray_b: 4, port_b: 3 }
             );
-            // Y-torus connections
             connections.push(
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 2, port_b: 2 },
                 { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 2, port_b: 1 },
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 1, tray_b: 4, port_b: 1 },
                 { port_type: 'QSFP_DD', tray_a: 3, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+
+        // BH_GALAXY_REV_C: WH_GALAXY-style internal connections (trays 1-2, 3-4 for X-torus)
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_C_X_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 2, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 2, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 2, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 2, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+        }
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_C_Y_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 3, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 3, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
+            );
+        }
+        else if (nodeTypeUpper === 'BH_GALAXY_REV_C_XY_TORUS') {
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 3, tray_b: 2, port_b: 3 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 4, tray_b: 2, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 5, tray_b: 2, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 6, tray_b: 2, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 6, tray_b: 4, port_b: 6 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 5, tray_b: 4, port_b: 5 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 4, tray_b: 4, port_b: 4 },
+                { port_type: 'QSFP_DD', tray_a: 3, port_a: 3, tray_b: 4, port_b: 3 }
+            );
+            connections.push(
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 2, tray_b: 3, port_b: 2 },
+                { port_type: 'QSFP_DD', tray_a: 1, port_a: 1, tray_b: 3, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 1, tray_b: 4, port_b: 1 },
+                { port_type: 'QSFP_DD', tray_a: 2, port_a: 2, tray_b: 4, port_b: 2 }
             );
         }
 
