@@ -10,7 +10,7 @@ Each topology entry includes visualization links marked with 📈 that open an i
 2. [BH (Blackhole) Topologies](#bh-blackhole-topologies)
    - [Blackhole Galaxy Revisions A & B](#blackhole-galaxy-revisions-a--b)
    - [Blackhole Galaxy Revision C](#blackhole-galaxy-revision-c)
-   - [Blackhole Loudbox Topologies](#blackhole-loudbox-topologies)
+   - [Blackhole Loudbox Topologies](#blackhole-loudbox-p150)
 
 ---
 
