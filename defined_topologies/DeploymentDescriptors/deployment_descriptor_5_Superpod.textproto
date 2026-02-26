@@ -1,0 +1,160 @@
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 1
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c01u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 1
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c01u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 2
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c02u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 2
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c02u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 3
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c03u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 3
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c03u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 4
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c04u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 4
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c04u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 7
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c07u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 7
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c07u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 8
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c08u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 8
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c08u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 9
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c09u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 9
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c09u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 10
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c10u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 10
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c10u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 5
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c05u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 5
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c05u08"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 6
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c06u02"
+}
+hosts {
+  hall: "120"
+  aisle: "C"
+  rack: 6
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-c06u08"
+}
