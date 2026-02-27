@@ -14,7 +14,7 @@ FROM base AS release
 # (PYTHON_ENV_DIR is already set in the base image)
 ENV TT_METAL_HOME=/tt-metal
 ENV APP_HOME=/app
-ARG TT_METAL_HASH=9a790e2201de81a40fb66132e6774b84748e4775
+ARG TT_METAL_HASH=fbb677b7197ee126f76c9ebbfc2ba28b6d980442
 
 COPY requirements.txt requirements.txt
 RUN /bin/bash -c "pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
