@@ -88,13 +88,9 @@ up-local:
 down-local:
 	docker compose -f docker-compose.local.yml down
 
-# Show local logs (follow/stream)
+# Show local logs
 logs-local:
 	docker compose -f docker-compose.local.yml logs -f
-
-# Dump local logs once (no follow; for CI failure debugging)
-log-dump-local:
-	docker compose -f docker-compose.local.yml logs
 
 # Open shell in local cablegen container
 shell-local:

@@ -49,7 +49,7 @@ jobs:
       
       - name: Dump container logs on startup failure
         if: failure()
-        run: make log-dump-local
+        run: timeout 60 make logs-local || true
       
       - name: Install dependencies in container (once)
         run: |
