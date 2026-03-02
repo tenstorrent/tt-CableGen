@@ -17,7 +17,7 @@ ENV APP_HOME=/app
 ARG TT_METAL_HASH=fbb677b7197ee126f76c9ebbfc2ba28b6d980442
 
 COPY requirements.txt requirements.txt
-RUN /bin/bash -c "python3 -m pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
+RUN /bin/bash -c "python3 -m ensurepip --upgrade && python3 -m pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
 
 # Clone tt-metal for scaleout dependencies
 RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
