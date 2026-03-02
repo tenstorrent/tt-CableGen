@@ -2,8 +2,8 @@ services:
   cablegen:
     # image: ghcr.io/tenstorrent/tt-cablegen:main
     build:
-     context:  .
-     dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile
     platform: linux/amd64
     pull_policy: always
     container_name: cablegen-app-local
@@ -16,16 +16,16 @@ services:
     volumes:
       # Mount development files to override Dockerfile COPY operations
       # Changes to these files on the host will be immediately reflected in the container
-      # - ./server.py:/app/server.py
-      # - ./import_cabling.py:/app/import_cabling.py
-      # - ./export_descriptors.py:/app/export_descriptors.py
-      # - ./templates:/app/templates
-      # - ./static:/app/static
-      # - ./tests:/app/tests
-      # - ./package.json:/app/package.json
-      # - ./package-lock.json:/app/package-lock.json
-      # - ./jest.config.cjs:/app/jest.config.cjs
-      # - ./.babelrc:/app/.babelrc
+      - ./server.py:/app/server.py
+      - ./import_cabling.py:/app/import_cabling.py
+      - ./export_descriptors.py:/app/export_descriptors.py
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./tests:/app/tests
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - ./jest.config.cjs:/app/jest.config.cjs
+      - ./.babelrc:/app/.babelrc
       # Mount defined_topologies subfolders to test-data directory for tests
       - ./defined_topologies/CablingDescriptors:/app/tests/integration/test-data/cabling-descriptors
       - ./defined_topologies/CablingGuides:/app/tests/integration/test-data/cabling-guides
