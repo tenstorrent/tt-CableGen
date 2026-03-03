@@ -19,7 +19,15 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from import_cabling import NetworkCablingCytoscapeVisualizer
+from import_cabling import NetworkCablingCytoscapeVisualizer, PROTOBUF_AVAILABLE
+
+# Top-level import verification: require protobuf support for descriptor validity tests
+if not PROTOBUF_AVAILABLE:
+    pytest.skip(
+        "Protobuf support not available. Set TT_METAL_HOME and build protobuf files "
+        "(run build_scaleout.sh) to run descriptor validity tests.",
+        allow_module_level=True,
+    )
 
 # Test data directory - use test-data folder
 DEFINED_TOPOLOGIES_DIR = Path(__file__).parent / 'test-data'
