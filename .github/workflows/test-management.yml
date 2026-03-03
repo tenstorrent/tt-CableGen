@@ -91,7 +91,7 @@ jobs:
       - name: Run descriptor files validity check tests
         if: steps.check-defined-topologies.outputs.has_changes == 'true'
         run: |
-          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && pip install pytest && python -m pytest tests/integration/test_input_parsing.py -v"
+          docker compose -f docker-compose.local.yml exec -T cablegen /bin/bash -c "cd /app && python3 -m pytest tests/integration/test_input_parsing.py -v"
       
       # Add additional test types here as needed
       # - name: Run Linting
