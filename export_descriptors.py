@@ -102,6 +102,22 @@ ARRAY_SHORTHAND_FIELDS = ['path']  # Only scalar fields - message types don't su
 GRAPH_TEMPLATE_ORDER = 'bottom-up'
 
 
+def _normalize_node_type_for_export(node_type: str) -> str:
+    """Normalize node_type for export. BH_GALAXY is not exportable - alias to BH_GALAXY_REV_AB."""
+    if not node_type:
+        return node_type
+    u = node_type.upper()
+    if u == "BH_GALAXY":
+        return "BH_GALAXY_REV_AB"
+    if u == "BH_GALAXY_X_TORUS":
+        return "BH_GALAXY_REV_AB_X_TORUS"
+    if u == "BH_GALAXY_Y_TORUS":
+        return "BH_GALAXY_REV_AB_Y_TORUS"
+    if u == "BH_GALAXY_XY_TORUS":
+        return "BH_GALAXY_REV_AB_XY_TORUS"
+    return node_type
+
+
 def sort_graph_templates(graph_templates_meta: dict, order: str = 'bottom-up') -> list:
     """Sort graph templates according to the specified ordering.
     
@@ -1109,9 +1125,9 @@ class VisualizerCytoscapeDataParser(CytoscapeDataParser):
                         if not node_type:
                             raise ValueError(f"Shelf '{parent_id}' is missing shelf_node_type")
                         # Preserve full node type including variations (_DEFAULT, _X_TORUS, _Y_TORUS, _XY_TORUS)
-                        # Only normalize to uppercase for consistency
+                        # Normalize: BH_GALAXY -> BH_GALAXY_REV_AB (exports must be REV-specific)
                         node_type = node_type.upper()
-                        return node_type
+                        return _normalize_node_type_for_export(node_type)
         
         raise ValueError(f"Could not find port '{port_id}' in cytoscape data")
 
@@ -1222,6 +1238,8 @@ class DeploymentDataParser:
                 node_type = node_type[:-8]  # len('_Y_TORUS') = 8
             elif node_type.endswith('_DEFAULT'):
                 node_type = node_type[:-8]  # len('_DEFAULT') = 8
+            # Normalize BH_GALAXY -> BH_GALAXY_REV_AB for export (exports must be REV-specific)
+            node_type = _normalize_node_type_for_export(node_type)
 
         # Normalize shelf_u to integer (strip 'U' prefix if present)
         if shelf_u is not None:
@@ -1323,6 +1341,7 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
         if node_data.get("type") == "shelf":
             hostname = node_data.get("hostname", "").strip()
             node_type = node_data.get("shelf_node_type") or node_data.get("node_type")
+            node_type = _normalize_node_type_for_export(node_type or "")
             host_index = node_data.get("host_index")
             
             # Fallback to host_id if host_index not present (for backward compatibility)

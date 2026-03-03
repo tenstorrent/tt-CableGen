@@ -634,6 +634,7 @@ export class ExpandCollapseModule {
         }
 
         // Get all collapsed nodes that are expandable (compound nodes, not ports/trays)
+        // Skip nodes that are already fully expanded (children visible) - avoid operating on inconsistent state
         const collapsedNodes = [];
         collapsedGraphs.forEach(nodeId => {
             const node = cy.getElementById(nodeId);
@@ -641,7 +642,13 @@ export class ExpandCollapseModule {
                 const nodeType = node.data('type');
                 // Only expand nodes that are compound nodes (not ports/trays)
                 if (nodeType !== 'port' && nodeType !== 'tray' && node.isParent()) {
-                    collapsedNodes.push(node);
+                    // Skip if node is already effectively expanded (children visible) - no need to expand further
+                    const children = node.children();
+                    const hasHiddenChildren = children.length > 0 &&
+                        children.some(child => child.style('display') === 'none');
+                    if (hasHiddenChildren) {
+                        collapsedNodes.push(node);
+                    }
                 }
             }
         });
@@ -718,9 +725,15 @@ export class ExpandCollapseModule {
             // 2. Are not ports or trays
             // 3. Are currently expanded (not in collapsedGraphs)
             // 4. Are visible (not hidden by parent collapse)
+            // 5. Actually have visible children to collapse (skip if already effectively collapsed)
             if (nodeType !== 'port' && nodeType !== 'tray' &&
                 node.isParent() && !isCollapsed && isVisible) {
-                expandableNodes.push(node);
+                const children = node.children();
+                const hasVisibleChildren = children.length > 0 &&
+                    children.some(child => child.style('display') !== 'none');
+                if (hasVisibleChildren) {
+                    expandableNodes.push(node);
+                }
             }
         });
 

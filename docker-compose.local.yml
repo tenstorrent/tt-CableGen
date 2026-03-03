@@ -1,8 +1,11 @@
 services:
   cablegen:
+    # image: ghcr.io/tenstorrent/tt-cablegen:main
     build:
       context: .
       dockerfile: Dockerfile
+    platform: linux/amd64
+    pull_policy: always
     container_name: cablegen-app-local
     restart: unless-stopped
     environment:

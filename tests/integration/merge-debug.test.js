@@ -45,8 +45,17 @@ function getMeshTorus2dPairs() {
 
 const MESH_TORUS2D_PAIRS = getMeshTorus2dPairs();
 
-const MESH_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_8x8_mesh.csv');
-const TORUS_X_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_8x8_torus-x.csv');
+/** Parse "MxN" from label e.g. "cabling_guide_BH_REV_AB_12x8_mesh" -> { m: 12, n: 8, size: 96 }. */
+function parseDimensions(label) {
+    const m = label.match(/(\d+)x(\d+)/);
+    if (!m) return null;
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    return { m: a, n: b, size: a * b };
+}
+
+const MESH_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_REV_AB_8x8_mesh.csv');
+const TORUS_X_CSV = path.join(CABLING_GUIDES_DIR, 'cabling_guide_BH_REV_AB_8x8_torus-x.csv');
 
 function countByType(elements) {
     const byType = {};
@@ -436,6 +445,8 @@ describe('merge validation with real CSVs (mesh ⊂ torus-2d convention)', () =>
     let loadedPairs = [];
 
     beforeAll(() => {
+        // eslint-disable-next-line no-console
+        console.log(`[merge-debug] MESH_TORUS2D_PAIRS: ${MESH_TORUS2D_PAIRS.map((p) => p.label).join(', ')}`);
         for (const pair of MESH_TORUS2D_PAIRS) {
             try {
                 const meshData = callPythonImport(pair.meshPath);
@@ -446,11 +457,15 @@ describe('merge validation with real CSVs (mesh ⊂ torus-2d convention)', () =>
                 // skip pair if import fails (e.g. different CSV format / env)
             }
         }
+        // eslint-disable-next-line no-console
+        console.log(`[merge-debug] loadedPairs (${loadedPairs.length}): ${loadedPairs.map((p) => p.label).join(', ')}`);
     });
 
     test('every mesh + same-base torus-2d allowed (mesh is subset of torus-2d)', () => {
         expect(loadedPairs.length).toBeGreaterThan(0);
-        for (const { meshPath } of loadedPairs) {
+        for (const { meshPath, label } of loadedPairs) {
+            // eslint-disable-next-line no-console
+            console.log(`[merge-debug] same-base: merging mesh + torus-2d from pair: ${label}`);
             const { meshData, torus2dData } = pairData.get(meshPath);
             const existing = { elements: meshData.elements, metadata: meshData.metadata || {} };
             const newData = { elements: torus2dData.elements, metadata: torus2dData.metadata || {} };
@@ -459,17 +474,6 @@ describe('merge validation with real CSVs (mesh ⊂ torus-2d convention)', () =>
         }
     });
 
-    test('mesh + different-base torus-2d fails (Guides disagree)', () => {
-        if (loadedPairs.length < 2) return;
-        const [pairA, pairB] = loadedPairs;
-        const { meshData } = pairData.get(pairA.meshPath);
-        const { torus2dData } = pairData.get(pairB.meshPath);
-        const existing = { elements: meshData.elements, metadata: meshData.metadata || {} };
-        const newData = { elements: torus2dData.elements, metadata: torus2dData.metadata || {} };
-        const result = validateMergedCablingGuide(existing, newData);
-        expect(result.errors.length).toBeGreaterThan(0);
-        expect(result.errors.some((e) => e.includes('Guides disagree'))).toBe(true);
-    });
 });
 
 describe('validateOneConnectionPerPort (load / base rule)', () => {

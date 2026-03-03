@@ -137,7 +137,7 @@ class NetworkCablingCytoscapeVisualizer:
         """Normalize node type to uppercase standard format and trim whitespace
         
         Also maps alternative names to standard names:
-        - "blackhole" -> "BH_GALAXY"
+        - "blackhole", "bh_galaxy" -> "BH_GALAXY_REV_AB" (BH_GALAXY not used internally)
         
         Strips variation suffixes:
         - _DEFAULT suffix (keep _GLOBAL and _AMERICA as distinct types)
@@ -162,9 +162,12 @@ class NetworkCablingCytoscapeVisualizer:
             normalized = normalized[:-8]  # len('_default') = 8
         
         # Map alternative names to standard names (lowercase input -> uppercase output)
+        # BH_GALAXY on import is aliased to BH_GALAXY_REV_AB; exports must use specific REV types
         type_mappings = {
-            "blackhole": "BH_GALAXY",
-            "bh_galaxy": "BH_GALAXY",
+            "blackhole": "BH_GALAXY_REV_AB",
+            "bh_galaxy": "BH_GALAXY_REV_AB",
+            "bh_galaxy_rev_ab": "BH_GALAXY_REV_AB",
+            "bh_galaxy_rev_c": "BH_GALAXY_REV_C",
             "wh_galaxy": "WH_GALAXY",
             "n300_lb": "N300_LB",
             "n300_qb": "N300_QB",
@@ -177,6 +180,22 @@ class NetworkCablingCytoscapeVisualizer:
         
         # Return mapped value or convert to uppercase
         return type_mappings.get(normalized, normalized.upper())
+
+    @staticmethod
+    def normalize_descriptor_node_type_for_storage(node_descriptor_name):
+        """Normalize NodeDescriptor name for storage (shelf_node_type). BH_GALAXY -> BH_GALAXY_REV_AB."""
+        if not node_descriptor_name:
+            return node_descriptor_name
+        u = node_descriptor_name.strip().upper()
+        if u == "BH_GALAXY":
+            return "BH_GALAXY_REV_AB"
+        if u == "BH_GALAXY_X_TORUS":
+            return "BH_GALAXY_REV_AB_X_TORUS"
+        if u == "BH_GALAXY_Y_TORUS":
+            return "BH_GALAXY_REV_AB_Y_TORUS"
+        if u == "BH_GALAXY_XY_TORUS":
+            return "BH_GALAXY_REV_AB_XY_TORUS"
+        return node_descriptor_name
 
     @staticmethod
     def create_connection_object(source_data, dest_data, cable_length="Unknown", cable_type="400G_AEC"):
@@ -275,11 +294,20 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "BH_GALAXY": {
+            # BH_GALAXY removed - use BH_GALAXY_REV_AB or BH_GALAXY_REV_C
+            "BH_GALAXY_REV_AB": {
                 "tray_count": 4,
                 "port_count": 14,
-                "tray_layout": "vertical",  # T1-T4 arranged vertically (top to bottom)
-                # port_layout auto-inferred as 'horizontal' from vertical tray_layout
+                "tray_layout": "vertical",
+                "shelf_u_height": 6,
+                "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
+                "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
+                "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 5},
+            },
+            "BH_GALAXY_REV_C": {
+                "tray_count": 4,
+                "port_count": 14,
+                "tray_layout": "vertical",
                 "shelf_u_height": 6,
                 "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
                 "tray_dimensions": {"width": 320, "height": 60, "spacing": 10},
@@ -1066,10 +1094,11 @@ class NetworkCablingCytoscapeVisualizer:
             
             def node_callback(child_name, child_mapping, child_instance, path, depth):
                 node_descriptor_name = child_instance.node_ref.node_descriptor
+                shelf_node_type = self.parent.normalize_descriptor_node_type_for_storage(node_descriptor_name)
                 hierarchy.append({
                     'path': path + [child_name],
                     'child_name': child_name,
-                    'node_type': node_descriptor_name,
+                    'node_type': shelf_node_type,
                     'host_id': child_mapping.host_id,
                     'depth': depth
                 })
@@ -1352,10 +1381,11 @@ class NetworkCablingCytoscapeVisualizer:
         # Define callback for leaf nodes
         def node_callback(child_name, child_mapping, child_instance, path, depth):
             node_descriptor_name = child_instance.node_ref.node_descriptor
+            shelf_node_type = self.normalize_descriptor_node_type_for_storage(node_descriptor_name)
             hierarchy.append({
                 'path': path + [child_name],
                 'child_name': child_name,
-                'node_type': node_descriptor_name,
+                'node_type': shelf_node_type,
                 'host_id': child_mapping.host_id,
                 'depth': depth
             })
@@ -1500,11 +1530,20 @@ class NetworkCablingCytoscapeVisualizer:
             'p150_qb_america': 'p150_qb_america',
             # P300 QB GE (similar to P150)
             'p300_qb_ge': 'p150_qb',
-            # BH Galaxy variations
-            'bh_galaxy': 'bh_galaxy',
-            'bh_galaxy_x_torus': 'bh_galaxy',
-            'bh_galaxy_y_torus': 'bh_galaxy',
-            'bh_galaxy_xy_torus': 'bh_galaxy',
+            # BH Galaxy: alias to REV_AB (BH_GALAXY not used internally)
+            'bh_galaxy': 'bh_galaxy_rev_ab',
+            'bh_galaxy_x_torus': 'bh_galaxy_rev_ab',
+            'bh_galaxy_y_torus': 'bh_galaxy_rev_ab',
+            'bh_galaxy_xy_torus': 'bh_galaxy_rev_ab',
+            # BH Galaxy REV variants (distinct types)
+            'bh_galaxy_rev_ab': 'bh_galaxy_rev_ab',
+            'bh_galaxy_rev_ab_x_torus': 'bh_galaxy_rev_ab',
+            'bh_galaxy_rev_ab_y_torus': 'bh_galaxy_rev_ab',
+            'bh_galaxy_rev_ab_xy_torus': 'bh_galaxy_rev_ab',
+            'bh_galaxy_rev_c': 'bh_galaxy_rev_c',
+            'bh_galaxy_rev_c_x_torus': 'bh_galaxy_rev_c',
+            'bh_galaxy_rev_c_y_torus': 'bh_galaxy_rev_c',
+            'bh_galaxy_rev_c_xy_torus': 'bh_galaxy_rev_c',
         }
         
         return descriptor_to_config_map.get(node_type_lower, node_type_lower)
@@ -3453,8 +3492,13 @@ class NetworkCablingCytoscapeVisualizer:
                 {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
             ])
         
-        # BH_GALAXY_X_TORUS: X-torus QSFP connections
-        elif node_type_upper == 'BH_GALAXY_X_TORUS':
+        # BH_GALAXY_*: alias to REV_AB for legacy
+        elif node_type_upper in ['BH_GALAXY_X_TORUS', 'BH_GALAXY_Y_TORUS', 'BH_GALAXY_XY_TORUS']:
+            alias = node_type_upper.replace('BH_GALAXY_', 'BH_GALAXY_REV_AB_')
+            return self._get_internal_connections_from_node_type(alias)
+
+        # BH_GALAXY_REV_AB: BH-style internal connections (trays 1-3, 2-4 for X-torus)
+        elif node_type_upper == 'BH_GALAXY_REV_AB_X_TORUS':
             connections.extend([
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
@@ -3465,19 +3509,14 @@ class NetworkCablingCytoscapeVisualizer:
                 {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
                 {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
             ])
-        
-        # BH_GALAXY_Y_TORUS: Y-torus QSFP connections
-        elif node_type_upper == 'BH_GALAXY_Y_TORUS':
+        elif node_type_upper == 'BH_GALAXY_REV_AB_Y_TORUS':
             connections.extend([
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
                 {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
                 {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
             ])
-        
-        # BH_GALAXY_XY_TORUS: Both X and Y torus QSFP connections
-        elif node_type_upper == 'BH_GALAXY_XY_TORUS':
-            # X-torus connections
+        elif node_type_upper == 'BH_GALAXY_REV_AB_XY_TORUS':
             connections.extend([
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 3, 'port_b': 3},
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 3, 'port_b': 4},
@@ -3488,12 +3527,48 @@ class NetworkCablingCytoscapeVisualizer:
                 {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
                 {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
             ])
-            # Y-torus connections
             connections.extend([
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 2, 'port_b': 2},
                 {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 2, 'port_b': 1},
                 {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
                 {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+
+        # BH_GALAXY_REV_C: WH_GALAXY-style internal connections (trays 1-2, 3-4 for X-torus)
+        elif node_type_upper == 'BH_GALAXY_REV_C_X_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+        elif node_type_upper == 'BH_GALAXY_REV_C_Y_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
+            ])
+        elif node_type_upper == 'BH_GALAXY_REV_C_XY_TORUS':
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 3, 'tray_b': 2, 'port_b': 3},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 4, 'tray_b': 2, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 5, 'tray_b': 2, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 6, 'tray_b': 2, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 6, 'tray_b': 4, 'port_b': 6},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 5, 'tray_b': 4, 'port_b': 5},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 4, 'tray_b': 4, 'port_b': 4},
+                {'port_type': 'QSFP_DD', 'tray_a': 3, 'port_a': 3, 'tray_b': 4, 'port_b': 3},
+            ])
+            connections.extend([
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 2, 'tray_b': 3, 'port_b': 2},
+                {'port_type': 'QSFP_DD', 'tray_a': 1, 'port_a': 1, 'tray_b': 3, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 1, 'tray_b': 4, 'port_b': 1},
+                {'port_type': 'QSFP_DD', 'tray_a': 2, 'port_a': 2, 'tray_b': 4, 'port_b': 2},
             ])
         
         return connections

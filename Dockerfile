@@ -14,10 +14,10 @@ FROM base AS release
 # (PYTHON_ENV_DIR is already set in the base image)
 ENV TT_METAL_HOME=/tt-metal
 ENV APP_HOME=/app
-ARG TT_METAL_HASH=9a790e2201de81a40fb66132e6774b84748e4775
+ARG TT_METAL_HASH=fbb677b7197ee126f76c9ebbfc2ba28b6d980442
 
 COPY requirements.txt requirements.txt
-RUN /bin/bash -c "pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
+RUN /bin/bash -c "python3 -m ensurepip --upgrade && python3 -m pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
 
 # Clone tt-metal for scaleout dependencies
 RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
@@ -29,7 +29,6 @@ WORKDIR ${TT_METAL_HOME}
 # Fetch and checkout the exact commit (shallow fetch for that commit only)
 RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH}"
 
-ENV toolchain_path=cmake/x86_64-linux-clang-17-libstdcpp-toolchain.cmake
 COPY build_scaleout.sh ${TT_METAL_HOME}/build_scaleout.sh
 RUN chmod +x ${TT_METAL_HOME}/build_scaleout.sh
 
