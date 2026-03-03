@@ -143,3 +143,7 @@ DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/deployment_de
 protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/cluster_config.proto"
 protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/node_config.proto"
 protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR" "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR/deployment.proto"
+
+protobuf_out="$build_dir/tools/scaleout/protobuf"
+echo "built protobuf files at $(realpath "$protobuf_out")"
+ls -la "$protobuf_out"
