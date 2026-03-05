@@ -1191,19 +1191,14 @@ export class UIDisplayModule {
 
                 for (let r = 0; r < rackNumbers.length; r++) {
                     const rackNum = rackNumbers[r];
-                    // Starting U for this rack: use first value or cycle by rack index
-                    const startU = shelfUnitNumbers[r % shelfUnitNumbers.length];
-                    let currentShelfU = startU;
-
+                    // Use the shelf U list directly for each rack - "2,8" means U 2 and U 8 in every rack
                     for (let s = 0; s < shelfUnitNumbers.length; s++) {
                         if (nodeIndex >= shelfNodes.length) {
                             break outerLoop;
                         }
 
                         const node = shelfNodes[nodeIndex];
-                        const nodeType = node.data('shelf_node_type') || 'WH_GALAXY';
-                        const nodeHeight = getShelfUHeight(nodeType);
-                        const shelfU = currentShelfU; // node occupies U shelf_u .. shelf_u + nodeHeight - 1
+                        const shelfU = shelfUnitNumbers[s]; // use list values directly: "2,8" → U 2 and 8 in every rack
 
                         // Update node data with physical location
                         node.data('hall', hall);
@@ -1246,7 +1241,6 @@ export class UIDisplayModule {
                             }
                         }
 
-                        currentShelfU += nodeHeight; // next node starts at first free U
                         nodeIndex++;
                         assignedCount++;
                     }
@@ -1590,18 +1584,8 @@ export class UIDisplayModule {
                     this.hierarchyModule.calculateLayout();
 
                     // DFS recalculation ensures unique, consecutive host_index values in both modes
-                    // For textproto imports: host_index is already set from host_id, but we still run DFS to ensure uniqueness
-                    // For non-textproto imports (empty canvas, CSV): DFS ensures proper numbering
-                    const isTextprotoImport = isDescriptor || (data.metadata && data.metadata.file_format === 'descriptor');
-
-                    if (!isTextprotoImport) {
-                        // For non-textproto imports, run DFS to ensure unique, consecutive host_index values
-                        this.hierarchyModule.recalculateHostIndicesForTemplates();
-                    } else {
-                        // For textproto imports, host_index comes from host_id, but we still run DFS to ensure uniqueness
-                        // This handles cases where host_id might have duplicates or gaps
-                        this.hierarchyModule.recalculateHostIndicesForTemplates();
-                    }
+                    // On import (textproto or CSV): use template order for child traversal
+                    this.hierarchyModule.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: false });
                 } else {
                     // Location mode: ensure shelves with racking info (hall/aisle/rack_num) are inside hall/aisle/rack compound nodes.
                     // Rebuild from shelf data when there are no racks, or when any shelf with location is not under a rack.
@@ -1635,7 +1619,7 @@ export class UIDisplayModule {
 
                     // Run DFS recalculation ONCE on initial import to ensure unique, consecutive host_index values
                     // This is NOT tied to calculateLayout() - DFS only runs here (on import) and after structural changes
-                    this.commonModule.recalculateHostIndices();
+                    this.commonModule.recalculateHostIndices({ useAlphabeticalChildrenSort: false });
 
                     // After calculateLayout creates the nodes, call resetLayout for final positioning and cleanup
                     // Use a timeout to ensure calculateLayout's async operations complete first

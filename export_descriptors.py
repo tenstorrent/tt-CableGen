@@ -1222,7 +1222,7 @@ class DeploymentDataParser:
         hostname = node_data.get("hostname")
         hall = node_data.get("hall")
         aisle = node_data.get("aisle")
-        rack_num = node_data.get("rack_num") or node_data.get("rack")
+        rack_num = node_data.get("rack_num")
         shelf_u = node_data.get("shelf_u")
         node_type = node_data.get("shelf_node_type")
 
@@ -1255,23 +1255,22 @@ class DeploymentDataParser:
         if hostname and hostname.strip():
             host_info["hostname"] = hostname.strip()
 
-        # Add location information if available (20-column format with full hierarchy)
-        has_location = (
-            hall and hall.strip() and aisle and aisle.strip() and rack_num is not None and shelf_u is not None
-        )
-
-        if has_location:
-            host_info["hall"] = hall.strip()
-            host_info["aisle"] = aisle.strip()
+        # Add location information when available (each field independently)
+        if hall is not None and str(hall).strip():
+            host_info["hall"] = str(hall).strip()
+        if aisle is not None and str(aisle).strip():
+            host_info["aisle"] = str(aisle).strip()
+        if rack_num is not None and str(rack_num).strip() != '':
             host_info["rack_num"] = int(rack_num)
-            host_info["shelf_u"] = shelf_u
+        if shelf_u is not None:
+            host_info["shelf_u"] = shelf_u  # Already normalized to int above
 
         # Add node type if available
         if node_type:
             host_info["node_type"] = node_type
 
-        # Return None if we have neither hostname nor location info
-        if not host_info.get("hostname") and not has_location:
+        # Return None if we have neither hostname nor any location info
+        if not host_info.get("hostname") and not any(k in host_info for k in ("hall", "aisle", "rack_num", "shelf_u")):
             return None
 
         return host_info

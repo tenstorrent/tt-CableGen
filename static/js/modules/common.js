@@ -3662,7 +3662,7 @@ export class CommonModule {
         ]);
 
         const nodeFieldsForDeployment = new Set([
-            'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
+            'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num',
             'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
         ]);
 
@@ -4388,11 +4388,17 @@ export class CommonModule {
      * Recalculate host_indices using DFS traversal from canvas root.
      * Treats canvas as implicit root - processes all root graphs and top-level shelves.
      * Works in both hierarchy and location modes.
-     * 
+     *
      * This function ensures unique, consecutive host_index values starting from 0
      * across all shelf nodes in the visualization.
+     *
+     * @param {Object} opts - Options
+     * @param {boolean} opts.useAlphabeticalChildrenSort - If true, sort all children alphabetically
+     *   for DFS traversal (used for node additions/reorganizations in JS). If false, use template
+     *   order when available (used for textproto import).
      */
-    recalculateHostIndices() {
+    recalculateHostIndices(opts = {}) {
+        const useAlphabeticalChildrenSort = opts.useAlphabeticalChildrenSort === true;
 
         // Track the global host_index counter (start from 0 for complete renumbering)
         let nextHostIndex = 0;
@@ -4439,11 +4445,12 @@ export class CommonModule {
                 }
             });
 
-            // Order children according to template (if available), otherwise fall back to alphabetical
+            // Order children: use alphabetical when useAlphabeticalChildrenSort (JS add/reorganize),
+            // otherwise use template order when available
             const orderedChildren = [];
 
-            if (template && template.children && Array.isArray(template.children)) {
-                // Follow template's children order (matches cabling descriptor DFS order)
+            if (!useAlphabeticalChildrenSort && template && template.children && Array.isArray(template.children)) {
+                // Follow template's children order (matches cabling descriptor DFS order) - textproto import
                 const addedChildIds = new Set();
                 const processedChildNames = new Set();
 
@@ -4481,7 +4488,7 @@ export class CommonModule {
                     }
                 });
             } else {
-                // Fallback: sort alphabetically if no template available
+                // Sort alphabetically: for JS add/reorganize, or when no template available
                 directChildren.forEach(child => {
                     orderedChildren.push({
                         node: child,
@@ -4583,7 +4590,7 @@ export class CommonModule {
 
         // Process root graphs first (they contain nested shelves)
         let sortedRootGraphs;
-        if (rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
+        if (!useAlphabeticalChildrenSort && rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
             const rootGraphsByName = new Map();
             rootGraphNodes.forEach(node => {
                 const childName = node.data('child_name') || node.data('label') || node.id();
@@ -4607,10 +4614,10 @@ export class CommonModule {
                 }
             });
         } else {
-            // Fallback: sort alphabetically if no template available
+            // Sort alphabetically: for JS add/reorganize, or when no template available
             sortedRootGraphs = rootGraphNodes.toArray().sort((a, b) => {
-                const labelA = a.data('label') || a.id();
-                const labelB = b.data('label') || b.id();
+                const labelA = (a.data('child_name') || a.data('label') || a.id()).toString();
+                const labelB = (b.data('child_name') || b.data('label') || b.id()).toString();
                 return labelA.localeCompare(labelB);
             });
         }

@@ -115,8 +115,7 @@ def sample_cytoscape_data_with_location():
                     "parent": "graph1",
                     "hall": "hall1",
                     "aisle": "aisle1",
-                    "rack": "rack1",
-                    "rack_num": "rack1",  # Use rack_num instead of rack
+                    "rack_num": "rack1",
                     "shelf_u": "1"
                 }
             },

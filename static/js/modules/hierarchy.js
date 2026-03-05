@@ -2322,7 +2322,7 @@ export class HierarchyModule {
 
         // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
         if (!isTopLevelNode) {
-            this.recalculateHostIndicesForTemplates();
+            this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
         }
 
         // Apply drag restrictions and layout
@@ -3054,7 +3054,7 @@ export class HierarchyModule {
                 this.state.cy.endBatch();
 
                 // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
-                this.recalculateHostIndicesForTemplates();
+                this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
 
                 // Rename graph instances to ensure proper numbering at each level
                 this.renameGraphInstances();
@@ -3162,7 +3162,7 @@ export class HierarchyModule {
 
                 // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
                 if (this.state.mode === 'hierarchy') {
-                    this.recalculateHostIndicesForTemplates();
+                    this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
                 }
 
                 // Apply drag restrictions
@@ -3846,11 +3846,15 @@ export class HierarchyModule {
      * Recalculate host_indices for all template instances using DFS traversal.
      * This ensures host indices are assigned in a consistent, predictable order based on
      * the graph hierarchy structure.
+     *
+     * @param {Object} opts - Options
+     * @param {boolean} opts.useAlphabeticalChildrenSort - If true, sort children alphabetically
+     *   during DFS (for node add/reorganize in JS). If false, use template order (for textproto import).
      */
-    recalculateHostIndicesForTemplates() {
+    recalculateHostIndicesForTemplates(opts = {}) {
         // Delegate to common module for unified DFS traversal
         // This ensures consistent behavior across hierarchy and location modes
-        this.common.recalculateHostIndices();
+        this.common.recalculateHostIndices(opts);
 
         // Clear the flag
         this._recalculatingHostIndices = false;
@@ -4170,7 +4174,7 @@ export class HierarchyModule {
         }
 
         // Recalculate host_indices for all template instances after deletion
-        this.recalculateHostIndicesForTemplates();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
     }
 
     /**
@@ -4397,7 +4401,7 @@ export class HierarchyModule {
         }
 
         // Recalculate host_indices for all template instances after deletion
-        this.recalculateHostIndicesForTemplates();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
     }
 
     /**
@@ -4673,7 +4677,7 @@ export class HierarchyModule {
         });
 
         // Recalculate host indices
-        this.recalculateHostIndicesForTemplates();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
 
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();
@@ -4989,7 +4993,7 @@ export class HierarchyModule {
 
         // Recalculate host indices
         console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates start');
-        this.recalculateHostIndicesForTemplates();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
         console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates done');
         // Rename graph instances to ensure proper numbering at each level
         this.renameGraphInstances();

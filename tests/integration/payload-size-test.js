@@ -42,7 +42,7 @@ function filterCytoscapeDataForExport(cytoscapeData, exportType = 'cabling') {
     ]);
 
     const nodeFieldsForDeployment = new Set([
-        'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
+        'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num',
         'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
     ]);
 
