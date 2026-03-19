@@ -109,6 +109,8 @@ export class LocationModule {
      * @param {Object} sourceShelf - Source shelf node
      * @param {Object} targetShelf - Target shelf node
      * @returns {string} Racking hierarchy level: 'same_host_id', 'same_rack', 'same_aisle', 'same_hall', or 'different_hall'
+     *
+     * Note: If a specification (hall/aisle/rack) is blank for both nodes, they are treated as having the same value.
      */
     getConnectionHierarchyLevel(sourceShelf, targetShelf) {
         if (!sourceShelf || !targetShelf || !sourceShelf.length || !targetShelf.length) {
@@ -125,8 +127,8 @@ export class LocationModule {
             return isNaN(num) ? null : num;
         };
 
-        const sourceRack = normalizeRackNum(sourceShelf.data('rack_num') ?? sourceShelf.data('rack'));
-        const targetRack = normalizeRackNum(targetShelf.data('rack_num') ?? targetShelf.data('rack'));
+        const sourceRack = normalizeRackNum(sourceShelf.data('rack_num'));
+        const targetRack = normalizeRackNum(targetShelf.data('rack_num'));
 
         const sourceAisle = (sourceShelf.data('aisle') ?? '').toString().trim();
         const targetAisle = (targetShelf.data('aisle') ?? '').toString().trim();
@@ -140,11 +142,11 @@ export class LocationModule {
             return 'same_host_id';
         }
 
-        // For "same rack", we need rack, aisle, AND hall to all match
-        // Same rack, different host (but same aisle and hall)
-        const racksMatch = sourceRack !== null && targetRack !== null && sourceRack === targetRack;
-        const aislesMatch = sourceAisle !== '' && targetAisle !== '' && sourceAisle === targetAisle;
-        const hallsMatch = sourceHall !== '' && targetHall !== '' && sourceHall === targetHall;
+        // For "same rack", we need rack, aisle, AND hall to all match.
+        // If a spec is blank for both nodes, treat as same (blank = same for cross-X comparison).
+        const racksMatch = sourceRack === targetRack;
+        const aislesMatch = sourceAisle === targetAisle;
+        const hallsMatch = sourceHall === targetHall;
 
         if (racksMatch && aislesMatch && hallsMatch) {
             return 'same_rack';
@@ -2440,8 +2442,10 @@ export class LocationModule {
         });
 
         this.common.applyDragRestrictions();
-        if (this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
-            this.common.recalculateHostIndices();
+        // Only recalculate host_ids when session started in location mode (paste adds new nodes).
+        // When session started in hierarchy mode, paste is blocked above - this path is unreachable.
+        if (this.state.data.initialMode !== 'hierarchy' && this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
+            this.common.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
         }
         setTimeout(() => {
             this.common.forceApplyCurveStyles?.();
@@ -2712,10 +2716,10 @@ export class LocationModule {
                 // Move the shelf node to the new rack
                 node.move({ parent: newRackNode.id() });
 
-                // Recalculate host_indices after node move (treating canvas as root)
-                // This ensures unique, consecutive host_index values across all shelf nodes
-                if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
-                    this.common.recalculateHostIndices();
+                // Only recalculate host_indices when session started in location mode.
+                // When session started in hierarchy mode, preserve host_ids - just update location.
+                if (this.state.data.initialMode !== 'hierarchy' && this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
+                    this.common.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
                 }
             }
 
@@ -3025,10 +3029,10 @@ export class LocationModule {
                 node.move({ parent: null });
             }
 
-            // Recalculate host_indices after node move (treating canvas as root)
-            // This ensures unique, consecutive host_index values across all shelf nodes
-            if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
-                this.common.recalculateHostIndices();
+            // Only recalculate host_indices when session started in location mode.
+            // When session started in hierarchy mode, preserve host_ids - just update location.
+            if (this.state.data.initialMode !== 'hierarchy' && this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
+                this.common.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
             }
         }
 
@@ -3149,10 +3153,10 @@ export class LocationModule {
                 node.move({ parent: null });
             }
 
-            // Recalculate host_indices after node move (treating canvas as root)
-            // This ensures unique, consecutive host_index values across all shelf nodes
-            if (this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
-                this.common.recalculateHostIndices();
+            // Only recalculate host_indices when session started in location mode.
+            // When session started in hierarchy mode, preserve host_ids - just update location.
+            if (this.state.data.initialMode !== 'hierarchy' && this.common && this.common.recalculateHostIndices && typeof this.common.recalculateHostIndices === 'function') {
+                this.common.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
             }
         }
 

@@ -28,7 +28,12 @@ from import_cabling import (
 # Import export functionality
 try:
     # Test if export functionality is available
-    from export_descriptors import export_cabling_descriptor_for_visualizer, export_deployment_descriptor_for_visualizer, export_flat_cabling_descriptor
+    from export_descriptors import (
+        export_cabling_descriptor_for_visualizer,
+        export_deployment_descriptor_for_visualizer,
+        export_flat_cabling_descriptor,
+        extract_host_list_from_connections,
+    )
 
     EXPORT_AVAILABLE = True
 except ImportError as e:
@@ -809,7 +814,11 @@ def _validate_shelf_hostnames(cytoscape_data):
 
 
 def _has_location_info(cytoscape_data):
-    """Check if ALL shelf nodes have location information (hall/aisle/rack/shelf)"""
+    """Check if ALL shelf nodes have rack defined.
+    
+    Hierarchy: hall -> aisle -> rack -> shelf_u. Use --simple when rack is not defined.
+    If rack_num is defined for every shelf, use hierarchical format.
+    """
     elements = cytoscape_data.get("elements", [])
     
     shelf_nodes = []
@@ -829,25 +838,13 @@ def _has_location_info(cytoscape_data):
     if not shelf_nodes:
         return False
     
-    # Check that ALL shelf nodes have location information
+    # Check that ALL shelf nodes have rack_num defined
     for node_data in shelf_nodes:
-        hall = node_data.get("hall")
-        aisle = node_data.get("aisle")
         rack_num = node_data.get("rack_num")
-        shelf_u = node_data.get("shelf_u")
         
-        # If this node is missing location info, return False
-        has_location = all([
-            hall and str(hall).strip(),
-            aisle and str(aisle).strip(),
-            rack_num is not None and str(rack_num).strip() != '',
-            shelf_u is not None and str(shelf_u).strip() != ''
-        ])
-        
-        if not has_location:
+        if rack_num is None or str(rack_num).strip() == '':
             return False
     
-    # All nodes have location info
     return True
 
 
@@ -860,7 +857,8 @@ def generate_cabling_guide():
       This avoids "multiple root nodes" errors and provides a simpler structure for the cabling generator
     - DeploymentDescriptor: Uses physical location information (hall, aisle, rack, shelf_u) when available
     
-    The --simple flag is set based on whether location information exists in the DeploymentDescriptor.
+    The --simple flag is set when rack_num is not defined. If rack_num is defined for every
+    shelf node, hierarchical format is used; otherwise --simple is used.
     """
     import subprocess
     import tempfile
@@ -886,18 +884,23 @@ def generate_cabling_guide():
         has_location = _has_location_info(cytoscape_data)
         use_simple_format = not has_location
 
+        # Compute shared host list once so cabling and deployment descriptors use identical host_id mapping
+        sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
             # Cabling descriptor: Always use flat export for cabling guide generation
             # This avoids "multiple root nodes" errors and provides a simpler structure
-            cabling_content = export_flat_cabling_descriptor(cytoscape_data)
+            cabling_content = export_flat_cabling_descriptor(cytoscape_data, sorted_hosts=sorted_hosts)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as deployment_file:
-            # Deployment descriptor: Uses physical location information when available
-            deployment_content = export_deployment_descriptor_for_visualizer(cytoscape_data)
+            # Deployment descriptor: Uses same host order as cabling (host_id 0 = hosts[0])
+            deployment_content = export_deployment_descriptor_for_visualizer(
+                cytoscape_data, sorted_hosts=sorted_hosts
+            )
             deployment_file.write(deployment_content)
             deployment_path = deployment_file.name
 

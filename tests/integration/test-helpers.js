@@ -566,7 +566,7 @@ for element in cytoscape_data.get('elements', []):
                 'hostname': data.get('hostname', ''),
                 'hall': data.get('hall', ''),
                 'aisle': data.get('aisle', ''),
-                'rack': data.get('rack_num') or data.get('rack', 0),
+                'rack_num': data.get('rack_num', 0),
                 'shelf_u': data.get('shelf_u', 0),
                 'node_type': data.get('shelf_node_type') or data.get('node_type', '')
             }
@@ -595,18 +595,18 @@ for conn in connections:
     
     # Generate label (format: HallAisleRackShelfU-Tray-Port)
     source_label = ""
-    if all([source_loc.get('hall'), source_loc.get('aisle'), source_loc.get('rack'), source_loc.get('shelf_u')]):
-        source_label = f"{source_loc['hall']}{source_loc['aisle']}{source_loc['rack']}{source_loc['shelf_u']}-{source_tray}-{source_port}"
+    if all([source_loc.get('hall'), source_loc.get('aisle'), source_loc.get('rack_num') is not None, source_loc.get('shelf_u') is not None]):
+        source_label = f"{source_loc['hall']}{source_loc['aisle']}{source_loc['rack_num']}{source_loc['shelf_u']}-{source_tray}-{source_port}"
     
     target_label = ""
-    if all([target_loc.get('hall'), target_loc.get('aisle'), target_loc.get('rack'), target_loc.get('shelf_u')]):
-        target_label = f"{target_loc['hall']}{target_loc['aisle']}{target_loc['rack']}{target_loc['shelf_u']}-{target_tray}-{target_port}"
+    if all([target_loc.get('hall'), target_loc.get('aisle'), target_loc.get('rack_num') is not None, target_loc.get('shelf_u') is not None]):
+        target_label = f"{target_loc['hall']}{target_loc['aisle']}{target_loc['rack_num']}{target_loc['shelf_u']}-{target_tray}-{target_port}"
     
     # Default cable length and type (can be empty)
     cable_length = ""
     cable_type = ""
     
-    csv_line = f"{source_hostname},{source_loc.get('hall', '')},{source_loc.get('aisle', '')},{source_loc.get('rack', '')},{source_loc.get('shelf_u', '')},{source_tray},{source_port},{source_label},{source_node_type},{target_hostname},{target_loc.get('hall', '')},{target_loc.get('aisle', '')},{target_loc.get('rack', '')},{target_loc.get('shelf_u', '')},{target_tray},{target_port},{target_label},{target_node_type},{cable_length},{cable_type}"
+    csv_line = f"{source_hostname},{source_loc.get('hall', '')},{source_loc.get('aisle', '')},{source_loc.get('rack_num', '')},{source_loc.get('shelf_u', '')},{source_tray},{source_port},{source_label},{source_node_type},{target_hostname},{target_loc.get('hall', '')},{target_loc.get('aisle', '')},{target_loc.get('rack_num', '')},{target_loc.get('shelf_u', '')},{target_tray},{target_port},{target_label},{target_node_type},{cable_length},{cable_type}"
     csv_lines.append(csv_line)
 
 # Add CSV header lines (matching the format expected by CSV import)
@@ -861,6 +861,33 @@ export function parseDeploymentDescriptorFromContent(textprotoContent) {
     }));
 
     return { elements };
+}
+
+/**
+ * Parse cabling descriptor child_mappings to extract hostname -> host_id.
+ * Used to verify host_id consistency between cabling and deployment descriptors.
+ * @param {string} textprotoContent - Cabling descriptor textproto content
+ * @returns {Object.<string, number>} Map of hostname -> host_id
+ */
+export function parseCablingHostIds(textprotoContent) {
+    const result = {};
+    // Match child_mappings blocks: key: "hostname" ... host_id: N (protobuf map format)
+    const regex = /child_mappings\s*\{[^}]*key:\s*"([^"]+)"[^}]*host_id:\s*(\d+)/gs;
+    let match;
+    while ((match = regex.exec(textprotoContent)) !== null) {
+        result[match[1]] = parseInt(match[2], 10);
+    }
+    return result;
+}
+
+/**
+ * Parse deployment descriptor to get hosts in array order (index N = host_id N).
+ * @param {string} textprotoContent - Deployment descriptor textproto content
+ * @returns {string[]} Hostnames in hosts[] order
+ */
+export function parseDeploymentHostOrder(textprotoContent) {
+    const parsed = parseDeploymentDescriptorFromContent(textprotoContent);
+    return parsed.elements.map(el => el.data.hostname).filter(Boolean);
 }
 
 /**

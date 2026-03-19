@@ -768,8 +768,8 @@ export class HierarchyModule {
                     const hostIndex = this.state.data.globalHostCounter;
                     this.state.data.globalHostCounter++;
 
-                    // child.name from template is already enumerated (node_0, node_1, etc.)
-                    // Format label as "node_X (host_Y)"
+                    // child.name from template (original from textproto, e.g. dim1_node0)
+                    // Format label as "child_name (host_Y)"
                     const displayLabel = `${child.name} (host_${hostIndex})`;
 
                     // Build logical_path from parent graph hierarchy
@@ -1000,18 +1000,20 @@ export class HierarchyModule {
             rowHeights[row] = Math.max(rowHeights[row], heights[index]);
         });
 
-        // Position nodes in the chosen grid
+        // Position nodes in the chosen grid (bottom->top, right->left)
         sortedTopLevel.forEach((node, index) => {
             const row = index % gridRows;
             const col = Math.floor(index / gridRows);
+            const rowRev = gridRows - 1 - row;
+            const colRev = gridCols - 1 - col;
 
             let x = LAYOUT_CONSTANTS.TOP_LEVEL_START_X;
-            for (let c = 0; c < col; c++) {
+            for (let c = 0; c < colRev; c++) {
                 x += colWidths[c];
             }
 
             let y = LAYOUT_CONSTANTS.TOP_LEVEL_START_Y;
-            for (let r = 0; r < row; r++) {
+            for (let r = 0; r < rowRev; r++) {
                 y += rowHeights[r];
             }
 
@@ -2320,9 +2322,11 @@ export class HierarchyModule {
             }
         }
 
-        // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
+        // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
         if (!isTopLevelNode) {
-            this.recalculateHostIndicesForTemplates();
+            this.renameGraphInstances();
+            this.renameNodeInstances();
+            this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
         }
 
         // Apply drag restrictions and layout
@@ -3053,11 +3057,10 @@ export class HierarchyModule {
                 // never updates (no pan/zoom/select) and export still shows correct state.
                 this.state.cy.endBatch();
 
-                // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
-                this.recalculateHostIndicesForTemplates();
-
-                // Rename graph instances to ensure proper numbering at each level
+                // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
                 this.renameGraphInstances();
+                this.renameNodeInstances();
+                this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
 
                 // Apply drag restrictions and styling
                 this.common.applyDragRestrictions();
@@ -3160,9 +3163,11 @@ export class HierarchyModule {
 
                 this.state.cy.endBatch();
 
-                // Recalculate host_indices for all template instances to ensure siblings have consecutive numbering
+                // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
                 if (this.state.mode === 'hierarchy') {
-                    this.recalculateHostIndicesForTemplates();
+                    this.renameGraphInstances();
+                    this.renameNodeInstances();
+                    this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
                 }
 
                 // Apply drag restrictions
@@ -3664,8 +3669,10 @@ export class HierarchyModule {
             // Force render
             this.state.cy.forceRender();
 
-            // Rename graph instances to ensure proper numbering at each level
+            // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
             this.renameGraphInstances();
+            this.renameNodeInstances();
+            this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
 
             // Recalculate layout
             setTimeout(() => {
@@ -3846,11 +3853,15 @@ export class HierarchyModule {
      * Recalculate host_indices for all template instances using DFS traversal.
      * This ensures host indices are assigned in a consistent, predictable order based on
      * the graph hierarchy structure.
+     *
+     * @param {Object} opts - Options
+     * @param {boolean} opts.useAlphabeticalChildrenSort - If true, sort children alphabetically
+     *   during DFS (for node add/reorganize in JS). If false, use template order (for textproto import).
      */
-    recalculateHostIndicesForTemplates() {
+    recalculateHostIndicesForTemplates(opts = {}) {
         // Delegate to common module for unified DFS traversal
         // This ensures consistent behavior across hierarchy and location modes
-        this.common.recalculateHostIndices();
+        this.common.recalculateHostIndices(opts);
 
         // Clear the flag
         this._recalculatingHostIndices = false;
@@ -4041,6 +4052,89 @@ export class HierarchyModule {
     }
 
     /**
+     * Rename shelf (node) instances to node_0, node_1, etc. per parent graph.
+     * Ensures consistent numbering based on template.children order.
+     * Called only on add/delete; textproto import preserves original names.
+     */
+    renameNodeInstances() {
+        const renames = [];  // Collect { oldName, newName, templateName } for connection updates
+
+        const graphNodes = this.state.cy.nodes('[type="graph"]');
+        graphNodes.forEach(graphNode => {
+            const templateName = graphNode.data('template_name');
+            if (!templateName) return;
+
+            const shelfChildren = graphNode.children('[type="shelf"]');
+            if (shelfChildren.length === 0) return;
+
+            const template = this.state.data.availableGraphTemplates?.[templateName]
+                || this.state.data.currentData?.metadata?.graph_templates?.[templateName];
+            if (!template?.children) return;
+
+            const nodeChildren = template.children.filter(c => c.type === 'node');
+            if (nodeChildren.length === 0) return;
+
+            const instancesByChildName = new Map();
+            shelfChildren.forEach(shelf => {
+                const cn = shelf.data('child_name') || shelf.data('label') || shelf.id();
+                instancesByChildName.set(cn, shelf);
+            });
+
+            const orderedShelves = [];
+            const usedShelves = new Set();
+            nodeChildren.forEach(tc => {
+                let shelf = instancesByChildName.get(tc.name);
+                if (!shelf && instancesByChildName.size > 0) {
+                    const unused = [...instancesByChildName.values()].filter(s => !usedShelves.has(s));
+                    shelf = unused.sort((a, b) => (a.data('host_index') ?? 0) - (b.data('host_index') ?? 0))[0];
+                }
+                if (shelf) {
+                    usedShelves.add(shelf);
+                    orderedShelves.push({ shelf, templateChild: tc });
+                }
+            });
+            shelfChildren.forEach(shelf => {
+                if (!usedShelves.has(shelf)) {
+                    orderedShelves.push({ shelf, templateChild: null });
+                }
+            });
+
+            orderedShelves.forEach(({ shelf, templateChild }, index) => {
+                const newName = `node_${index}`;
+                const oldChildName = shelf.data('child_name') || shelf.data('label');
+                if (oldChildName === newName) return;
+
+                renames.push({ oldName: oldChildName, newName, templateName });
+
+                const hostIndex = shelf.data('host_index');
+                shelf.data('child_name', newName);
+                shelf.data('label', `${newName} (host_${hostIndex})`);
+
+                if (templateChild) templateChild.name = newName;
+            });
+        });
+
+        // Update connection paths in all templates (paths can reference node names from nested templates)
+        if (renames.length > 0) {
+            const templates = this.state.data.availableGraphTemplates || {};
+            const metaTemplates = this.state.data.currentData?.metadata?.graph_templates || {};
+            [...Object.values(templates), ...Object.values(metaTemplates)].forEach(t => {
+                if (!t?.connections) return;
+                t.connections.forEach(conn => {
+                    renames.forEach(({ oldName, newName }) => {
+                        [conn.port_a, conn.port_b].forEach(port => {
+                            if (port?.path && Array.isArray(port.path)) {
+                                const idx = port.path.indexOf(oldName);
+                                if (idx !== -1) port.path[idx] = newName;
+                            }
+                        });
+                    });
+                });
+            });
+        }
+    }
+
+    /**
      * Delete a child graph from all instances of its parent template
      * @param {string} childName - The name of the child to remove
      * @param {string} parentTemplateName - The parent template name
@@ -4169,8 +4263,10 @@ export class HierarchyModule {
             }
         }
 
-        // Recalculate host_indices for all template instances after deletion
-        this.recalculateHostIndicesForTemplates();
+        // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
+        this.renameGraphInstances();
+        this.renameNodeInstances();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
     }
 
     /**
@@ -4396,8 +4492,10 @@ export class HierarchyModule {
             }
         }
 
-        // Recalculate host_indices for all template instances after deletion
-        this.recalculateHostIndicesForTemplates();
+        // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
+        this.renameGraphInstances();
+        this.renameNodeInstances();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
     }
 
     /**
@@ -4672,11 +4770,10 @@ export class HierarchyModule {
             this.common.createInternalConnectionsForNode(shelfId, nodeType, hostIndex);
         });
 
-        // Recalculate host indices
-        this.recalculateHostIndicesForTemplates();
-
-        // Rename graph instances to ensure proper numbering at each level
+        // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
         this.renameGraphInstances();
+        this.renameNodeInstances();
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
 
         this.refreshConnectionFilterDropdowns();
     }
@@ -4987,12 +5084,12 @@ export class HierarchyModule {
 
         console.log(`[moveGraphInstanceToTemplate] Added ${allNodesToAdd.length} nodes and ${allEdgesToAdd.length} edges across ${targetInstances.length} target instance(s)`);
 
-        // Recalculate host indices
-        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates start');
-        this.recalculateHostIndicesForTemplates();
-        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates done');
-        // Rename graph instances to ensure proper numbering at each level
+        // Rename first, then DFS (rename before recalculateHostIndices for template/modification flow)
         this.renameGraphInstances();
+        this.renameNodeInstances();
+        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates start');
+        this.recalculateHostIndicesForTemplates({ useAlphabeticalChildrenSort: true });
+        console.log('[hierarchy] moveGraphInstanceToTemplate: recalculateHostIndicesForTemplates done');
 
         this.refreshConnectionFilterDropdowns();
         console.log('[hierarchy] moveGraphInstanceToTemplate: done');

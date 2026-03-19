@@ -14,6 +14,20 @@
  * @param {Object} commonModule - CommonModule instance (optional)
  */
 export function deleteMultipleSelected(state, hierarchyModule = null, commonModule = null) {
+    // Block node/connection removal in location mode when session started in hierarchy mode
+    // (same restriction as node additions)
+    if (state.mode === 'location' && state.data.initialMode === 'hierarchy') {
+        const errorMsg = 'Cannot remove nodes or connections in location mode. This session started in hierarchy mode. ' +
+            'Removals are only allowed in hierarchy mode. Please switch to hierarchy mode to remove elements.';
+        if (window.showExportStatus && typeof window.showExportStatus === 'function') {
+            window.showExportStatus(errorMsg, 'error');
+        } else {
+            alert(errorMsg);
+        }
+        console.error('[deleteMultipleSelected] Blocked: Session started in hierarchy mode, currently in location mode');
+        return;
+    }
+
     let selectedNodes = state.cy.nodes(':selected');
     let selectedEdges = state.cy.edges(':selected');
 
@@ -319,16 +333,19 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
         // Recalculate host_indices after deletion in both hierarchy and location modes
         // Use common module for unified DFS traversal from canvas root
         if (commonModule && commonModule.recalculateHostIndices && typeof commonModule.recalculateHostIndices === 'function') {
-            commonModule.recalculateHostIndices();
+            commonModule.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
         } else if (window.commonModule && window.commonModule.recalculateHostIndices && typeof window.commonModule.recalculateHostIndices === 'function') {
-            window.commonModule.recalculateHostIndices();
+            window.commonModule.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
         }
 
-        // Rename graph instances in hierarchy mode (location mode doesn't have graph instances)
+        // Rename graph and node instances in hierarchy mode (location mode doesn't have graph instances)
         if (state.mode === 'hierarchy') {
             const hModule = hierarchyModule || window.hierarchyModule;
             if (hModule && hModule.renameGraphInstances && typeof hModule.renameGraphInstances === 'function') {
                 hModule.renameGraphInstances();
+            }
+            if (hModule && hModule.renameNodeInstances && typeof hModule.renameNodeInstances === 'function') {
+                hModule.renameNodeInstances();
             }
         }
     }

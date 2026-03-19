@@ -312,6 +312,70 @@ def reorder_graph_templates_in_textproto(textproto_text: str, order: str = 'bott
     return '\n'.join(result_lines)
 
 
+def reorder_child_mappings_by_host_id(textproto_text: str) -> str:
+    """Reorder child_mappings entries by host_id so they match deployment descriptor order.
+    
+    Protobuf map fields have undefined serialization order, so child_mappings may appear
+    in arbitrary order (e.g. alphabetical by hostname). The deployment descriptor lists
+    hosts in array order (host_id 0, 1, 2...). This ensures the cabling descriptor's
+    child_mappings appear in the same host_id order for visual consistency and debugging.
+    """
+    import re
+    
+    def extract_entries(content):
+        """Extract root_instance child_mappings blocks (direct children only) with host_id for sorting."""
+        entries = []
+        root_start = content.find('root_instance {')
+        if root_start == -1:
+            return entries, 0, 0
+        brace_start = content.find('{', root_start)
+        depth = 1
+        root_end = brace_start + 1
+        while root_end < len(content) and depth > 0:
+            if content[root_end] == '{':
+                depth += 1
+            elif content[root_end] == '}':
+                depth -= 1
+            root_end += 1
+        
+        pos = root_start
+        section_start = None
+        while pos < root_end:
+            start = content.find('child_mappings {', pos)
+            if start == -1 or start >= root_end:
+                break
+            if section_start is None:
+                section_start = start
+            key_match = re.search(r'key:\s*"([^"]+)"', content[start:start+500])
+            host_id_match = re.search(r'host_id:\s*(\d+)', content[start:start+500])
+            host_id = int(host_id_match.group(1)) if host_id_match else 999999
+            key = key_match.group(1) if key_match else f"_unk_{len(entries)}"
+            block_brace = content.find('{', start)
+            depth = 1
+            end = block_brace + 1
+            while end < len(content) and depth > 0:
+                if content[end] == '{':
+                    depth += 1
+                elif content[end] == '}':
+                    depth -= 1
+                end += 1
+            block = content[start:end]
+            entries.append((host_id, key, block))
+            pos = end
+        section_end = pos if entries else 0
+        return entries, section_start or 0, section_end
+    
+    entries, section_start, section_end = extract_entries(textproto_text)
+    if len(entries) < 2 or section_start == 0 or section_end == 0:
+        return textproto_text
+    
+    # Sort by host_id, then key for ties
+    entries.sort(key=lambda x: (x[0], x[1]))
+    
+    new_section = ''.join(block.rstrip() + '\n' for _, _, block in entries)
+    return textproto_text[:section_start] + new_section + textproto_text[section_end:]
+
+
 def format_message_as_textproto(message, single_line_field_patterns=None, depth_limits=None):
     """
     Format a protobuf message to textproto format, with optional single-line formatting
@@ -1222,7 +1286,7 @@ class DeploymentDataParser:
         hostname = node_data.get("hostname")
         hall = node_data.get("hall")
         aisle = node_data.get("aisle")
-        rack_num = node_data.get("rack_num") or node_data.get("rack")
+        rack_num = node_data.get("rack_num")
         shelf_u = node_data.get("shelf_u")
         node_type = node_data.get("shelf_node_type")
 
@@ -1255,23 +1319,22 @@ class DeploymentDataParser:
         if hostname and hostname.strip():
             host_info["hostname"] = hostname.strip()
 
-        # Add location information if available (20-column format with full hierarchy)
-        has_location = (
-            hall and hall.strip() and aisle and aisle.strip() and rack_num is not None and shelf_u is not None
-        )
-
-        if has_location:
-            host_info["hall"] = hall.strip()
-            host_info["aisle"] = aisle.strip()
+        # Add location information when available (each field independently)
+        if hall is not None and str(hall).strip():
+            host_info["hall"] = str(hall).strip()
+        if aisle is not None and str(aisle).strip():
+            host_info["aisle"] = str(aisle).strip()
+        if rack_num is not None and str(rack_num).strip() != '':
             host_info["rack_num"] = int(rack_num)
-            host_info["shelf_u"] = shelf_u
+        if shelf_u is not None:
+            host_info["shelf_u"] = shelf_u  # Already normalized to int above
 
         # Add node type if available
         if node_type:
             host_info["node_type"] = node_type
 
-        # Return None if we have neither hostname nor location info
-        if not host_info.get("hostname") and not has_location:
+        # Return None if we have neither hostname nor any location info
+        if not host_info.get("hostname") and not any(k in host_info for k in ("hall", "aisle", "rack_num", "shelf_u")):
             return None
 
         return host_info
@@ -1398,7 +1461,7 @@ def extract_host_list_from_connections(cytoscape_data: Dict) -> List[Tuple[str, 
     return sorted_hosts
 
 
-def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
+def export_flat_cabling_descriptor(cytoscape_data: Dict, sorted_hosts: Optional[List[Tuple[str, str]]] = None) -> str:
     """Export CablingDescriptor using flat/simple structure (for CSV imports)
     
     This is a simplified export that creates a single "extracted_topology" template
@@ -1406,6 +1469,12 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     there's no hierarchical structure to preserve.
     
     This matches the old flat export behavior before hierarchical support was added.
+    
+    Args:
+        cytoscape_data: Cytoscape visualization data
+        sorted_hosts: Optional pre-computed host list (hostname, node_type) sorted by host_index.
+                      When provided (e.g. from generate_cabling_guide), ensures cabling and
+                      deployment descriptors use the exact same host_id mapping.
     """
     if cluster_config_pb2 is None:
         raise ImportError("cluster_config_pb2 not available")
@@ -1414,8 +1483,9 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
     parser = VisualizerCytoscapeDataParser(cytoscape_data)
     connections = parser.extract_connections()
 
-    # Get the common sorted host list (shared with DeploymentDescriptor)
-    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    # Use shared host list when provided; otherwise extract (must match deployment export)
+    if sorted_hosts is None:
+        sorted_hosts = extract_host_list_from_connections(cytoscape_data)
 
     # Create ClusterDescriptor with full structure
     cluster_desc = cluster_config_pb2.ClusterDescriptor()
@@ -1479,7 +1549,6 @@ def export_flat_cabling_descriptor(cytoscape_data: Dict) -> str:
 
     cluster_desc.root_instance.CopyFrom(root_instance)
 
-    # Return the content directly
     return format_message_as_textproto(cluster_desc, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)
 
 
@@ -2654,7 +2723,8 @@ def add_child_mappings_recursive(node_el, element_map, graph_instance, host_id):
 
 
 def export_deployment_descriptor_for_visualizer(
-    cytoscape_data: Dict, filename_prefix: str = "deployment_descriptor"
+    cytoscape_data: Dict, filename_prefix: str = "deployment_descriptor",
+    sorted_hosts: Optional[List[Tuple[str, str]]] = None
 ) -> str:
     """Export DeploymentDescriptor from Cytoscape data
 
@@ -2666,6 +2736,11 @@ def export_deployment_descriptor_for_visualizer(
     IMPORTANT: This uses the SAME host list in the SAME order as the CablingDescriptor
     because the cabling generator uses host_id indices to map between them.
     
+    Args:
+        sorted_hosts: Optional pre-computed host list (hostname, node_type) sorted by host_index.
+                      When provided (e.g. from generate_cabling_guide), guarantees deployment
+                      hosts[] order matches cabling child_mappings host_id assignment.
+    
     PREREQUISITE: Hostnames must be set (from CSV import OR from applying deployment descriptor).
     If you imported a cabling descriptor, you must apply a deployment descriptor first before
     exporting a deployment descriptor.
@@ -2673,8 +2748,9 @@ def export_deployment_descriptor_for_visualizer(
     if deployment_pb2 is None:
         raise ImportError("deployment_pb2 not available")
 
-    # Get the common sorted host list (shared with CablingDescriptor)
-    sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+    # Use shared host list when provided; otherwise extract (must match cabling export)
+    if sorted_hosts is None:
+        sorted_hosts = extract_host_list_from_connections(cytoscape_data)
     
     # Check if hostnames are set - deployment descriptor requires hostnames
     if not sorted_hosts or all(not hostname for hostname, _ in sorted_hosts):
@@ -2726,3 +2802,5 @@ def export_deployment_descriptor_for_visualizer(
 
     # Return the content directly instead of a file path
     return format_message_as_textproto(deployment_descriptor, single_line_field_patterns=SINGLE_LINE_FIELD_PATTERNS, depth_limits=SINGLE_LINE_DEPTH_LIMITS)
+
+

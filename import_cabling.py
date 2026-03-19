@@ -2367,14 +2367,8 @@ class NetworkCablingCytoscapeVisualizer:
             graph_paths
         )
         
-        # Enumerate instances: Convert instance names to {template_name}_{index} format
-        # Track instances by template at each parent level for proper enumeration
-        self._instance_name_map = {}  # Maps (parent_path, original_name) -> enumerated_name
-        self._normalize_instance_names([tuple(p) for p in graph_paths])
-        
-        # Enumerate nodes: Convert node names to node_0, node_1, etc. per parent
-        self._node_name_map = {}  # Maps (parent_path, original_child_name) -> normalized_name
-        self._normalize_node_names()
+        # Preserve original names from textproto (no normalization during import).
+        # Normalization to template_name_0/node_0 format runs only on add/delete in JS.
         
         # Create Graph Instance compound visual elements
         # Process in the order collected (parent before children)
@@ -2452,122 +2446,6 @@ class NetworkCablingCytoscapeVisualizer:
                             collected_paths
                         )
     
-    def _normalize_instance_names(self, sorted_graph_paths):
-        """Normalize instance names to {template_name}_{index} format
-        
-        Converts arbitrary instance names from the descriptor to enumerated format.
-        For example: "superpod1", "superpod2" -> "n300_lb_superpod_0", "n300_lb_superpod_1"
-        
-        Args:
-            sorted_graph_paths: List of graph path tuples, sorted by depth
-        """
-        # Group instances by (parent_path, template_name) to enumerate them
-        instances_by_parent_and_template = {}
-        
-        for graph_path_tuple in sorted_graph_paths:
-            if len(graph_path_tuple) == 0:
-                # Root node - no enumeration needed
-                continue
-            
-            # Get template for this path
-            template_name = None
-            if self._hierarchy_resolver:
-                template_name = self._hierarchy_resolver.get_template_for_path(list(graph_path_tuple))
-            
-            if not template_name:
-                continue
-            
-            # Determine parent path
-            parent_path_tuple = graph_path_tuple[:-1] if len(graph_path_tuple) > 1 else ()
-            original_name = graph_path_tuple[-1]
-            
-            # Group by (parent, template)
-            key = (parent_path_tuple, template_name)
-            if key not in instances_by_parent_and_template:
-                instances_by_parent_and_template[key] = []
-            instances_by_parent_and_template[key].append((graph_path_tuple, original_name))
-        
-        # Enumerate instances within each group
-        for (parent_path, template_name), instances in instances_by_parent_and_template.items():
-            for index, (graph_path_tuple, original_name) in enumerate(instances):
-                enumerated_name = f"{template_name}_{index}"
-                self._instance_name_map[(parent_path, original_name)] = enumerated_name
-    
-    def _normalize_node_names(self):
-        """Normalize node names to node_0, node_1, etc. per parent
-        
-        Groups nodes by their parent path and enumerates them sequentially.
-        For example: "node1", "node2", "node3" -> "node_0", "node_1", "node_2"
-        
-        IMPORTANT: Preserves template.children order (not alphabetical order) to ensure
-        consistent numbering that matches template definition. This ensures that nodes
-        are numbered in the same order they appear in the template, regardless of
-        their original names.
-        """
-        # Group nodes by parent path
-        nodes_by_parent = {}
-        for device_info in self.graph_hierarchy:
-            path = device_info['path']
-            parent_path = tuple(path[:-1])  # All but the last element
-            original_child_name = device_info['child_name']
-            
-            if parent_path not in nodes_by_parent:
-                nodes_by_parent[parent_path] = []
-            nodes_by_parent[parent_path].append((device_info, original_child_name))
-        
-        # Enumerate nodes within each parent
-        for parent_path, nodes in nodes_by_parent.items():
-            # Get template for parent to preserve template.children order
-            parent_template_name = None
-            if self._hierarchy_resolver:
-                parent_template_name = self._hierarchy_resolver.get_template_for_path(list(parent_path))
-            
-            if parent_template_name and parent_template_name in self.cluster_descriptor.graph_templates:
-                # Use template.children order
-                template = self.cluster_descriptor.graph_templates[parent_template_name]
-                nodes_by_name = {name: (dev, name) for dev, name in nodes}
-                ordered_nodes = []
-                
-                # Process in template.children order
-                for child_instance in template.children:
-                    child_name = child_instance.name
-                    if child_name in nodes_by_name:
-                        ordered_nodes.append(nodes_by_name[child_name])
-                
-                # Add any nodes not found in template (shouldn't happen, but handle gracefully)
-                for dev, name in nodes:
-                    if name not in {n[1] for n in ordered_nodes}:
-                        ordered_nodes.append((dev, name))
-                
-                nodes = ordered_nodes
-            else:
-                # Fallback: sort alphabetically if no template available
-                # Note: This will fail for "node10" < "node2" alphabetically
-                nodes.sort(key=lambda x: x[1])  # Sort by original child name
-            
-            for index, (device_info, original_child_name) in enumerate(nodes):
-                normalized_name = f"node_{index}"
-                self._node_name_map[(parent_path, original_child_name)] = normalized_name
-                # Update the device_info in place
-                device_info['child_name'] = normalized_name
-    
-    def _get_enumerated_name(self, graph_path):
-        """Get the enumerated name for a graph path
-        
-        Args:
-            graph_path: List of path elements
-            
-        Returns:
-            Enumerated name if found, otherwise original name
-        """
-        if len(graph_path) == 0:
-            return None  # Root has no enumerated name
-        
-        parent_path = tuple(graph_path[:-1])
-        original_name = graph_path[-1]
-        
-        return self._instance_name_map.get((parent_path, original_name), original_name)
-    
     def _create_graph_compound_node(self, graph_path, graph_node_map):
         """Create a visual compound element for a Graph Instance (e.g., superpod, pod)
         
@@ -2601,10 +2479,10 @@ class NetworkCablingCytoscapeVisualizer:
             template_name = root_template_name
             child_name = None  # Root has no child_name
         else:
-            # Use enumerated name for label
-            enumerated_name = self._get_enumerated_name(graph_path)
+            # Use original name from path (preserved from textproto)
+            original_name = graph_path[-1]
             graph_id = "graph_" + "_".join(graph_path)  # Keep original path for ID
-            graph_label = enumerated_name  # Use enumerated name for label
+            graph_label = original_name  # Preserve original name; JS normalizes on add/delete
         
         # Determine parent (depth-0 is root with no parent, depth-1 are children of root)
         parent_id = None
@@ -2666,8 +2544,8 @@ class NetworkCablingCytoscapeVisualizer:
             template_name = self._hierarchy_resolver.get_template_for_path(graph_path)
         
         # Create graph compound node with calculated position to prevent overlaps
-        # For non-root graphs, use the enumerated name as child_name
-        child_name = self._get_enumerated_name(graph_path) if len(graph_path) > 0 else None
+        # For non-root graphs, use original name as child_name (JS normalizes on add/delete)
+        child_name = graph_path[-1] if len(graph_path) > 0 else None
         
         
         graph_node = self.create_node_from_template(
@@ -2754,14 +2632,9 @@ class NetworkCablingCytoscapeVisualizer:
         # This prevents all graphs from auto-centering at the same spot
         x, y = self.calculate_position_in_sequence("shelf", sibling_index, parent_x=parent_x, parent_y=parent_y)
         
-        # Build logical_path using enumerated instance names (e.g., ["n300_lb_cluster_0", "n300_lb_superpod_0"])
-        # This uses the existing {template_name}_{index} format from _normalize_instance_names()
-        logical_path = []
-        for i in range(len(path) - 1):  # Exclude the leaf node itself
-            parent_graph_path = path[:i+1]
-            enumerated_name = self._get_enumerated_name(parent_graph_path)
-            if enumerated_name:
-                logical_path.append(enumerated_name)
+        # Build logical_path from graph instance names along the path (preserve originals from textproto)
+        # JS normalization runs only on add/delete
+        logical_path = list(path[:-1])  # Graph path elements, exclude the leaf node itself
         
         # Create shelf directly under graph (shelf = host device)
         # Use host_id directly as the ID - it's globally unique and matches deployment descriptor indexing
@@ -2897,8 +2770,8 @@ class NetworkCablingCytoscapeVisualizer:
                     # No aisle level - racks will be children of hall (or top-level if no hall)
                     rack_base_x, rack_base_y = base_x, base_y
                 
-                # Get sorted racks for this aisle (right to left ordering)
-                rack_numbers = sorted(hall_aisle_racks[hall][aisle], reverse=True)
+                # Get sorted racks for this aisle (ascending to match JS recalculateHostIndices and deployment host order)
+                rack_numbers = sorted(hall_aisle_racks[hall][aisle])
                 
                 # Create rack nodes
                 for rack_idx, rack_num in enumerate(rack_numbers):
@@ -2906,9 +2779,9 @@ class NetworkCablingCytoscapeVisualizer:
                     rack_x += rack_base_x
                     rack_y += rack_base_y
                     
-                    # Get shelf units for this rack using composite key
+                    # Get shelf units for this rack using composite key (ascending to match deployment host order)
                     rack_key = (hall, aisle, rack_num)
-                    shelf_units = sorted(self.rack_units[rack_key], reverse=True)
+                    shelf_units = sorted(self.rack_units[rack_key])
                     
                     # Determine rack parent based on what levels are shown
                     if show_aisle_level:
@@ -3774,107 +3647,27 @@ class NetworkCablingCytoscapeVisualizer:
                     "children": []
                 }
                 
-                # Build mappings for normalized names (recursively for nested paths)
-                # This needs to handle arbitrary depth hierarchies
-                path_mapping = {}  # Maps tuple(original_path) -> normalized_name at each level
-                
-                # Helper function to recursively build path mappings through all nested templates
-                def build_path_mappings_recursive(parent_path_tuple, template_name, depth=0):
-                    """
-                    Recursively build mappings for all paths through nested templates.
-                    
-                    Args:
-                        parent_path_tuple: Tuple of original names leading to this template
-                        template_name: Name of the current template to process
-                        depth: Current depth in the hierarchy
-                    """
-                    if template_name not in self.cluster_descriptor.graph_templates:
-                        return
-                    
-                    template = self.cluster_descriptor.graph_templates[template_name]
-                    
-                    # Process children in original order to preserve template structure
-                    # This ensures that subgraphs appear in the same order as in the textproto
-                    node_index = 0
-                    graph_template_counters = {}  # Track enumeration index per template type
-                    
-                    # Process children in the exact order they appear in template.children
-                    for child in template.children:
-                        if child.HasField("graph_ref"):
-                            child_template = child.graph_ref.graph_template
-                            # Get enumeration index for this template type
-                            if child_template not in graph_template_counters:
-                                graph_template_counters[child_template] = 0
-                            enum_idx = graph_template_counters[child_template]
-                            graph_template_counters[child_template] += 1
-                            
-                            normalized_name = f"{child_template}_{enum_idx}"
-                            child_path = parent_path_tuple + (child.name,)
-                            path_mapping[child_path] = normalized_name
-                            
-                            # Recurse into this child template
-                            build_path_mappings_recursive(child_path, child_template, depth + 1)
-                        elif child.HasField("node_ref"):
-                            normalized_name = f"node_{node_index}"
-                            child_path = parent_path_tuple + (child.name,)
-                            path_mapping[child_path] = normalized_name
-                            node_index += 1
-                
-                # Build the complete path mapping starting from this template
-                build_path_mappings_recursive((), template_name, 0)
-                
-                # Extract children (nodes or graph references) with normalized names
+                # Use original names from textproto - no normalization.
+                # This preserves host_ids and instance names for round-trip export.
                 for child in template_proto.children:
                     child_info = {}
-                    
-                    # Look up normalized name from path_mapping
-                    child_path_tuple = (child.name,)
-                    normalized_name = path_mapping.get(child_path_tuple, child.name)
+                    child_info["name"] = child.name  # Original name from textproto
                     
                     if child.HasField("node_ref"):
-                        child_info["name"] = normalized_name
-                        child_info["original_name"] = child.name  # Keep original for reference
                         child_info["type"] = "node"
                         child_info["node_descriptor"] = child.node_ref.node_descriptor
                     elif child.HasField("graph_ref"):
-                        child_info["name"] = normalized_name
-                        child_info["original_name"] = child.name  # Keep original for reference
                         child_info["type"] = "graph"
                         child_info["graph_template"] = child.graph_ref.graph_template
                     
                     template_info["children"].append(child_info)
                 
-                # Extract internal connections and update paths with normalized names
+                # Extract internal connections - keep original path names from textproto
                 template_info["connections"] = []
                 for cable_type, conn_list in template_proto.internal_connections.items():
                     for conn in conn_list.connections:
-                        # Normalize paths: replace original names with enumerated names
-                        # Paths can be arbitrary depth: ["node1"], ["superpod1", "node1"], ["superpod1", "pod1", "node1"], etc.
                         port_a_path = list(conn.port_a.path)
                         port_b_path = list(conn.port_b.path)
-                        
-                        # Normalize paths using the recursive path_mapping
-                        def normalize_path(original_path):
-                            """
-                            Normalize a path of arbitrary depth.
-                            Works by building up the path incrementally and looking up each segment.
-                            """
-                            normalized = []
-                            for i in range(len(original_path)):
-                                # Build the path tuple up to this point
-                                path_tuple = tuple(original_path[:i+1])
-                                
-                                # Look up the normalized name for this position
-                                if path_tuple in path_mapping:
-                                    normalized.append(path_mapping[path_tuple])
-                                else:
-                                    # Fallback: keep original if not found
-                                    normalized.append(original_path[i])
-                            
-                            return normalized
-                        
-                        port_a_path = normalize_path(port_a_path)
-                        port_b_path = normalize_path(port_b_path)
                         
                         template_info["connections"].append({
                             "cable_type": cable_type,
@@ -4220,7 +4013,6 @@ def merge_cabling_guide_data(existing_data, new_data, prefix):
         edge_data["target"] = target_id
         new_edges_to_add.append({"group": "edges", "data": edge_data})
 
-    # Return existing elements unchanged (same refs) so client-sent parent refs are preserved
     merged_elements = list(existing_els) + new_nodes_to_add + new_edges_to_add
 
     existing_meta = (existing_data or {}).get("metadata") or {}

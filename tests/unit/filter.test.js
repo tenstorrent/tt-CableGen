@@ -100,10 +100,10 @@ describe('Filter Tests - Cytoscape Visualization', () => {
         // Rack 1: shelf-0, shelf-1 (Hall1, Aisle A, Rack 1)
         // Rack 2: shelf-2, shelf-3 (Hall2, Aisle A, Rack 2)
         const shelves = [
-            { id: '0', rack: 1, hostname: 'host0', template: 'template1', host_index: 0, hall: 'Hall1', aisle: 'A' },
-            { id: '1', rack: 1, hostname: 'host1', template: 'template1', host_index: 1, hall: 'Hall1', aisle: 'A' },
-            { id: '2', rack: 2, hostname: 'host2', template: 'template2', host_index: 2, hall: 'Hall2', aisle: 'A' },
-            { id: '3', rack: 2, hostname: 'host3', template: 'template2', host_index: 3, hall: 'Hall2', aisle: 'A' }
+            { id: '0', rack_num: 1, hostname: 'host0', template: 'template1', host_index: 0, hall: 'Hall1', aisle: 'A' },
+            { id: '1', rack_num: 1, hostname: 'host1', template: 'template1', host_index: 1, hall: 'Hall1', aisle: 'A' },
+            { id: '2', rack_num: 2, hostname: 'host2', template: 'template2', host_index: 2, hall: 'Hall2', aisle: 'A' },
+            { id: '3', rack_num: 2, hostname: 'host3', template: 'template2', host_index: 3, hall: 'Hall2', aisle: 'A' }
         ];
 
         shelves.forEach(shelf => {
@@ -112,7 +112,7 @@ describe('Filter Tests - Cytoscape Visualization', () => {
                 data: {
                     id: shelf.id,
                     type: 'shelf',
-                    rack_num: shelf.rack,
+                    rack_num: shelf.rack_num,
                     hostname: shelf.hostname,
                     host_index: shelf.host_index,
                     host_id: shelf.host_index,

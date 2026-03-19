@@ -55,6 +55,7 @@ def sample_cytoscape_data():
                     "hostname": "shelf-001",
                     "label": "shelf-001",  # Also set label for validation
                     "node_type": "wh_galaxy",
+                    "host_index": 0,
                     "parent": "graph1"
                 }
             },
@@ -112,11 +113,11 @@ def sample_cytoscape_data_with_location():
                     "hostname": "shelf-001",
                     "label": "shelf-001",  # Also set label for validation
                     "node_type": "wh_galaxy",
+                    "host_index": 0,
                     "parent": "graph1",
                     "hall": "hall1",
                     "aisle": "aisle1",
-                    "rack": "rack1",
-                    "rack_num": "rack1",  # Use rack_num instead of rack
+                    "rack_num": "rack1",
                     "shelf_u": "1"
                 }
             },

@@ -674,6 +674,17 @@ export class FileManagementModule {
 
                 // Enable the Add Node button after successful upload
                 window.updateAddNodeButtonState?.();
+
+                // Update page title with filename
+                const displayName = filename || (() => {
+                    try {
+                        const p = new URL(url).pathname.split('/').filter(Boolean);
+                        return p[p.length - 1] || 'external file';
+                    } catch (_) {
+                        return 'external file';
+                    }
+                })();
+                document.title = `Network Cabling Visualizer - ${displayName}`;
             } else {
                 this.notificationManager.error(`Error: ${result.error || 'Unknown error occurred'}`);
             }
@@ -831,6 +842,9 @@ export class FileManagementModule {
 
                 // Enable the Add Node button after successful upload
                 window.updateAddNodeButtonState?.();
+
+                // Update page title with filename
+                document.title = `Network Cabling Visualizer - ${file.name}`;
             } else {
                 this.notificationManager.error(`Error: ${result.error || 'Unknown error occurred'}`);
             }

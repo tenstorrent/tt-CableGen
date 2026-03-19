@@ -318,12 +318,15 @@ export class CommonModule {
             const startX = graphPos.x - totalWidth / 2;
             const startY = graphPos.y - totalHeight / 2;
 
+            // Hierarchy mode: bottom->top, right->left. Location mode: top->bottom, left->right (lower shelves below higher)
             shelves.forEach((shelf, index) => {
                 const row = isHierarchyMode ? index % gridRows : Math.floor(index / gridCols);
                 const col = isHierarchyMode ? Math.floor(index / gridRows) : index % gridCols;
+                const rowRev = isHierarchyMode ? gridRows - 1 - row : row;
+                const colRev = isHierarchyMode ? gridCols - 1 - col : col;
                 shelf.position({
-                    x: startX + margin + col * stepX,
-                    y: startY + margin + row * stepY
+                    x: startX + margin + colRev * stepX,
+                    y: startY + margin + rowRev * stepY
                 });
             });
         }
@@ -416,7 +419,7 @@ export class CommonModule {
             const startX = graphPos.x + (graphBBox.w * 0.05);
             const startY = graphPos.y + (graphBBox.h * LAYOUT_CONSTANTS.GRAPH_PADDING_TOP_FACTOR);
 
-            // Position each nested graph in the chosen grid
+            // Position each nested graph: hierarchy mode bottom->top right->left, location mode top->bottom left->right
             nestedGraphs.forEach((graph, index) => {
                 let row, col;
                 if (isHierarchyMode) {
@@ -426,14 +429,16 @@ export class CommonModule {
                     row = Math.floor(index / gridCols);
                     col = index % gridCols;
                 }
+                const rowRev = isHierarchyMode ? gridRows - 1 - row : row;
+                const colRev = isHierarchyMode ? gridCols - 1 - col : col;
 
                 let x = startX;
-                for (let c = 0; c < col; c++) {
+                for (let c = 0; c < colRev; c++) {
                     x += colWidths[c];
                 }
 
                 let y = startY;
-                for (let r = 0; r < row; r++) {
+                for (let r = 0; r < rowRev; r++) {
                     y += rowHeights[r];
                 }
 
@@ -3662,7 +3667,7 @@ export class CommonModule {
         ]);
 
         const nodeFieldsForDeployment = new Set([
-            'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num', 'rack',
+            'id', 'type', 'hostname', 'hall', 'aisle', 'rack_num',
             'shelf_u', 'shelf_node_type', 'host_index', 'host_id', 'node_type'
         ]);
 
@@ -4388,11 +4393,17 @@ export class CommonModule {
      * Recalculate host_indices using DFS traversal from canvas root.
      * Treats canvas as implicit root - processes all root graphs and top-level shelves.
      * Works in both hierarchy and location modes.
-     * 
+     *
      * This function ensures unique, consecutive host_index values starting from 0
      * across all shelf nodes in the visualization.
+     *
+     * @param {Object} opts - Options
+     * @param {boolean} opts.useAlphabeticalChildrenSort - If true, sort all children alphabetically
+     *   for DFS traversal (used for node additions/reorganizations in JS). If false, use template
+     *   order when available (used for textproto import).
      */
-    recalculateHostIndices() {
+    recalculateHostIndices(opts = {}) {
+        const useAlphabeticalChildrenSort = opts.useAlphabeticalChildrenSort === true;
 
         // Track the global host_index counter (start from 0 for complete renumbering)
         let nextHostIndex = 0;
@@ -4439,11 +4450,12 @@ export class CommonModule {
                 }
             });
 
-            // Order children according to template (if available), otherwise fall back to alphabetical
+            // Order children: use alphabetical when useAlphabeticalChildrenSort (JS add/reorganize),
+            // otherwise use template order when available
             const orderedChildren = [];
 
-            if (template && template.children && Array.isArray(template.children)) {
-                // Follow template's children order (matches cabling descriptor DFS order)
+            if (!useAlphabeticalChildrenSort && template && template.children && Array.isArray(template.children)) {
+                // Follow template's children order (matches cabling descriptor DFS order) - textproto import
                 const addedChildIds = new Set();
                 const processedChildNames = new Set();
 
@@ -4480,8 +4492,15 @@ export class CommonModule {
                         processedChildNames.add(childName);
                     }
                 });
+
+                // Sort by instance/child name for deterministic host_id assignment (templates by instance name)
+                orderedChildren.sort((a, b) => {
+                    const aName = (a.childName || a.node.data('label') || '').toString();
+                    const bName = (b.childName || b.node.data('label') || '').toString();
+                    return aName.localeCompare(bName);
+                });
             } else {
-                // Fallback: sort alphabetically if no template available
+                // Sort alphabetically: for JS add/reorganize, or when no template available
                 directChildren.forEach(child => {
                     orderedChildren.push({
                         node: child,
@@ -4583,7 +4602,7 @@ export class CommonModule {
 
         // Process root graphs first (they contain nested shelves)
         let sortedRootGraphs;
-        if (rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
+        if (!useAlphabeticalChildrenSort && rootTemplate && rootTemplate.children && rootTemplate.children.length > 0) {
             const rootGraphsByName = new Map();
             rootGraphNodes.forEach(node => {
                 const childName = node.data('child_name') || node.data('label') || node.id();
@@ -4606,11 +4625,18 @@ export class CommonModule {
                     sortedRootGraphs.push(node);
                 }
             });
+
+            // Sort by instance name for deterministic host_id assignment
+            sortedRootGraphs.sort((a, b) => {
+                const aName = (a.data('child_name') || a.data('label') || a.id()).toString();
+                const bName = (b.data('child_name') || b.data('label') || b.id()).toString();
+                return aName.localeCompare(bName);
+            });
         } else {
-            // Fallback: sort alphabetically if no template available
+            // Sort alphabetically: for JS add/reorganize, or when no template available
             sortedRootGraphs = rootGraphNodes.toArray().sort((a, b) => {
-                const labelA = a.data('label') || a.id();
-                const labelB = b.data('label') || b.id();
+                const labelA = (a.data('child_name') || a.data('label') || a.id()).toString();
+                const labelB = (b.data('child_name') || b.data('label') || b.id()).toString();
                 return labelA.localeCompare(labelB);
             });
         }

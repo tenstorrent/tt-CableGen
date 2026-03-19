@@ -1264,21 +1264,6 @@ function validateMergedCablingGuide(existingData, newData) {
 }
 
 /**
- * Build map from port key (host_index_tray_port) to existing port node id.
- * Used to resolve new CSV edge source/target to actual port ids (not shelf ids).
- */
-function buildPortKeyToNodeId(elements) {
-    const map = new Map();
-    (elements || []).forEach((el) => {
-        const d = el.data || {};
-        if (d.source !== undefined || d.target !== undefined) return;
-        const key = getPortKey(d);
-        if (key !== '' && d.id != null) map.set(key, d.id);
-    });
-    return map;
-}
-
-/**
  * Shelf identity for "same node" matching: hostname if non-empty, else hall|aisle|rack_num|shelf_u.
  * Used so we do not create duplicate shelves when the new CSV describes the same deployment.
  */
@@ -1333,41 +1318,6 @@ function buildExistingIdentityMaps(elements) {
     return { shelfIdentityToShelfId, trayKeyToId, portKeyToId, nodeById };
 }
 
-/**
- * Build map from endpoint key (host_index/host_id or id) to existing node id.
- * Used to match new-guide nodes to already-present nodes so we add only edges when possible.
- */
-function buildEndpointToNodeId(elements) {
-    const map = new Map();
-    const nodeById = new Map();
-    (elements || []).forEach((el) => {
-        const d = el.data || {};
-        if (d.source === undefined && d.target === undefined && d.id !== undefined) {
-            nodeById.set(d.id, d);
-        }
-    });
-    (elements || []).forEach((el) => {
-        const d = el.data || {};
-        if (d.source !== undefined || d.target !== undefined) return;
-        const id = d.id;
-        if (id == null) return;
-        const key = getEndpointKey(d, id);
-        if (key !== '') map.set(key, id);
-    });
-    return map;
-}
-
-
-/**
- * Merge a second cabling guide's cytoscape data into existing data.
- * When all nodes from the new guide are already present (matched by endpoint key), only new
- * connections (edges) are added. When the new guide has nodes not in the graph, those nodes
- * are added with a prefix and their connections are remapped.
- * @param {Object} existingData - Current cytoscape data (elements + metadata)
- * @param {Object} newData - Cytoscape data from the new CSV
- * @param {string} prefix - Unique prefix for the new guide (e.g. 'm2', 'm3')
- * @returns {Object} Merged { elements, metadata }
- */
 /** Normalize BH_GALAXY -> BH_GALAXY_REV_AB in shelf_node_type (BH_GALAXY not used internally) */
 function normalizeShelfNodeTypeForImport(val) {
     if (!val || typeof val !== 'string') return val;
@@ -1379,6 +1329,16 @@ function normalizeShelfNodeTypeForImport(val) {
     return val;
 }
 
+/**
+ * Merge a second cabling guide's cytoscape data into existing data.
+ * When all nodes from the new guide are already present (matched by endpoint key), only new
+ * connections (edges) are added. When the new guide has nodes not in the graph, those nodes
+ * are added with a prefix and their connections are remapped.
+ * @param {Object} existingData - Current cytoscape data (elements + metadata)
+ * @param {Object} newData - Cytoscape data from the new CSV
+ * @param {string} prefix - Unique prefix for the new guide (e.g. 'm2', 'm3')
+ * @returns {Object} Merged { elements, metadata }
+ */
 function mergeCablingGuideData(existingData, newData, prefix) {
     const existingEls = existingData?.elements || [];
     const newEls = newData?.elements || [];
@@ -1787,6 +1747,7 @@ async function uploadFileGeneric(file, mode) {
             initVisualization(result.data);
             updateConnectionLegend(result.data);
             hideInitializationShowControls();
+            document.title = `Network Cabling Visualizer - ${file.name}`;
         } else {
             showErrorForMode(mode, result.error || 'Failed to process file');
         }
@@ -2093,10 +2054,10 @@ const otherFunctions = {
     getLocationByHostIndex,
     getHostIndexByLocation,
     getHostIndexByHostname,
+    validateOneConnectionPerPort,
     addAnotherCablingGuideLocation,
     mergeCablingGuideData,
     validateMergedCablingGuide,
-    validateOneConnectionPerPort,
 };
 
 // Combine and expose all functions
@@ -2106,4 +2067,4 @@ Object.keys(functionsToExpose).forEach(key => {
 });
 
 // Named exports for tests (merge debugging)
-export { mergeCablingGuideData, sortElementsParentsBeforeChildren, validateMergedCablingGuide, validateOneConnectionPerPort };
+export { validateOneConnectionPerPort, mergeCablingGuideData, sortElementsParentsBeforeChildren, validateMergedCablingGuide };

@@ -193,6 +193,45 @@ export class ExportModule {
     }
 
     /**
+     * Run host_index sanity pass before export.
+     * Ensures DFS-derived host order is consistent regardless of import/merge path.
+     * @returns {boolean} True if any host indices were changed during the pass.
+     */
+    runHostIndexSanityPass() {
+        if (!this.commonModule?.recalculateHostIndices || typeof this.commonModule.recalculateHostIndices !== 'function') {
+            return false;
+        }
+        const shelves = this.state.cy.nodes('[type="shelf"]');
+        const before = new Map();
+        shelves.forEach(node => {
+            const hi = node.data('host_index');
+            before.set(node.id(), hi === undefined || hi === null ? -1 : hi);
+        });
+        this.commonModule.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
+        let anyChanged = false;
+        shelves.forEach(node => {
+            const prev = before.get(node.id());
+            const now = node.data('host_index');
+            const nowVal = now === undefined || now === null ? -1 : now;
+            if (prev !== nowVal) anyChanged = true;
+        });
+        return anyChanged;
+    }
+
+    /**
+     * Show warning banner when host indices were reordered during sanity pass.
+     * @param {boolean} indicesChanged - True if runHostIndexSanityPass reported changes.
+     */
+    showHostIndexReorderWarning(indicesChanged) {
+        if (indicesChanged) {
+            this.notificationManager.show(
+                'Host indices were reordered during export to ensure consistent DFS ordering. The visualization has been updated.',
+                'warning'
+            );
+        }
+    }
+
+    /**
      * Export CablingDescriptor
      */
     async exportCablingDescriptor() {
@@ -200,6 +239,9 @@ export class ExportModule {
             this.notificationManager.show('No visualization data available', 'error');
             return;
         }
+
+        const hostIndicesChanged = this.runHostIndexSanityPass();
+        this.showHostIndexReorderWarning(hostIndicesChanged);
 
         // Check if we have saved hierarchy state (from switching hierarchy -> location)
         // If available, use hierarchical export even if initialMode was 'location'
@@ -384,6 +426,9 @@ export class ExportModule {
             return;
         }
 
+        const hostIndicesChanged = this.runHostIndexSanityPass();
+        this.showHostIndexReorderWarning(hostIndicesChanged);
+
         const exportBtn = document.getElementById('exportDeploymentBtn');
         const originalText = exportBtn ? exportBtn.textContent : 'Export';
 
@@ -541,6 +586,9 @@ export class ExportModule {
             return;
         }
 
+        const hostIndicesChanged = this.runHostIndexSanityPass();
+        this.showHostIndexReorderWarning(hostIndicesChanged);
+
         const generateBtn = document.getElementById('generateCablingGuideBtn');
         const originalText = generateBtn ? generateBtn.textContent : 'Generate';
 
@@ -607,6 +655,9 @@ export class ExportModule {
             this.notificationManager.show('No visualization data available', 'error');
             return;
         }
+
+        const hostIndicesChanged = this.runHostIndexSanityPass();
+        this.showHostIndexReorderWarning(hostIndicesChanged);
 
         // Check for nodes without hostnames and show warning
         const nodesWithoutHostname = this.validateHostnames();
