@@ -28,7 +28,12 @@ from import_cabling import (
 # Import export functionality
 try:
     # Test if export functionality is available
-    from export_descriptors import export_cabling_descriptor_for_visualizer, export_deployment_descriptor_for_visualizer, export_flat_cabling_descriptor
+    from export_descriptors import (
+        export_cabling_descriptor_for_visualizer,
+        export_deployment_descriptor_for_visualizer,
+        export_flat_cabling_descriptor,
+        extract_host_list_from_connections,
+    )
 
     EXPORT_AVAILABLE = True
 except ImportError as e:
@@ -879,18 +884,23 @@ def generate_cabling_guide():
         has_location = _has_location_info(cytoscape_data)
         use_simple_format = not has_location
 
+        # Compute shared host list once so cabling and deployment descriptors use identical host_id mapping
+        sorted_hosts = extract_host_list_from_connections(cytoscape_data)
+
         # Generate temporary files for descriptors with unique prefixes
         prefix = f"cablegen_{int(time.time())}_{threading.get_ident()}_"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as cabling_file:
             # Cabling descriptor: Always use flat export for cabling guide generation
             # This avoids "multiple root nodes" errors and provides a simpler structure
-            cabling_content = export_flat_cabling_descriptor(cytoscape_data)
+            cabling_content = export_flat_cabling_descriptor(cytoscape_data, sorted_hosts=sorted_hosts)
             cabling_file.write(cabling_content)
             cabling_path = cabling_file.name
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".textproto", delete=False, prefix=prefix) as deployment_file:
-            # Deployment descriptor: Uses physical location information when available
-            deployment_content = export_deployment_descriptor_for_visualizer(cytoscape_data)
+            # Deployment descriptor: Uses same host order as cabling (host_id 0 = hosts[0])
+            deployment_content = export_deployment_descriptor_for_visualizer(
+                cytoscape_data, sorted_hosts=sorted_hosts
+            )
             deployment_file.write(deployment_content)
             deployment_path = deployment_file.name
 

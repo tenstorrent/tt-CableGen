@@ -864,6 +864,33 @@ export function parseDeploymentDescriptorFromContent(textprotoContent) {
 }
 
 /**
+ * Parse cabling descriptor child_mappings to extract hostname -> host_id.
+ * Used to verify host_id consistency between cabling and deployment descriptors.
+ * @param {string} textprotoContent - Cabling descriptor textproto content
+ * @returns {Object.<string, number>} Map of hostname -> host_id
+ */
+export function parseCablingHostIds(textprotoContent) {
+    const result = {};
+    // Match child_mappings blocks: key: "hostname" ... host_id: N (protobuf map format)
+    const regex = /child_mappings\s*\{[^}]*key:\s*"([^"]+)"[^}]*host_id:\s*(\d+)/gs;
+    let match;
+    while ((match = regex.exec(textprotoContent)) !== null) {
+        result[match[1]] = parseInt(match[2], 10);
+    }
+    return result;
+}
+
+/**
+ * Parse deployment descriptor to get hosts in array order (index N = host_id N).
+ * @param {string} textprotoContent - Deployment descriptor textproto content
+ * @returns {string[]} Hostnames in hosts[] order
+ */
+export function parseDeploymentHostOrder(textprotoContent) {
+    const parsed = parseDeploymentDescriptorFromContent(textprotoContent);
+    return parsed.elements.map(el => el.data.hostname).filter(Boolean);
+}
+
+/**
  * Load expected output file (CSV or textproto)
  * @param {string} filePath - Path to expected output file (relative to test-data/expected-outputs/)
  * @returns {string} File contents

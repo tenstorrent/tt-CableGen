@@ -338,11 +338,14 @@ export function deleteMultipleSelected(state, hierarchyModule = null, commonModu
             window.commonModule.recalculateHostIndices({ useAlphabeticalChildrenSort: true });
         }
 
-        // Rename graph instances in hierarchy mode (location mode doesn't have graph instances)
+        // Rename graph and node instances in hierarchy mode (location mode doesn't have graph instances)
         if (state.mode === 'hierarchy') {
             const hModule = hierarchyModule || window.hierarchyModule;
             if (hModule && hModule.renameGraphInstances && typeof hModule.renameGraphInstances === 'function') {
                 hModule.renameGraphInstances();
+            }
+            if (hModule && hModule.renameNodeInstances && typeof hModule.renameNodeInstances === 'function') {
+                hModule.renameNodeInstances();
             }
         }
     }

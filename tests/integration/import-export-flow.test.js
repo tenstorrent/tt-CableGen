@@ -27,7 +27,10 @@ import {
     callPythonImport,
     callPythonExport,
     callPythonExportDeployment,
+    callPythonExportFlatCabling,
     callPythonExportCSV,
+    parseCablingHostIds,
+    parseDeploymentHostOrder,
     countShelfNodes,
     countConnections,
     extractHostnames,
@@ -621,6 +624,40 @@ describe('Import/Export Flow Integration Tests', () => {
     // ============================================================================
 
     describe('CSV Format Tests', () => {
+        test('CSV import (Python) -> JS state -> export cabling + deployment: host_id must match (no JS/Python ordering mismatch)', () => {
+            // Full flow: Python CSV import -> JS cytoscape state -> Python export cabling + deployment.
+            // Verifies cabling child_mappings host_id matches deployment hosts[] index.
+            // Guards against JS/Python host ordering inconsistencies that caused host_id mix-ups.
+            const csvFile = 'SP5_C1-10_full.csv';
+            const csvPath = path.join(TEST_DATA_DIR, csvFile);
+            if (!fs.existsSync(csvPath)) {
+                throw new Error(`Host ID consistency test CSV not found: ${csvPath}`);
+            }
+
+            const importedData = importFromPython(csvFile);
+            expect(importedData.elements.length).toBeGreaterThan(0);
+
+            const cytoscapeData = getCytoscapeData();
+            const shelfNodes = cytoscapeData.elements.filter(el => el.data && el.data.type === 'shelf');
+            expect(shelfNodes.length).toBeGreaterThanOrEqual(2);
+
+            // Export both descriptors (same path as generate_cabling_guide - shared cytoscape_data)
+            const cablingText = callPythonExportFlatCabling(cytoscapeData);
+            const deploymentText = callPythonExportDeployment(cytoscapeData);
+
+            const cablingHostIds = parseCablingHostIds(cablingText);
+            const deploymentOrder = parseDeploymentHostOrder(deploymentText);
+
+            expect(Object.keys(cablingHostIds).length).toBeGreaterThan(0);
+            expect(deploymentOrder.length).toBeGreaterThan(0);
+
+            for (const [hostname, hostId] of Object.entries(cablingHostIds)) {
+                expect(hostId).toBeLessThan(deploymentOrder.length);
+                const deploymentHostname = deploymentOrder[hostId];
+                expect(deploymentHostname).toBe(hostname);
+            }
+        });
+
         test('CSV import -> modify hostname -> export deployment descriptor', () => {
             // Step 1: Python Import
             const csvFiles = getTestDataFiles('.csv', 'cabling-guides');
