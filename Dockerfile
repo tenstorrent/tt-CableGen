@@ -20,14 +20,14 @@ COPY requirements.txt requirements.txt
 RUN /bin/bash -c "python3 -m ensurepip --upgrade && python3 -m pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
 
 # Clone tt-metal for scaleout dependencies
-RUN /bin/bash -c "git clone --filter=blob:none --recurse-submodules --tags \
+RUN /bin/bash -c "git clone --filter=blob:none--tags \
     https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME}"
 
 WORKDIR ${TT_METAL_HOME}
 
 # Fetch and checkout the exact commit (shallow fetch for that commit only)
-RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH}"
+RUN /bin/bash -c "git fetch origin ${TT_METAL_HASH} && git checkout ${TT_METAL_HASH} && git submodule update --init --recursive"
 
 COPY build_scaleout.sh ${TT_METAL_HOME}/build_scaleout.sh
 RUN chmod +x ${TT_METAL_HOME}/build_scaleout.sh
