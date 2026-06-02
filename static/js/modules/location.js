@@ -309,6 +309,90 @@ export class LocationModule {
     }
 
     /**
+     * Fallback layout for location mode when the topology has no rack/hall/aisle
+     * structure (e.g. a simplified hostname-only cabling guide). The rack-based
+     * layout in calculateLayout() has nothing to position in that case, so we lay
+     * the shelves out in a simple grid and arrange each shelf's trays/ports using
+     * the same node-type-aware arrangement used everywhere else.
+     */
+    _applySimpleGridLayout() {
+        if (!this.state.cy) return;
+
+        const shelves = this.state.cy.nodes('[type="shelf"]');
+        if (shelves.length === 0) {
+            // Nothing to lay out, but still finalize so the container becomes visible.
+            this._finalizeSimpleGridLayout();
+            return;
+        }
+
+        this.state.cy.startBatch();
+
+        // First pass: arrange trays/ports so each shelf has its true rendered size.
+        shelves.forEach((shelf) => this.common.arrangeTraysAndPorts(shelf));
+
+        // Cell size = largest shelf footprint, so no two shelves overlap regardless
+        // of node type. Spacing factors mirror the rack-based layout for consistency.
+        let maxWidth = 0;
+        let maxHeight = 0;
+        shelves.forEach((shelf) => {
+            const nodeType = shelf.data('shelf_node_type') || 'WH_GALAXY';
+            const dims = getShelfLayoutDimensions(nodeType);
+            maxWidth = Math.max(maxWidth, dims.width);
+            maxHeight = Math.max(maxHeight, dims.height);
+        });
+        const spacingFactor = LAYOUT_CONSTANTS.SHELF_VERTICAL_SPACING_FACTOR ?? 0.75;
+        const colStep = maxWidth * (1 + spacingFactor);
+        const rowStep = maxHeight * (1 + spacingFactor);
+
+        // Sort by shelf id for stable, predictable ordering (node_0, node_1, ...).
+        const sortedShelves = shelves.toArray().sort((a, b) =>
+            String(a.id()).localeCompare(String(b.id()), undefined, { numeric: true })
+        );
+
+        // Roughly square grid.
+        const cols = Math.max(1, Math.ceil(Math.sqrt(sortedShelves.length)));
+        const baseX = 200;
+        const baseY = 200;
+        sortedShelves.forEach((shelf, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            const x = baseX + col * colStep;
+            const y = baseY + row * rowStep;
+            shelf.position({ x, y });
+            // Re-arrange after positioning so trays/ports follow the shelf.
+            this.common.arrangeTraysAndPorts(shelf);
+        });
+
+        this.state.cy.endBatch();
+
+        this._finalizeSimpleGridLayout();
+    }
+
+    /**
+     * Shared finalization for the rack-less grid layout: apply drag restrictions,
+     * recolor connections, refresh labels/curves, persist, fit the view, and reveal
+     * the container. Mirrors the post-layout step of the rack-based path.
+     */
+    _finalizeSimpleGridLayout() {
+        setTimeout(() => {
+            this.common.applyDragRestrictions();
+            this.recolorConnections();
+            this.updateAllShelfLabels();
+            this.common.forceApplyCurveStyles();
+            window.saveDefaultLayout?.();
+
+            this.state.cy.fit(null, 50);
+            this.state.cy.center();
+            this.state.cy.forceRender();
+
+            const cyContainer = document.getElementById('cy');
+            if (cyContainer) {
+                cyContainer.style.visibility = 'visible';
+            }
+        }, 100);
+    }
+
+    /**
      * Calculate layout for location mode with hall/aisle/rack hierarchy
      */
     calculateLayout() {
@@ -320,6 +404,7 @@ export class LocationModule {
         const racks = this.state.cy.nodes('[type="rack"]');
         if (racks.length === 0) {
             console.log('No racks found, using simple grid layout');
+            this._applySimpleGridLayout();
             return;
         }
 

@@ -172,10 +172,8 @@ class NetworkCablingCytoscapeVisualizer:
             "n300_lb": "N300_LB",
             "n300_qb": "N300_QB",
             "p150_lb": "P150_LB",
-            "p150_qb_ae": "P150_QB_AE",  # Add P150_QB_AE mapping
-            "p150_qb_global": "P150_QB_GLOBAL",
-            "p150_qb_america": "P150_QB_AMERICA",
-            "p300_qb_ge": "P300_QB_GE",  # Add P300_QB_GE mapping
+            # All P150 QB variants consolidated under P150_QB_AE
+            "p150_qb_ae": "P150_QB_AE",
         }
         
         # Return mapped value or convert to uppercase
@@ -254,27 +252,7 @@ class NetworkCablingCytoscapeVisualizer:
                 "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
                 "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
             },
-            "P150_QB": {
-                "tray_count": 4,
-                "port_count": 4,
-                "tray_layout": "vertical",  # T1-T4 arranged vertically (T1 at bottom, T4 at top)
-                # port_layout auto-inferred as 'horizontal' from vertical tray_layout
-                "shelf_u_height": 4,
-                "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
-                "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
-                "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
-            },
-            "P150_QB_GLOBAL": {
-                "tray_count": 4,
-                "port_count": 4,
-                "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
-                # port_layout auto-inferred as 'vertical' from horizontal tray_layout
-                "shelf_u_height": 4,
-                "shelf_dimensions": self.DEFAULT_SHELF_DIMENSIONS.copy(),
-                "tray_dimensions": self.DEFAULT_AUTO_TRAY_DIMENSIONS.copy(),
-                "port_dimensions": {**self.DEFAULT_PORT_DIMENSIONS, "spacing": 15},
-            },
-            "P150_QB_AMERICA": {
+            "P150_QB_AE": {
                 "tray_count": 4,
                 "port_count": 4,
                 "tray_layout": "horizontal",  # T1-T4 arranged horizontally (left to right)
@@ -1522,14 +1500,9 @@ class NetworkCablingCytoscapeVisualizer:
             'n300_qb_default': 'n300_qb',
             # P150 LB
             'p150_lb': 'p150_lb',
-            # P150 QB AE variations
-            'p150_qb_ae': 'p150_qb',
-            'p150_qb_ae_default': 'p150_qb',
-            # P150 QB other variations (kept as distinct types)
-            'p150_qb_global': 'p150_qb_global',
-            'p150_qb_america': 'p150_qb_america',
-            # P300 QB GE (similar to P150)
-            'p300_qb_ge': 'p150_qb',
+            # P150 QB (consolidated under P150_QB_AE)
+            'p150_qb_ae': 'p150_qb_ae',
+            'p150_qb_ae_default': 'p150_qb_ae',
             # BH Galaxy: alias to REV_AB (BH_GALAXY not used internally)
             'bh_galaxy': 'bh_galaxy_rev_ab',
             'bh_galaxy_x_torus': 'bh_galaxy_rev_ab',
@@ -1585,7 +1558,7 @@ class NetworkCablingCytoscapeVisualizer:
         if 'wh' in node_type_lower or 'galaxy' in node_type_lower:
             # Galaxy-style devices typically have 4 trays with 6-14 ports
             base_config = self.shelf_unit_configs['WH_GALAXY'].copy()
-        elif 'n300' in node_type_lower or 'p150' in node_type_lower or 'p300' in node_type_lower:
+        elif 'n300' in node_type_lower or 'p150' in node_type_lower:
             # N300/P150 style devices typically have 4 trays with 2-4 ports
             base_config = self.shelf_unit_configs['N300_LB'].copy()
         else:
@@ -2089,37 +2062,22 @@ class NetworkCablingCytoscapeVisualizer:
             }
 
     def _track_hostname_location(self, source_data, dest_data):
-        """Track location information for hostname-based format"""
-        if "hostname" in source_data and source_data.get("hostname"):
-            hostname = source_data["hostname"]
-            # Validate hostname uniqueness
-            if hostname in self.seen_hostnames:
-                raise ValueError(
-                    f"Duplicate hostname '{hostname}' found in CSV data. "
-                    f"Hostnames must be unique across all shelves. "
-                    f"Duplicate found in source data: {source_data}"
-                )
+        """Track location information for hostname-based format
+
+        Called once per connection row, so the same hostname legitimately
+        appears many times (one row per cable on that host). Registering the
+        hostname -> node_type mapping is idempotent; uniqueness of the resulting
+        shelves is validated downstream in _create_shelf_hierarchy().
+        """
+        for data in (source_data, dest_data):
+            hostname = data.get("hostname")
+            if not hostname:
+                continue
             self.seen_hostnames.add(hostname)
-            
+
             # Only set node_type if it's actually present in the CSV data
             # If not present, it will use shelf_unit_type when creating the shelf
-            node_type = source_data.get("node_type")
-            if node_type:
-                self.shelf_units[hostname] = self.normalize_node_type(node_type)
-        if "hostname" in dest_data and dest_data.get("hostname"):
-            hostname = dest_data["hostname"]
-            # Validate hostname uniqueness
-            if hostname in self.seen_hostnames:
-                raise ValueError(
-                    f"Duplicate hostname '{hostname}' found in CSV data. "
-                    f"Hostnames must be unique across all shelves. "
-                    f"Duplicate found in destination data: {dest_data}"
-                )
-            self.seen_hostnames.add(hostname)
-            
-            # Only set node_type if it's actually present in the CSV data
-            # If not present, it will use shelf_unit_type when creating the shelf
-            node_type = dest_data.get("node_type")
+            node_type = data.get("node_type")
             if node_type:
                 self.shelf_units[hostname] = self.normalize_node_type(node_type)
 

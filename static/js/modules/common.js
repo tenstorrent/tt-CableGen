@@ -2573,8 +2573,7 @@ export class CommonModule {
                 if (portNumber === 14) return 'ASIC: 7 Channel: 11, ASIC: 8 Channel: 11';
                 break;
 
-            case 'P150_QB_GLOBAL':
-            case 'P150_QB_AMERICA':
+            case 'P150_QB_AE':
             case 'P150_LB':
                 // P150 nodes: 4 ports per tray (4 trays for QB variants, 8 trays for LB), specific channel mapping
                 if (portNumber === 1) return 'ASIC: 0 Channel: 9, ASIC: 0 Channel: 11';
