@@ -49,20 +49,12 @@ export const NODE_TYPES = {
         displayName: 'Blackhole Galaxy Rev C',
         color: '#e74c3c'
     },
-    'P150_QB_GLOBAL': {
+    'P150_QB_AE': {
         tray_count: 4,
         ports_per_tray: 4,
         tray_layout: 'horizontal',
         shelf_u_height: 4,
-        displayName: 'P150 QB Global',
-        color: '#f39c12'
-    },
-    'P150_QB_AMERICA': {
-        tray_count: 4,
-        ports_per_tray: 4,
-        tray_layout: 'horizontal',
-        shelf_u_height: 4,
-        displayName: 'P150 QB America',
+        displayName: 'P150 QB AE',
         color: '#f39c12'
     },
     'P150_LB': {
