@@ -20,7 +20,7 @@ COPY requirements.txt requirements.txt
 RUN /bin/bash -c "python3 -m ensurepip --upgrade && python3 -m pip install --no-cache-dir -r requirements.txt; apt update && apt install -y protobuf-compiler npm"
 
 # Clone tt-metal for scaleout dependencies
-RUN /bin/bash -c "git clone --filter=blob:none--tags \
+RUN /bin/bash -c "git clone --filter=blob:none --tags \
     https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME}"
 
