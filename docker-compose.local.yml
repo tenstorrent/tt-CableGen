@@ -4,6 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: dev
     platform: linux/amd64
     pull_policy: always
     container_name: cablegen-app-local
