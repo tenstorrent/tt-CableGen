@@ -198,6 +198,10 @@ export class ExportModule {
      * @returns {boolean} True if any host indices were changed during the pass.
      */
     runHostIndexSanityPass() {
+        // Preserve hierarchy-assigned host_ids; don't re-derive order from racking.
+        if (this.state.data.initialMode === 'hierarchy') {
+            return false;
+        }
         if (!this.commonModule?.recalculateHostIndices || typeof this.commonModule.recalculateHostIndices !== 'function') {
             return false;
         }
