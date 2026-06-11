@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+**/__pycache__
+**/*.pyc
+.pytest_cache
+*.log
+.env
+.venv
+venv
+defined_topologies
+README*.md
+nginx/oauth2-setup.md
