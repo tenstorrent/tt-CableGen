@@ -37,9 +37,10 @@ ENV PATH=/opt/venv/bin:${PATH}
 
 # Runtime shared-lib deps of run_cabling_generator (see ldd closure) + python.
 # glibc/libstdc++/libgcc/krb5 sub-libs come transitively or from the base.
+# curl is for the compose healthcheck (both local and prod).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        python3 python3-venv \
+        python3 python3-venv curl \
         libhwloc15 libtirpc3 libudev1 libnsl2 libatomic1 zlib1g libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
 
