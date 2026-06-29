@@ -3,7 +3,7 @@ graph_templates {
   value {
     children {
       name: "node_0"
-      node_ref { node_descriptor: "BH_GALAXY" }
+      node_ref { node_descriptor: "BH_GALAXY_REV_AB" }
     }
     internal_connections {
       key: "QSFP_DD"
