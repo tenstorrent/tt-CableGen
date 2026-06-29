@@ -1,0 +1,32 @@
+hosts {
+  hall: "110"
+  aisle: "D"
+  rack: 1
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-110-d01u08"
+}
+hosts {
+  hall: "110"
+  aisle: "D"
+  rack: 1
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-110-d01u02"
+}
+hosts {
+  hall: "110"
+  aisle: "D"
+  rack: 2
+  shelf_u: 2
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-110-d02u02"
+}
+hosts {
+  hall: "110"
+  aisle: "D"
+  rack: 2
+  shelf_u: 8
+  node_type: "BH_GALAXY_REV_AB"
+  host: "bh-glx-110-d02u08"
+}
