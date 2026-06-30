@@ -1830,7 +1830,17 @@ async function applyDeploymentDescriptor(file) {
 
     try {
         const response = await fetch('/apply_deployment_descriptor', { method: 'POST', body: formData });
-        const result = await response.json();
+        let result;
+        try {
+            result = await response.json();
+        } catch (parseErr) {
+            // Server returned a non-JSON body (e.g. an nginx 413/504 error page).
+            // Surface a useful message instead of a raw "Unexpected token" SyntaxError.
+            if (response.status === 413) {
+                throw new Error('Topology is too large for the server to accept. Please contact an administrator to raise the upload size limit.');
+            }
+            throw new Error(`Server returned an unexpected response (HTTP ${response.status}). The topology may be too large or the request timed out.`);
+        }
         if (response.ok && result.success) {
             // Keep in-memory snapshot in sync with full graph (important when payload was built from cy)
             if (result.data?.elements) {
@@ -1914,7 +1924,17 @@ async function applyDeploymentDescriptorFromModal() {
 
     try {
         const response = await fetch('/apply_deployment_descriptor', { method: 'POST', body: formData });
-        const result = await response.json();
+        let result;
+        try {
+            result = await response.json();
+        } catch (parseErr) {
+            // Server returned a non-JSON body (e.g. an nginx 413/504 error page).
+            // Surface a useful message instead of a raw "Unexpected token" SyntaxError.
+            if (response.status === 413) {
+                throw new Error('Topology is too large for the server to accept. Please contact an administrator to raise the upload size limit.');
+            }
+            throw new Error(`Server returned an unexpected response (HTTP ${response.status}). The topology may be too large or the request timed out.`);
+        }
         if (response.ok && result.success) {
             if (result.data?.elements) {
                 state.data.currentData = result.data;
