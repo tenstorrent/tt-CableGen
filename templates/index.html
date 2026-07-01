@@ -1116,6 +1116,35 @@
                     </div>
                 </div>
 
+                <div class="collapsible-header" data-section="displayOptions">
+                    <h3 style="margin: 0; color: #333;">Display Options </h3>
+                    <span class="collapsible-arrow collapsed" id="displayOptions-arrow">▶</span>
+                </div>
+                <div class="collapsible-content collapsed" id="displayOptions">
+                    <div class="range-filter-section">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                <input type="checkbox" id="showAllPortNumbers"
+                                    style="margin-right: 8px; transform: scale(1.1);">
+                                <span style="font-size: 14px;">Show all port numbers</span>
+                            </label>
+                            <div style="font-size: 11px; color: #666; margin-left: 24px; margin-top: -2px;">
+                                Display port numbers on every port (otherwise shown on hover)
+                            </div>
+                            <div class="location-mode-only" style="margin-top: 4px;">
+                                <label style="display: flex; align-items: center; cursor: pointer; color: #333333;">
+                                    <input type="checkbox" id="reverseRackOrder"
+                                        style="margin-right: 8px; transform: scale(1.1);">
+                                    <span style="font-size: 14px;">Reverse rack order</span>
+                                </label>
+                                <div style="font-size: 11px; color: #666; margin-left: 24px; margin-top: -2px;">
+                                    Reverse the left-to-right ordering of racks within each aisle
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="collapsible-header" data-section="connectionRangeFilter">
                     <h3 style="margin: 0; color: #333;">Connection Options </h3>
                     <span class="collapsible-arrow collapsed" id="connectionRangeFilter-arrow">▶</span>

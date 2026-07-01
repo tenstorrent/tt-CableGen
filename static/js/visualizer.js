@@ -881,6 +881,10 @@ function setupEventListeners() {
     attachEventListener('applyLayoutBtn', 'click', () => uiDisplayModule.applyPhysicalLayoutModalAction());
     attachEventListener('applyUploadBtn', 'click', () => applyDeploymentDescriptorFromModal().catch(err => console.error('Error applying deployment descriptor:', err)));
 
+    // Display options
+    attachEventListener('showAllPortNumbers', 'change', () => commonModule.applyPortNumberVisibility());
+    attachEventListener('reverseRackOrder', 'change', () => locationModule.applyReverseRackOrder());
+
     // Collapsible headers
     document.querySelectorAll('.collapsible-header[data-section]').forEach(header => {
         const sectionId = header.getAttribute('data-section');

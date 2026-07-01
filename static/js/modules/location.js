@@ -425,11 +425,13 @@ export class LocationModule {
             });
         });
 
-        // Sort racks within each aisle by rack number (descending - higher rack numbers to the left)
+        // Sort racks within each aisle by rack number (descending by default - higher rack
+        // numbers to the left; reversed when the "Reverse rack order" display option is on).
+        const rackOrderDir = this.isReverseRackOrder() ? -1 : 1;
         Object.keys(rackHierarchy).forEach(hall => {
             Object.keys(rackHierarchy[hall]).forEach(aisle => {
                 rackHierarchy[hall][aisle].sort((a, b) => {
-                    return b.rack_num - a.rack_num; // Descending order - rack 2 to the left of rack 1
+                    return rackOrderDir * (b.rack_num - a.rack_num);
                 });
             });
         });
@@ -780,6 +782,25 @@ export class LocationModule {
      * Switch to location/physical mode - save hierarchy state then rebuild visualization from current graph.
      * Use this when the user toggles from hierarchy to location mode.
      */
+    /**
+     * Whether the "Reverse rack order" display option is enabled. Read directly from the
+     * checkbox (consistent with the other sidebar display filters) so the rack sort
+     * comparators pick it up on every (re)layout.
+     */
+    isReverseRackOrder() {
+        return document.getElementById('reverseRackOrder')?.checked ?? false;
+    }
+
+    /**
+     * Re-run the location layout so a change to the "Reverse rack order" option takes effect
+     * immediately. Only meaningful in location mode, where racks are laid out horizontally.
+     */
+    applyReverseRackOrder() {
+        if (this.state.mode === 'location') {
+            this.rebuildLocationViewFromCurrentGraph();
+        }
+    }
+
     switchMode() {
         // Stop any running hierarchy layout so the visualizer doesn't stay frozen
         if (typeof window.hierarchyModule?.stopLayout === 'function') {
@@ -1007,11 +1028,13 @@ export class LocationModule {
                         });
                     }
 
-                    // Sort racks in descending order (higher rack numbers to the left)
+                    // Sort racks in descending order by default (higher rack numbers to the
+                    // left); reversed when the "Reverse rack order" display option is on.
+                    const rackOrderDir = this.isReverseRackOrder() ? -1 : 1;
                     const sortedRackKeys = Object.keys(locationHierarchy[hall][aisle]).sort((a, b) => {
                         const rackA = parseInt(a) || 0;
                         const rackB = parseInt(b) || 0;
-                        return rackB - rackA; // Descending order - rack 2 to the left of rack 1
+                        return rackOrderDir * (rackB - rackA);
                     });
                     // Precompute inside width per rack (from shelf node types) so adjacent racks don't overlap
                     const createRackInsideWidths = sortedRackKeys.map(rackKey => {
