@@ -1240,23 +1240,55 @@ export class CommonModule {
             }
         });
 
-        // Port hover handlers - show labels on hover, hide on mouseout; raise port above connections
-        // Port labels are always "P<port # on tray>", not identifiers
+        // Port hover handlers - show labels on hover; on mouseout revert to whatever the
+        // "Show all port numbers" toggle dictates. Raise port above connections while hovered.
+        // Port labels are always "P<port # on tray>", not identifiers.
         this.state.cy.on('mouseover', 'node.port', (evt) => {
             const port = evt.target;
-            const portNum = port.data('port');
-            const labelValue = (portNum != null && portNum !== undefined) ? `P${portNum}` : (port.data('label') || '');
-            port.style('label', labelValue);
+            port.style('label', this._portLabelText(port));
             port.addClass('port-hover');
         });
 
         this.state.cy.on('mouseout', 'node.port', (evt) => {
             const port = evt.target;
-            port.style('label', '');
+            // Keep the label if the global toggle is on; otherwise hide it again.
+            if (this._showAllPortNumbers()) {
+                port.style('label', this._portLabelText(port));
+            } else {
+                port.style('label', '');
+            }
             port.removeClass('port-hover');
         });
 
+        // Re-apply the persistent "show all port numbers" preference for this (re)render.
+        this.applyPortNumberVisibility();
+
         console.log('[addCytoscapeEventHandlers] Event handlers registered successfully');
+    }
+
+    /** Whether the global "Show all port numbers" display toggle is enabled. */
+    _showAllPortNumbers() {
+        return document.getElementById('showAllPortNumbers')?.checked ?? false;
+    }
+
+    /** The label text for a port node, always "P<port#>". */
+    _portLabelText(port) {
+        const portNum = port.data('port');
+        return (portNum != null) ? `P${portNum}` : (port.data('label') || '');
+    }
+
+    /**
+     * Apply the global "show all port numbers" preference to every port. When enabled, each
+     * port persistently shows its "P<port#>" label; when disabled, labels are hidden except
+     * on hover. Uses per-element style bypasses (like the hover handlers) and reads the
+     * checkbox directly so it survives graph re-renders. Called on toggle and after each render.
+     */
+    applyPortNumberVisibility() {
+        if (!this.state.cy) return;
+        const show = this._showAllPortNumbers();
+        this.state.cy.nodes('.port').forEach((port) => {
+            port.style('label', show ? this._portLabelText(port) : '');
+        });
     }
 
     /**
