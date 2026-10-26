@@ -77,7 +77,7 @@ graph_templates {
   }
 }
 graph_templates {
-  key: "bh_glx_sc36_st"
+  key: "bh_glx_sc32_st"
   value {
     children { name: "bh_glx_pod_st_0" graph_ref { graph_template: "bh_glx_pod_st" } }
     children { name: "bh_glx_pod_st_1" graph_ref { graph_template: "bh_glx_pod_st" } }
@@ -175,7 +175,7 @@ graph_templates {
   }
 }
 root_instance {
-  template_name: "bh_glx_sc36_st"
+  template_name: "bh_glx_sc32_st"
   child_mappings { key: "bh_glx_pod_st_0" value { sub_instance { template_name: "bh_glx_pod_st" child_mappings { key: "bh_glx_node_st_0" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 0 } } } } } child_mappings { key: "bh_glx_node_st_1" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 1 } } } } } child_mappings { key: "bh_glx_node_st_2" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 2 } } } } } child_mappings { key: "bh_glx_node_st_3" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 3 } } } } } } } }
   child_mappings { key: "bh_glx_pod_st_1" value { sub_instance { template_name: "bh_glx_pod_st" child_mappings { key: "bh_glx_node_st_0" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 4 } } } } } child_mappings { key: "bh_glx_node_st_1" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 5 } } } } } child_mappings { key: "bh_glx_node_st_2" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 6 } } } } } child_mappings { key: "bh_glx_node_st_3" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 7 } } } } } } } }
   child_mappings { key: "bh_glx_pod_st_2" value { sub_instance { template_name: "bh_glx_pod_st" child_mappings { key: "bh_glx_node_st_0" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 8 } } } } } child_mappings { key: "bh_glx_node_st_1" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 9 } } } } } child_mappings { key: "bh_glx_node_st_2" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 10 } } } } } child_mappings { key: "bh_glx_node_st_3" value { sub_instance { template_name: "bh_glx_node_st" child_mappings { key: "node_0" value { host_id: 11 } } } } } } } }
