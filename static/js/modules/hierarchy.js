@@ -1777,9 +1777,12 @@ export class HierarchyModule {
         }
 
         // Re-create trays and ports for each shelf with updated location info
+        const shelvesById = new Map(newElements
+            .filter(el => el.data && el.data.type === 'shelf')
+            .map(el => [el.data.id, el]));
         trayPortData.forEach(trayInfo => {
             // Find the shelf this tray belongs to and get its location data
-            const parentShelf = newElements.find(el => el.data && el.data.id === trayInfo.shelf_id && el.data.type === 'shelf');
+            const parentShelf = shelvesById.get(trayInfo.shelf_id);
 
             // Add tray node with all preserved data plus location info from parent shelf
             const trayData = { ...trayInfo.tray_data };

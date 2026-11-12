@@ -138,11 +138,20 @@ cmake --build $build_dir --target scaleout_tools
 cmake --build $build_dir --target 2d_big_mesh_cabling_gen 
 cmake --build $build_dir --target run_cabling_generator
 
+# Prefer the compiler built with tt-metal so Python bindings match its schemas.
+protoc_bin="$build_dir/_deps/protobuf-build/protoc"
+if [ ! -x "$protoc_bin" ]; then
+    protoc_bin=$(command -v protoc) || {
+        echo "ERROR: No protobuf compiler found in the build or PATH." >&2
+        exit 1
+    }
+fi
+
 CABLING_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/cabling_descriptor/schemas"
 DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR="${TT_METAL_HOME}/tools/scaleout/deployment_descriptor/schemas"
-protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/cluster_config.proto"
-protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/node_config.proto"
-protoc --python_out=$build_dir/tools/scaleout/protobuf/ -I "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR" "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR/deployment.proto"
+"$protoc_bin" --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/cluster_config.proto"
+"$protoc_bin" --python_out=$build_dir/tools/scaleout/protobuf/ -I "$CABLING_DESCRIPTOR_SCHEMAS_DIR" "$CABLING_DESCRIPTOR_SCHEMAS_DIR/node_config.proto"
+"$protoc_bin" --python_out=$build_dir/tools/scaleout/protobuf/ -I "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR" "$DEPLOYMENT_DESCRIPTOR_SCHEMAS_DIR/deployment.proto"
 
 protobuf_out="$build_dir/tools/scaleout/protobuf"
 echo "built protobuf files at $(realpath "$protobuf_out")"
