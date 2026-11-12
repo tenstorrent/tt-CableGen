@@ -11,6 +11,8 @@ import argparse
 import time
 import threading
 import json
+import hashlib
+from pathlib import Path
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response, make_response
 import traceback
 from urllib.parse import urlparse
@@ -42,6 +44,39 @@ except ImportError as e:
 app = Flask(__name__)
 # No CORS needed since we're serving everything from the same origin
 
+def build_module_manifest():
+    """Version the entire module graph, including relative imports.
+
+    Production workers build this once; debug requests see local edits.
+    """
+    if not app.debug and hasattr(build_module_manifest, "cached"):
+        return build_module_manifest.cached
+    root = Path(app.static_folder) / "js"
+    files = sorted(root.rglob("*.js"))
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(path.read_bytes())
+    version = digest.hexdigest()[:20]
+    imports = {
+        "/static/js/" + path.relative_to(root).as_posix():
+        "/static/js/" + path.relative_to(root).as_posix() + "?v=" + version
+        for path in files
+    }
+    result = (version, imports)
+    if not app.debug:
+        build_module_manifest.cached = result
+    return result
+
+
+@app.after_request
+def revalidate_static(response):
+    # Unversioned assets must be checked, including Flask's built-in static route.
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "private, no-cache"
+    return response
+
+
 # HTML template for the main interface
 
 
@@ -65,24 +100,9 @@ def index():
             # Convert to uppercase for JavaScript (e.g., 'wh_galaxy' -> 'WH_GALAXY')
             node_configs[node_type.upper()] = js_config
 
-        # Generate cache-busting version from all JS files under static/js
-        # So any change to any module updates the version and all JS gets cache busting
-        try:
-            js_dir = os.path.join("static", "js")
-            if os.path.isdir(js_dir):
-                max_mtime = 0
-                for root, _dirs, files in os.walk(js_dir):
-                    for f in files:
-                        if f.endswith(".js"):
-                            path = os.path.join(root, f)
-                            max_mtime = max(max_mtime, int(os.path.getmtime(path)))
-                cache_version = str(max_mtime) if max_mtime else str(int(time.time()))
-            else:
-                cache_version = str(int(time.time()))
-        except Exception:
-            cache_version = str(int(time.time()))
+        cache_version, module_imports = build_module_manifest()
 
-        html_content = render_template("index.html", node_configs=node_configs, cache_version=cache_version)
+        html_content = render_template("index.html", node_configs=node_configs, cache_version=cache_version, module_imports=module_imports)
         response = make_response(html_content)
         # Prevent HTML caching to ensure users always get the latest version
         response.cache_control.no_cache = True
@@ -93,8 +113,8 @@ def index():
 
     except Exception as e:
         # Fallback to template without configs if there's an error
-        cache_version = str(int(time.time()))
-        html_content = render_template("index.html", node_configs={}, cache_version=cache_version)
+        cache_version, module_imports = build_module_manifest()
+        html_content = render_template("index.html", node_configs={}, cache_version=cache_version, module_imports=module_imports)
         response = make_response(html_content)
         # Prevent HTML caching to ensure users always get the latest version
         response.cache_control.no_cache = True

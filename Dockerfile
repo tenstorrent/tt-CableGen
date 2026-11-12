@@ -10,7 +10,7 @@
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium-ubuntu-22.04-release-amd64:latest AS builder
 
 ENV TT_METAL_HOME=/tt-metal
-ARG TT_METAL_HASH=fbb677b7197ee126f76c9ebbfc2ba28b6d980442
+ARG TT_METAL_HASH=3bcff5abb296ac03c6ce14b2e8c69e02fb9f0e7e
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends protobuf-compiler git \
@@ -49,12 +49,12 @@ COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Built artifacts. Paths are preserved verbatim: the binary's RUNPATH points at
-# /tt-metal/build/tt_stl and /tt-metal/build/tt_metal/third_party/umd/device, and
+# /tt-metal/build/tt_stl and /tt-metal/build/tt_metal/third_party/umd/lib, and
 # server.py/import_cabling.py/export_descriptors.py resolve everything under
 # $TT_METAL_HOME/build/tools/scaleout.
 COPY --from=builder /tt-metal/build/tools/scaleout/run_cabling_generator /tt-metal/build/tools/scaleout/run_cabling_generator
 COPY --from=builder /tt-metal/build/tt_stl/libtt_stl.so /tt-metal/build/tt_stl/libtt_stl.so
-COPY --from=builder /tt-metal/build/tt_metal/third_party/umd/device/libdevice.so /tt-metal/build/tt_metal/third_party/umd/device/libdevice.so
+COPY --from=builder /tt-metal/build/tt_metal/third_party/umd/lib/ /tt-metal/build/tt_metal/third_party/umd/lib/
 COPY --from=builder /tt-metal/build/tools/scaleout/protobuf/cluster_config_pb2.py /tt-metal/build/tools/scaleout/protobuf/cluster_config_pb2.py
 COPY --from=builder /tt-metal/build/tools/scaleout/protobuf/node_config_pb2.py /tt-metal/build/tools/scaleout/protobuf/node_config_pb2.py
 COPY --from=builder /tt-metal/build/tools/scaleout/protobuf/deployment_pb2.py /tt-metal/build/tools/scaleout/protobuf/deployment_pb2.py

@@ -126,7 +126,7 @@ acme_issuer acme_server {
         # Reverse proxy all requests to CableGen Flask app (authenticated)
         location / {
             auth_request /oauth2/auth;
-            error_page 401 = /oauth2/sign_in;
+            error_page 401 = /oauth2/sign_in?;
 
             # Pass authentication headers to backend
             auth_request_set $user $upstream_http_x_auth_request_user;
@@ -167,10 +167,11 @@ acme_issuer acme_server {
         # Static file handling (authenticated)
         location /static/ {
             auth_request /oauth2/auth;
-            error_page 401 = /oauth2/sign_in;
+            error_page 401 = /oauth2/sign_in?;
 
             proxy_pass http://cablegen_backend;
-            expires 1y;
-            add_header Cache-Control "public, immutable";
+            expires off;
+            proxy_hide_header Cache-Control;
+            add_header Cache-Control "private, no-cache";
         }
     }
